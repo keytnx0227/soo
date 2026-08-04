@@ -1,7 +1,8 @@
-import { generateRaw, main_api } from '../../../../script.js';
-import { chat_completion_sources, oai_settings } from '../../../../scripts/openai.js';
-import { textgenerationwebui_settings } from '../../../../scripts/textgen-settings.js';
-import { getSettings } from './settings.js';
+import { generateRaw, main_api } from '../../../../../script.js';
+import { chat_completion_sources, oai_settings } from '../../../../../scripts/openai.js';
+import { textgenerationwebui_settings } from '../../../../../scripts/textgen-settings.js';
+import { assertExtensionEnabled } from '../core/extension-state.js';
+import { getSettings } from '../core/settings.js';
 
 const CHAT_COMPLETION_PROVIDERS = Object.freeze({
     openai: { source: chat_completion_sources.OPENAI, modelKey: 'openai_model' },
@@ -12,6 +13,7 @@ const CHAT_COMPLETION_PROVIDERS = Object.freeze({
 });
 
 export async function generateSummary(prompt) {
+    assertExtensionEnabled();
     const settings = getSettings();
     const connection = settings.connection[settings.connectionMode] ?? settings.connection.profile;
 

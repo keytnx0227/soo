@@ -3,7 +3,7 @@ import {
     PROVIDERS,
     resetActiveConnectionSettings,
     saveSettings,
-} from './settings.js';
+} from '../core/settings.js';
 
 export function bindConnectionSettings(root) {
     root.querySelector('#stsm-connection-mode').addEventListener('change', event => {

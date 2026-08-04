@@ -1,17 +1,25 @@
-import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../scripts/popup.js';
-import { generateSummary } from './generation.js';
-import { buildRevisionPrompt } from './prompt-builder.js';
+import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import {
+    beginOperation,
+    endOperation,
+    getExtensionState,
+    subscribeExtensionState,
+} from '../core/extension-state.js';
+import { generateSummary } from '../connection/generation.js';
+import { buildRevisionPrompt } from '../prompts/prompt-builder.js';
+import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import {
     getRecentRevisionConversation,
     getSummaryRecord,
     setRecentRevisionConversation,
     updateSummaryRecordContent,
-} from './summary-store.js';
-import { escapeHtml } from './utils.js';
+} from '../summary/summary-store.js';
+import { escapeHtml } from '../core/utils.js';
 
 let activeSession = null;
 let revisionPopup = null;
 let revisionRoot = null;
+let unsubscribeRevisionState = null;
 
 export async function openRevisionChat(recordId, { onApplied } = {}) {
     if (revisionPopup) return;
@@ -29,6 +37,7 @@ export async function openRevisionChat(recordId, { onApplied } = {}) {
 
     revisionRoot = buildRevisionPopup();
     bindRevisionEvents(revisionRoot);
+    unsubscribeRevisionState = subscribeExtensionState(renderRevisionSession);
     renderRevisionSession();
 
     revisionPopup = new Popup(revisionRoot, POPUP_TYPE.TEXT, '', {
@@ -57,6 +66,8 @@ export async function openRevisionChat(recordId, { onApplied } = {}) {
     try {
         await revisionPopup.show();
     } finally {
+        unsubscribeRevisionState?.();
+        unsubscribeRevisionState = null;
         revisionPopup = null;
         revisionRoot = null;
     }
@@ -65,6 +76,15 @@ export async function openRevisionChat(recordId, { onApplied } = {}) {
 export function clearRevisionSession() {
     activeSession = null;
     revisionPopup?.completeCancelled();
+}
+
+export function synchronizeRevisionSessionRanges(updates) {
+    if (!activeSession || !Array.isArray(updates)) return;
+    const range = updates.find(update => String(update.id) === activeSession.recordId);
+    if (!range) return;
+    activeSession.startId = Number(range.startId);
+    activeSession.endId = Number(range.endId);
+    renderRevisionSession();
 }
 
 export async function buildCurrentRevisionPromptPreview() {
@@ -133,12 +153,13 @@ async function sendFeedback() {
         return;
     }
 
-    session.messages.push({ role: 'user', text: feedback });
-    input.value = '';
-    session.isGenerating = true;
-    renderRevisionSession();
-
+    let operationToken = null;
     try {
+        operationToken = beginOperation('revising', `#${session.startId} ~ #${session.endId} 수정안 생성 중`);
+        session.messages.push({ role: 'user', text: feedback });
+        input.value = '';
+        session.isGenerating = true;
+        renderRevisionSession();
         await persistSession(session);
         const prompt = await buildRevisionPrompt(session);
         if (!prompt.trim()) throw new Error('현재 설정으로 조립된 수정 프롬프트가 비어 있습니다.');
@@ -149,9 +170,18 @@ async function sendFeedback() {
         await persistSession(session);
     } catch (error) {
         console.error('[Chat Summarizer] Revision generation failed:', error);
+        addExtensionErrorLog(error, {
+            operation: 'revision-generation',
+            title: '요약 수정 대화 생성 실패',
+            message: '수정 대화 응답을 생성하지 못했습니다.',
+            context: { range: getSessionRange(session) },
+        });
         toastr.error(error.message || '수정 대화 생성에 실패했습니다.');
     } finally {
-        session.isGenerating = false;
+        if (operationToken) {
+            session.isGenerating = false;
+            endOperation(operationToken);
+        }
         renderRevisionSession();
         scrollMessagesToBottom();
     }
@@ -175,8 +205,10 @@ function renderRevisionSession() {
 
     const input = revisionRoot.querySelector('.stsm-revision-input');
     const send = revisionRoot.querySelector('.stsm-revision-send');
-    input.disabled = activeSession.isGenerating;
-    send.disabled = activeSession.isGenerating;
+    const extensionState = getExtensionState();
+    const canGenerate = extensionState.enabled && !extensionState.operation && !activeSession.isGenerating;
+    input.disabled = !canGenerate;
+    send.disabled = !canGenerate;
     revisionRoot.querySelector('.stsm-revision-recent').disabled = activeSession.isGenerating || !getRecentRevisionConversation();
     updateApplyControl();
 }
@@ -197,7 +229,7 @@ function updateApplyControl() {
     if (!revisionPopup) return;
     const control = revisionPopup.dlg.querySelector(`[data-result="${POPUP_RESULT.CUSTOM1}"]`);
     if (!control) return;
-    const disabled = activeSession.isGenerating || !getLatestAssistantMessage();
+    const disabled = Boolean(getExtensionState().operation) || activeSession.isGenerating || !getLatestAssistantMessage();
     control.classList.toggle('disabled', disabled);
     control.setAttribute('aria-disabled', String(disabled));
 }
@@ -220,6 +252,12 @@ async function applyLatestRevision(onApplied) {
         return true;
     } catch (error) {
         console.error('[Chat Summarizer] Failed to apply revision:', error);
+        addExtensionErrorLog(error, {
+            operation: 'revision-apply',
+            title: '수정안 적용 실패',
+            message: '생성된 수정안을 요약 기록에 적용하지 못했습니다.',
+            context: { range: getSessionRange(activeSession) },
+        });
         toastr.error(error.message || '수정안 적용에 실패했습니다.');
         return false;
     }
@@ -278,8 +316,20 @@ async function persistSession(session) {
         });
     } catch (error) {
         console.error('[Chat Summarizer] Failed to save recent revision conversation:', error);
+        addExtensionErrorLog(error, {
+            operation: 'revision-save',
+            title: '최근 수정 대화 저장 실패',
+            message: '최근 수정 대화를 저장하지 못했습니다.',
+            context: { range: getSessionRange(session) },
+        });
         toastr.warning('최근 수정 대화를 저장하지 못했습니다.');
     }
+}
+
+function getSessionRange(session) {
+    const startId = Number(session?.startId);
+    const endId = Number(session?.endId);
+    return Number.isInteger(startId) && Number.isInteger(endId) ? { startId, endId } : null;
 }
 
 function getLatestAssistantMessage() {

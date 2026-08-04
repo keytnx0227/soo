@@ -10,7 +10,57 @@ export function buildPopup() {
             ${renderTab('settings', '요약 설정')}
         </div>
 
+        <div class="stsm-extension-status" role="status" aria-live="polite">
+            <span class="stsm-extension-status-face" aria-hidden="true">◕‿◕</span>
+            <div class="stsm-extension-status-copy">
+                <strong class="stsm-extension-status-enabled">켜짐</strong>
+                <span class="stsm-extension-status-operation">작업 없음</span>
+            </div>
+            <div class="stsm-extension-status-actions">
+                <div class="stsm-error-popover-wrap">
+                    <button id="stsm-error-toggle" class="menu_button menu_button_icon interactable" type="button" title="확장 오류 로그" aria-label="확장 오류 로그" aria-expanded="false">
+                        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    </button>
+                    <div id="stsm-error-popover" class="stsm-error-popover" hidden>
+                        <div class="stsm-error-popover-title">확장 오류 로그</div>
+                        <button id="stsm-clear-errors" class="menu_button interactable" type="button">전부 지우기</button>
+                        <button id="stsm-close-errors" class="menu_button menu_button_icon interactable" type="button" title="닫기" aria-label="닫기">
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                        </button>
+                        <div id="stsm-error-list" class="stsm-error-list"></div>
+                    </div>
+                </div>
+                <label class="stsm-switch" title="요약 확장 켜기/끄기">
+                    <input id="stsm-extension-enabled" type="checkbox" />
+                    <span></span>
+                </label>
+            </div>
+        </div>
+
         <section id="stsm-panel-summary" class="stsm-panel" role="tabpanel">
+            <div class="stsm-summary-status" aria-label="요약 현황">
+                <div class="stsm-summary-status-title">
+                    <span>요약 현황</span>
+                    <button id="stsm-open-coverage-map" class="menu_button interactable" type="button" title="채팅방 요약 현황 보기">
+                        <i class="fa-solid fa-chart-simple" aria-hidden="true"></i>
+                        <span>현황 보기</span>
+                    </button>
+                </div>
+                <div class="stsm-summary-status-metrics">
+                    <div class="stsm-summary-status-item">
+                        <span>전체 메시지 개수</span>
+                        <strong id="stsm-status-total">0</strong>
+                    </div>
+                    <div class="stsm-summary-status-item">
+                        <span>요약된 메시지 수</span>
+                        <strong id="stsm-status-summarized">0</strong>
+                    </div>
+                    <div class="stsm-summary-status-item">
+                        <span>마지막 요약 ID</span>
+                        <strong id="stsm-status-last-id">-</strong>
+                    </div>
+                </div>
+            </div>
             <div class="stsm-summary-toolbar">
                 <div class="stsm-range-field">
                     <span>요약 범위 지정</span>
@@ -36,25 +86,45 @@ export function buildPopup() {
             <div class="stsm-settings-section">
                 <div class="stsm-section-title">요약 사용 설정</div>
                 <div class="stsm-injection-grid">
-                    <label class="stsm-field"><span>사용 방법</span><select id="stsm-injection-mode" class="text_pole"><option value="macro">매크로로만 사용</option><option value="depth">채팅 깊이에 주입</option><option value="prompt">프롬프트 영역에 주입</option></select></label>
+                    <div class="stsm-injection-mode-group">
+                        <label class="stsm-field"><span>사용 방법</span><select id="stsm-injection-mode" class="text_pole"><option value="macro">매크로로만 사용</option><option value="depth">채팅 깊이에 주입</option><option value="prompt">프롬프트 영역에 주입</option></select></label>
+                        <div class="stsm-macro-name"><span><code>{{sumiSummary}}</code> 매크로를 통해 요약을 원하는 위치에 삽입할 수 있습니다.</span></div>
+                    </div>
                     <label class="stsm-field stsm-injection-depth"><span>깊이</span><input id="stsm-injection-depth" class="text_pole" type="number" min="0" max="10000" /></label>
                     <label class="stsm-field stsm-injection-role"><span>역할</span><select id="stsm-injection-role" class="text_pole"><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></label>
                     <label class="stsm-field stsm-injection-position"><span>Story/Main Prompt 위치</span><select id="stsm-injection-position" class="text_pole"><option value="before">앞</option><option value="after">뒤</option></select></label>
                 </div>
-                <div class="stsm-macro-name"><span><code>{{sumiSummary}}</code> 매크로를 통해 요약을 원하는 위치에 삽입할 수 있습니다.</span></div>
+                <label class="stsm-field stsm-record-template-field">
+                    <span>개별 요약 레코드 포맷</span>
+                    <textarea id="stsm-summary-record-template" class="text_pole monospace" rows="5"></textarea>
+                </label>
+                <details class="stsm-record-template-help">
+                    <summary>사용 가능한 매크로</summary>
+                    <div class="stsm-record-template-macros">
+                        <div><code>{{sumiRecordStartId}}</code><span>레코드 시작 메시지 ID</span></div>
+                        <div><code>{{sumiRecordEndId}}</code><span>레코드 종료 메시지 ID</span></div>
+                        <div><code>{{sumiRecordContent}}</code><span>저장된 요약 내용</span></div>
+                    </div>
+                </details>
             </div>
         </section>
 
         <section id="stsm-panel-records" class="stsm-panel" role="tabpanel" hidden>
             <div class="stsm-records-toolbar">
-                <button id="stsm-preview-summary-context" class="menu_button interactable" type="button">
-                    <i class="fa-solid fa-eye"></i>
-                    <span>미리보기</span>
-                </button>
+                <div class="stsm-records-toolbar-actions">
+                    <button id="stsm-preview-summary-context" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-eye"></i>
+                        <span>미리보기</span>
+                    </button>
+                    <button id="stsm-adjust-record-ranges" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-arrows-left-right"></i>
+                        <span>범위 일괄 교정</span>
+                    </button>
+                </div>
                 <label class="stsm-field stsm-sort-field">
                     <select id="stsm-record-sort" class="text_pole" aria-label="요약 기록 정렬">
-                        <option value="newest">최신 순</option>
-                        <option value="oldest">오래된 순</option>
+                        <option value="id-desc">ID 높은 순</option>
+                        <option value="id-asc">ID 낮은 순</option>
                     </select>
                 </label>
             </div>
@@ -89,6 +159,17 @@ export function buildPopup() {
                     <span>요약 주입 최대 토큰</span>
                     <input id="stsm-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
                 </label>
+                <div class="stsm-field stsm-auto-hide-field">
+                    <span>요약한 메시지 자동 숨김</span>
+                    <label class="stsm-switch" title="요약한 메시지 자동 숨김">
+                        <input id="stsm-auto-hide-summarized" type="checkbox" />
+                        <span></span>
+                    </label>
+                </div>
+            </div>
+            <div class="stsm-auto-hide-actions">
+                <button id="stsm-unhide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 해제</button>
+                <button id="stsm-hide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 진행</button>
             </div>
 
             <div class="stsm-settings-section">

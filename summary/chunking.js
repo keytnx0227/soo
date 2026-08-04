@@ -1,3 +1,5 @@
+import { isMessageAutoHiddenBySummarizer } from '../visibility/message-visibility-state.js';
+
 export function createSummaryChunks(chat, start, end, chunkSize) {
     const chunks = [];
 
@@ -9,7 +11,9 @@ export function createSummaryChunks(chat, start, end, chunkSize) {
             messages.push({ id, message: chat[id] });
         }
 
-        if (messages.some(({ message }) => message && !message.is_system && String(message.mes || '').trim())) {
+        if (messages.some(({ message }) => message
+            && (!message.is_system || isMessageAutoHiddenBySummarizer(message))
+            && String(message.mes || '').trim())) {
             chunks.push({ startId: chunkStart, endId: chunkEnd, messages });
         }
     }

@@ -1,8 +1,11 @@
 import { createSummaryChunks } from './chunking.js';
-import { generateSummary } from './generation.js';
-import { buildSummaryPrompt } from './prompt-builder.js';
+import { generateSummary } from '../connection/generation.js';
+import { assertExtensionEnabled } from '../core/extension-state.js';
+import { buildSummaryPrompt } from '../prompts/prompt-builder.js';
 import { findOverlappingRanges, formatRanges, getUncoveredRanges } from './range-utils.js';
-import { getSettings } from './settings.js';
+import { getSettings } from '../core/settings.js';
+import { createSourceFingerprint } from './source-tracking.js';
+import { createId } from '../core/utils.js';
 import {
     addSummaryRecord,
     getSummaryRecord,
@@ -38,6 +41,7 @@ export function validateSummaryRange(startId, endId) {
 }
 
 export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
+    assertExtensionEnabled();
     const { start, end, chat } = validateSummaryRange(startId, endId);
     validateUncoveredRange(start, end);
     const chunkSize = getSettings().summarization.chunkSize;
@@ -47,29 +51,45 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
         throw new Error('선택한 범위에 요약할 메시지가 없습니다.');
     }
 
+    const batchId = createId('batch');
     const records = [];
     for (let index = 0; index < chunks.length; index += 1) {
-        ensureChatUnchanged(chat);
         const chunk = chunks[index];
-        onProgress?.({ current: index + 1, total: chunks.length, chunk });
+        let record;
+        try {
+            ensureChatUnchanged(chat);
+            onProgress?.({ current: index + 1, total: chunks.length, chunk });
 
-        const prompt = await buildSummaryPrompt(chunk);
-        if (!prompt.trim()) {
-            throw new Error(`#${chunk.startId} ~ #${chunk.endId} 청크의 프롬프트가 비어 있습니다.`);
+            const prompt = await buildSummaryPrompt(chunk);
+            if (!prompt.trim()) {
+                throw new Error('조립된 요약 프롬프트가 비어 있습니다.');
+            }
+
+            const content = await generateSummary(prompt);
+            ensureChatUnchanged(chat);
+            if (!content) {
+                throw new Error('요약 응답이 비어 있습니다.');
+            }
+
+            record = await addSummaryRecord({
+                batchId,
+                startId: chunk.startId,
+                endId: chunk.endId,
+                content,
+                prompt,
+                sourceFingerprint: createSourceFingerprint(chunk.messages),
+            });
+        } catch (error) {
+            throw createBatchInterruptionError({
+                error,
+                batchId,
+                requestedRange: { startId: start, endId: end },
+                failedChunk: chunk,
+                completedRecords: records,
+                unattemptedChunks: chunks.slice(index + 1),
+            });
         }
 
-        const content = await generateSummary(prompt);
-        ensureChatUnchanged(chat);
-        if (!content) {
-            throw new Error(`#${chunk.startId} ~ #${chunk.endId} 청크의 요약 응답이 비어 있습니다.`);
-        }
-
-        const record = await addSummaryRecord({
-            startId: chunk.startId,
-            endId: chunk.endId,
-            content,
-            prompt,
-        });
         records.push(record);
         await onRecord?.(record);
     }
@@ -77,7 +97,42 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
     return records;
 }
 
+function createBatchInterruptionError({
+    error,
+    batchId,
+    requestedRange,
+    failedChunk,
+    completedRecords,
+    unattemptedChunks,
+}) {
+    const completedLabel = completedRecords.length ? formatChunkList(completedRecords) : '없음';
+    const unattemptedLabel = unattemptedChunks.length ? formatChunkList(unattemptedChunks) : '없음';
+    const reason = error instanceof Error ? error.message : String(error || '알 수 없는 오류');
+    const wrappedError = new Error(
+        `#${failedChunk.startId} ~ #${failedChunk.endId} 요약에 실패해 `
+        + `요청 범위 #${requestedRange.startId} ~ #${requestedRange.endId} 작업을 중단했어요. `
+        + `완료 청크: ${completedLabel} / 이후 미시도 청크: ${unattemptedLabel} / 원인: ${reason}`,
+    );
+    wrappedError.cause = error;
+    wrappedError.summaryBatch = {
+        batchId,
+        requestedRange,
+        failedChunk: {
+            startId: failedChunk.startId,
+            endId: failedChunk.endId,
+        },
+        completedChunks: completedRecords.map(({ startId, endId }) => ({ startId, endId })),
+        unattemptedChunks: unattemptedChunks.map(({ startId, endId }) => ({ startId, endId })),
+    };
+    return wrappedError;
+}
+
+function formatChunkList(chunks) {
+    return chunks.map(chunk => `#${chunk.startId} ~ #${chunk.endId}`).join(', ');
+}
+
 export async function regenerateSummaryRecord(recordId) {
+    assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record) throw new Error('재생성할 요약 기록을 찾지 못했습니다.');
 
@@ -93,7 +148,10 @@ export async function regenerateSummaryRecord(recordId) {
     ensureChatUnchanged(chat);
     if (!content) throw new Error('재생성된 요약 응답이 비어 있습니다.');
 
-    const updatedRecord = await updateSummaryRecordContent(record.id, content, { prompt });
+    const updatedRecord = await updateSummaryRecordContent(record.id, content, {
+        prompt,
+        sourceFingerprint: createSourceFingerprint(chunk.messages),
+    });
     if (!updatedRecord) throw new Error('재생성 결과를 저장할 요약 기록을 찾지 못했습니다.');
     return updatedRecord;
 }

@@ -1,13 +1,15 @@
-import { translate } from '../../../../scripts/extensions/translate/index.js';
-import { getSettings } from './settings.js';
+import { translate } from '../../../../../scripts/extensions/translate/index.js';
+import { assertExtensionEnabled } from '../core/extension-state.js';
+import { getSettings } from '../core/settings.js';
 import {
     clearAllSummaryTranslations,
     getSummaryRecord,
     getSummaryRecords,
     setSummaryRecordTranslation,
-} from './summary-store.js';
+} from '../summary/summary-store.js';
 
 export async function translateSummaryRecord(recordId) {
+    assertExtensionEnabled();
     const sourceChat = SillyTavern.getContext().chat;
     const record = getSummaryRecord(recordId);
     if (!record) throw new Error('번역할 요약 기록을 찾지 못했습니다.');

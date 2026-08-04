@@ -1,20 +1,30 @@
-import { saveSettings as saveSillyTavernSettings, saveSettingsDebounced } from '../../../../script.js';
+import { saveSettings as saveSillyTavernSettings, saveSettingsDebounced } from '../../../../../script.js';
 import { createId } from './utils.js';
 
-export const MODULE_NAME = 'st_chat_summarizer';
+export const MODULE_NAME = 'sumi_chat_summarizer';
 
 export const PROMPT_TYPES = Object.freeze({
     SUMMARY: 'summary',
     REVISION: 'revision',
 });
 
+const PROMPT_SCHEMA_VERSION = 3;
+
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
-    CHARACTER: 'character',
+    CHARACTER_DESCRIPTION: 'characterDescription',
+    CHARACTER_PERSONALITY: 'characterPersonality',
+    CHARACTER_SCENARIO: 'characterScenario',
+    PERSONA: 'persona',
     WORLD_INFO: 'worldInfo',
-    SUMMARY_TARGET: 'summaryTarget',
+    RECENT_SUMMARIES: 'recentSummaries',
+    RECENT_SUMMARY_SEPARATOR: 'recentSummarySeparator',
+    SUMMARY_MESSAGES: 'summaryMessages',
     CURRENT_SUMMARY: 'currentSummary',
-    REVISION_HISTORY: 'revisionHistory',
+    REVISION_MESSAGES: 'revisionMessages',
+    LEGACY_CHARACTER: 'character',
+    LEGACY_SUMMARY_TARGET: 'summaryTarget',
+    LEGACY_REVISION_HISTORY: 'revisionHistory',
 });
 
 export const PROVIDERS = Object.freeze([
@@ -37,7 +47,12 @@ You are revising an existing conversation summary. Apply the user's feedback acc
 
 const DEFAULT_REVISION_TEMPLATE = 'Return only the revised summary without a preface, explanation, or commentary.';
 
+const DEFAULT_SUMMARY_RECORD_TEMPLATE = `<Summary range="#{{sumiRecordStartId}} ~ #{{sumiRecordEndId}}">
+{{sumiRecordContent}}
+</Summary>`;
+
 export const defaultSettings = Object.freeze({
+    enabled: true,
     connectionMode: 'profile',
     connection: {
         profile: {
@@ -60,6 +75,8 @@ export const defaultSettings = Object.freeze({
     summarization: {
         chunkSize: 30,
         injectionMaxTokens: 24000,
+        autoHideSummarizedMessages: false,
+        recordTemplate: DEFAULT_SUMMARY_RECORD_TEMPLATE,
         injection: {
             mode: 'macro',
             position: 'after',
@@ -95,6 +112,13 @@ export function saveSettings() {
     saveSettingsDebounced();
 }
 
+export function setExtensionEnabled(enabled) {
+    const settings = getSettings();
+    settings.enabled = Boolean(enabled);
+    saveSettings();
+    return settings.enabled;
+}
+
 export async function saveSettingsNow() {
     await saveSillyTavernSettings();
 }
@@ -104,6 +128,13 @@ export function setChunkSize(value) {
     settings.summarization.chunkSize = clampInteger(value, 1, 1000, defaultSettings.summarization.chunkSize);
     saveSettings();
     return settings.summarization.chunkSize;
+}
+
+export function setAutoHideSummarizedMessages(enabled) {
+    const settings = getSettings();
+    settings.summarization.autoHideSummarizedMessages = Boolean(enabled);
+    saveSettings();
+    return settings.summarization.autoHideSummarizedMessages;
 }
 
 export function setSummarizationSettings(patch) {
@@ -152,6 +183,13 @@ export function setActivePreset(type, presetId) {
     return true;
 }
 
+export function setPromptSeparatorsHidden(type, hidden) {
+    const editor = getPromptEditor(type);
+    editor.hideSeparators = Boolean(hidden);
+    saveSettings();
+    return editor.hideSeparators;
+}
+
 export function addPromptBlock(type, name, content) {
     const block = createPromptBlock({ name, content });
     updateActivePreset(type, preset => ({
@@ -167,7 +205,7 @@ export function updatePromptBlock(type, blockId, patch) {
     updateActivePreset(type, preset => ({
         ...preset,
         blocks: preset.blocks.map(block => {
-            if (block.id !== blockId || block.kind !== BLOCK_KINDS.EDITABLE) return block;
+            if (block.id !== blockId) return block;
             updatedBlock = createPromptBlock({ ...block, ...patch, id: block.id, kind: block.kind, locked: block.locked });
             return updatedBlock;
         }),
@@ -266,20 +304,27 @@ export function createPromptBlock({
     enabled = true,
     locked = false,
     kind = BLOCK_KINDS.EDITABLE,
+    separator = false,
+    config = {},
 } = {}) {
+    const normalizedKind = Object.values(BLOCK_KINDS).includes(kind) ? kind : BLOCK_KINDS.EDITABLE;
     return {
         id,
         name: String(name || '새 프롬프트'),
         content: String(content || ''),
         enabled: Boolean(enabled),
         locked: Boolean(locked),
-        kind: Object.values(BLOCK_KINDS).includes(kind) ? kind : BLOCK_KINDS.EDITABLE,
+        kind: normalizedKind,
+        separator: Boolean(separator),
+        config: normalizePromptBlockConfig(normalizedKind, config),
     };
 }
 
 function createPromptEditorDefaults(type) {
     const preset = getDefaultPreset(type);
     return {
+        schemaVersion: PROMPT_SCHEMA_VERSION,
+        hideSeparators: false,
         activePresetId: preset.id,
         presets: [preset],
     };
@@ -292,8 +337,8 @@ function getDefaultPreset(type) {
             name: '기본 프리셋',
             blocks: [
                 createPromptBlock({ id: 'revision-main', name: '수정 대화 기본 지시문', content: DEFAULT_REVISION_MAIN_PROMPT, locked: true }),
-                createPromptBlock({ id: 'current-summary', name: '현재 요약', kind: BLOCK_KINDS.CURRENT_SUMMARY, locked: true }),
-                createPromptBlock({ id: 'revision-history', name: '수정 대화 내역', kind: BLOCK_KINDS.REVISION_HISTORY, locked: true }),
+                ...createCurrentSummaryBlocks(),
+                ...createRevisionConversationBlocks(),
                 createPromptBlock({ id: 'revision-template', name: '수정 결과 템플릿', content: DEFAULT_REVISION_TEMPLATE, locked: true }),
             ],
         });
@@ -304,12 +349,74 @@ function getDefaultPreset(type) {
         name: '기본 프리셋',
         blocks: [
             createPromptBlock({ id: 'summary-main', name: 'Main Prompt', content: DEFAULT_SUMMARY_MAIN_PROMPT, locked: true }),
-            createPromptBlock({ id: 'character-info', name: '캐릭터 정보', kind: BLOCK_KINDS.CHARACTER, locked: true }),
-            createPromptBlock({ id: 'world-info', name: '월드 인포', kind: BLOCK_KINDS.WORLD_INFO, locked: true }),
-            createPromptBlock({ id: 'summary-target', name: '요약 대상', kind: BLOCK_KINDS.SUMMARY_TARGET, locked: true }),
+            ...createCharacterInformationBlocks(),
+            ...createWorldInfoBlocks(),
+            ...createRecentSummaryBlocks(),
+            ...createSummaryTargetBlocks(),
             createPromptBlock({ id: 'summary-template', name: '요약 템플릿', content: DEFAULT_SUMMARY_TEMPLATE, locked: true }),
         ],
     });
+}
+
+function createCharacterInformationBlocks(source = {}) {
+    const enabled = source.enabled ?? true;
+    const prefix = source.id ? `${source.id}-v2` : 'character-info';
+    return [
+        createPromptBlock({ id: `${prefix}-start`, name: '캐릭터 정보 구분선 시작', content: '<Character Information>', enabled, locked: true, separator: true }),
+        createPromptBlock({ id: `${prefix}-description`, name: '{{char}} 설정', content: '## {{char}} Profile\n\n{{sumiCharacterDescription}}', enabled, locked: true, kind: BLOCK_KINDS.CHARACTER_DESCRIPTION }),
+        createPromptBlock({ id: `${prefix}-personality`, name: '{{char}} 성격', content: '## Personality\n\n{{sumiCharacterPersonality}}', enabled, locked: true, kind: BLOCK_KINDS.CHARACTER_PERSONALITY }),
+        createPromptBlock({ id: `${prefix}-scenario`, name: '시나리오', content: '## Scenario\n\n{{sumiCharacterScenario}}', enabled, locked: true, kind: BLOCK_KINDS.CHARACTER_SCENARIO }),
+        createPromptBlock({ id: `${prefix}-persona`, name: '{{user}} 설정', content: '## {{user}} Profile\n\n{{sumiPersona}}', enabled, locked: true, kind: BLOCK_KINDS.PERSONA }),
+        createPromptBlock({ id: `${prefix}-end`, name: '캐릭터 정보 구분선 끝', content: '</Character Information>', enabled, locked: true, separator: true }),
+    ];
+}
+
+function createWorldInfoBlocks(source = {}) {
+    const enabled = source.enabled ?? true;
+    const prefix = source.id ? `${source.id}-v2` : 'world-info';
+    return [
+        createPromptBlock({ id: `${prefix}-start`, name: '월드 인포 구분선 시작', content: '<World Info>', enabled, locked: true, separator: true }),
+        createPromptBlock({ id: `${prefix}-content`, name: '월드 인포', content: '{{sumiWorldInfo}}', enabled, locked: true, kind: BLOCK_KINDS.WORLD_INFO }),
+        createPromptBlock({ id: `${prefix}-end`, name: '월드 인포 구분선 끝', content: '</World Info>', enabled, locked: true, separator: true }),
+    ];
+}
+
+function createRecentSummaryBlocks() {
+    return [
+        createPromptBlock({ id: 'recent-summaries-start', name: '최근 요약 구분선 시작', content: '<Recent Summaries>', locked: true, separator: true, kind: BLOCK_KINDS.RECENT_SUMMARY_SEPARATOR }),
+        createPromptBlock({ id: 'recent-summaries-content', name: '최근 요약', content: '{{sumiRecentSummaries}}', locked: true, kind: BLOCK_KINDS.RECENT_SUMMARIES }),
+        createPromptBlock({ id: 'recent-summaries-end', name: '최근 요약 구분선 끝', content: '</Recent Summaries>', locked: true, separator: true, kind: BLOCK_KINDS.RECENT_SUMMARY_SEPARATOR }),
+    ];
+}
+
+function createSummaryTargetBlocks(source = {}) {
+    const enabled = source.enabled ?? true;
+    const prefix = source.id ? `${source.id}-v2` : 'summary-target';
+    return [
+        createPromptBlock({ id: `${prefix}-start`, name: '요약 대상 구분선 시작', content: '<Summary Target range="#{{sumiStartId}} ~ #{{sumiEndId}}">', enabled, locked: true, separator: true }),
+        createPromptBlock({ id: `${prefix}-messages`, name: '요약 대상 메시지 포맷', content: '#{{sumiMessageId}} {{sumiMessageName}}: {{sumiMessageContent}}', enabled, locked: true, kind: BLOCK_KINDS.SUMMARY_MESSAGES }),
+        createPromptBlock({ id: `${prefix}-end`, name: '요약 대상 구분선 끝', content: '</Summary Target>', enabled, locked: true, separator: true }),
+    ];
+}
+
+function createCurrentSummaryBlocks(source = {}) {
+    const enabled = source.enabled ?? true;
+    const prefix = source.id ? `${source.id}-v2` : 'current-summary';
+    return [
+        createPromptBlock({ id: `${prefix}-start`, name: '현재 요약 구분선 시작', content: '<Current Summary>', enabled, locked: true, separator: true }),
+        createPromptBlock({ id: `${prefix}-content`, name: '현재 요약', content: '{{sumiCurrentSummary}}', enabled, locked: true, kind: BLOCK_KINDS.CURRENT_SUMMARY }),
+        createPromptBlock({ id: `${prefix}-end`, name: '현재 요약 구분선 끝', content: '</Current Summary>', enabled, locked: true, separator: true }),
+    ];
+}
+
+function createRevisionConversationBlocks(source = {}) {
+    const enabled = source.enabled ?? true;
+    const prefix = source.id ? `${source.id}-v2` : 'revision-history';
+    return [
+        createPromptBlock({ id: `${prefix}-start`, name: '수정 대화 구분선 시작', content: '<Revision Conversation>', enabled, locked: true, separator: true }),
+        createPromptBlock({ id: `${prefix}-messages`, name: '수정 대화 메시지 포맷', content: '<RevisionMessage role="{{sumiRevisionRole}}">\n{{sumiRevisionMessage}}\n</RevisionMessage>', enabled, locked: true, kind: BLOCK_KINDS.REVISION_MESSAGES }),
+        createPromptBlock({ id: `${prefix}-end`, name: '수정 대화 구분선 끝', content: '</Revision Conversation>', enabled, locked: true, separator: true }),
+    ];
 }
 
 function createPreset({ id = createId('preset'), name = '새 프리셋', blocks = [] } = {}) {
@@ -338,12 +445,15 @@ function replaceActivePreset(type, nextPreset) {
 }
 
 function normalizeSettings(settings) {
+    settings.enabled = Boolean(settings.enabled);
     settings.connectionMode = ['profile', 'custom'].includes(settings.connectionMode) ? settings.connectionMode : 'profile';
     settings.connection.profile = normalizeConnection(settings.connection.profile, defaultSettings.connection.profile);
     settings.connection.custom = normalizeConnection(settings.connection.custom, defaultSettings.connection.custom);
     settings.summarization.chunkSize = clampInteger(settings.summarization.chunkSize, 1, 1000, defaultSettings.summarization.chunkSize);
     delete settings.summarization.autoStartFromLastSummary;
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
+    settings.summarization.autoHideSummarizedMessages = Boolean(settings.summarization.autoHideSummarizedMessages);
+    settings.summarization.recordTemplate = String(settings.summarization.recordTemplate ?? defaultSettings.summarization.recordTemplate);
     settings.summarization.injection = normalizeInjectionSettings(settings.summarization.injection);
     settings.translation = normalizeTranslationSettings(settings.translation);
 
@@ -392,8 +502,14 @@ function normalizeConnection(connection, fallback) {
 function normalizePromptEditor(editor, type) {
     const defaultPreset = getDefaultPreset(type);
     const source = editor && typeof editor === 'object' ? editor : {};
-    let presets = Array.isArray(source.presets) && source.presets.length
-        ? source.presets.map(preset => createPreset(preset))
+    const hasStoredPresets = Array.isArray(source.presets) && source.presets.length;
+    const sourceSchemaVersion = Number(source.schemaVersion || 1);
+    const needsMigration = hasStoredPresets && (
+        sourceSchemaVersion < PROMPT_SCHEMA_VERSION
+        || source.presets.some(hasLegacyPromptBlocks)
+    );
+    let presets = hasStoredPresets
+        ? source.presets.map(preset => createPreset(needsMigration ? migratePromptPreset(preset, type, sourceSchemaVersion) : preset))
         : [defaultPreset];
 
     if (!presets.some(preset => preset.id === defaultPreset.id)) {
@@ -404,7 +520,73 @@ function normalizePromptEditor(editor, type) {
         ? source.activePresetId
         : presets[0].id;
 
-    return { activePresetId, presets };
+    return {
+        schemaVersion: PROMPT_SCHEMA_VERSION,
+        hideSeparators: Boolean(source.hideSeparators),
+        activePresetId,
+        presets,
+    };
+}
+
+function hasLegacyPromptBlocks(preset) {
+    return Array.isArray(preset?.blocks) && preset.blocks.some(block => (
+        [BLOCK_KINDS.LEGACY_CHARACTER, BLOCK_KINDS.LEGACY_SUMMARY_TARGET, BLOCK_KINDS.LEGACY_REVISION_HISTORY].includes(block?.kind)
+        || (block?.kind === BLOCK_KINDS.WORLD_INFO && !String(block.content || '').trim())
+        || (block?.kind === BLOCK_KINDS.CURRENT_SUMMARY && !String(block.content || '').trim())
+    ));
+}
+
+function migratePromptPreset(preset, type, sourceSchemaVersion) {
+    const blocks = Array.isArray(preset?.blocks) ? preset.blocks : [];
+    let migratedBlocks = blocks.flatMap(block => {
+        if (block?.kind === BLOCK_KINDS.LEGACY_CHARACTER) return createCharacterInformationBlocks(block);
+        if (block?.kind === BLOCK_KINDS.WORLD_INFO && !String(block.content || '').trim()) return createWorldInfoBlocks(block);
+        if (block?.kind === BLOCK_KINDS.LEGACY_SUMMARY_TARGET) return createSummaryTargetBlocks(block);
+        if (block?.kind === BLOCK_KINDS.CURRENT_SUMMARY && !String(block.content || '').trim()) return createCurrentSummaryBlocks(block);
+        if (block?.kind === BLOCK_KINDS.LEGACY_REVISION_HISTORY) return createRevisionConversationBlocks(block);
+        return { ...block, separator: block.separator ?? isKnownSeparatorBlock(block) };
+    });
+
+    if (type === PROMPT_TYPES.SUMMARY
+        && sourceSchemaVersion < 3
+        && !migratedBlocks.some(block => block.kind === BLOCK_KINDS.RECENT_SUMMARIES)) {
+        const targetMessageIndex = migratedBlocks.findIndex(block => block.kind === BLOCK_KINDS.SUMMARY_MESSAGES);
+        const insertIndex = targetMessageIndex < 0
+            ? migratedBlocks.length
+            : targetMessageIndex > 0 && migratedBlocks[targetMessageIndex - 1]?.separator
+                ? targetMessageIndex - 1
+                : targetMessageIndex;
+        migratedBlocks = [
+            ...migratedBlocks.slice(0, insertIndex),
+            ...createRecentSummaryBlocks(),
+            ...migratedBlocks.slice(insertIndex),
+        ];
+    }
+
+    return {
+        ...preset,
+        blocks: migratedBlocks,
+    };
+}
+
+function isKnownSeparatorBlock(block) {
+    return Boolean(block?.locked && /(character-info|world-info|summary-target|current-summary|revision-history).*(?:-start|-end)$/.test(String(block.id || '')));
+}
+
+function normalizePromptBlockConfig(kind, config) {
+    if (kind !== BLOCK_KINDS.RECENT_SUMMARIES) return {};
+
+    const source = config && typeof config === 'object' ? config : {};
+    return {
+        countLimit: {
+            enabled: Boolean(source.countLimit?.enabled),
+            value: clampInteger(source.countLimit?.value, 1, 1000, 3),
+        },
+        tokenLimit: {
+            enabled: Boolean(source.tokenLimit?.enabled),
+            value: clampInteger(source.tokenLimit?.value, 100, 200000, 4000),
+        },
+    };
 }
 
 function mergeDefaults(target, defaults) {

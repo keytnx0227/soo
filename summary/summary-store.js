@@ -1,7 +1,8 @@
-import { createId } from './utils.js';
-import { getStringHash } from '../../../../scripts/utils.js';
+import { createId } from '../core/utils.js';
+import { getStringHash } from '../../../../../scripts/utils.js';
+import { normalizeSourceFingerprint } from './source-tracking.js';
 
-const METADATA_KEY = 'st_chat_summarizer';
+const METADATA_KEY = 'sumi_chat_summarizer';
 
 export function getSummaryRecords() {
     return getStore().records;
@@ -32,19 +33,27 @@ export async function setRecentRevisionConversation(conversation) {
     return structuredClone(normalized);
 }
 
-export async function addSummaryRecord({ startId, endId, content, prompt }) {
+export async function addSummaryRecord({ batchId, startId, endId, content, prompt, sourceFingerprint }) {
     const record = {
         id: createId('summary'),
+        batchId: normalizeOptionalId(batchId),
         startId: Number(startId),
         endId: Number(endId),
         content: String(content || '').trim(),
         contentHash: createContentHash(content),
+        sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
         prompt: String(prompt || ''),
         createdAt: new Date().toISOString(),
     };
     const store = getStore();
+    const previousRecords = store.records;
     store.records = [...store.records, record];
-    await SillyTavern.getContext().saveMetadata();
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
     notifyRecordsChanged();
     return record;
 }
@@ -66,7 +75,7 @@ export async function deleteSummaryRecord(recordId) {
     return true;
 }
 
-export async function updateSummaryRecordContent(recordId, content, { prompt } = {}) {
+export async function updateSummaryRecordContent(recordId, content, { prompt, sourceFingerprint } = {}) {
     const normalizedId = String(recordId);
     const normalizedContent = String(content || '').trim();
     if (!normalizedContent) throw new Error('요약 내용은 비워둘 수 없습니다.');
@@ -83,6 +92,9 @@ export async function updateSummaryRecordContent(recordId, content, { prompt } =
             ...record,
             content: normalizedContent,
             contentHash,
+            sourceFingerprint: sourceFingerprint === undefined
+                ? record.sourceFingerprint
+                : normalizeSourceFingerprint(sourceFingerprint),
             prompt: prompt === undefined ? record.prompt : String(prompt),
             translation: contentHash === record.contentHash ? record.translation : null,
             updatedAt: new Date().toISOString(),
@@ -100,6 +112,58 @@ export async function updateSummaryRecordContent(recordId, content, { prompt } =
     }
     notifyRecordsChanged();
     return updatedRecord;
+}
+
+export async function updateSummaryRecordRanges(updates) {
+    const normalizedUpdates = new Map((Array.isArray(updates) ? updates : []).map(update => [
+        String(update.id),
+        {
+            startId: Number(update.startId),
+            endId: Number(update.endId),
+        },
+    ]));
+    if (!normalizedUpdates.size) return [];
+    for (const range of normalizedUpdates.values()) {
+        if (!Number.isInteger(range.startId) || !Number.isInteger(range.endId)
+            || range.startId < 0 || range.startId > range.endId) {
+            throw new Error('저장할 요약 범위가 올바르지 않습니다.');
+        }
+    }
+
+    const store = getStore();
+    const previousRecords = store.records;
+    const previousRecentConversation = store.recentRevisionConversation;
+    const existingIds = new Set(store.records.map(record => record.id));
+    if ([...normalizedUpdates.keys()].some(id => !existingIds.has(id))) {
+        throw new Error('범위를 변경할 요약 기록을 찾지 못했습니다.');
+    }
+
+    const updatedRecords = [];
+    store.records = store.records.map(record => {
+        const range = normalizedUpdates.get(record.id);
+        if (!range) return record;
+        const updatedRecord = { ...record, ...range };
+        updatedRecords.push(updatedRecord);
+        return updatedRecord;
+    });
+
+    const recentRange = normalizedUpdates.get(store.recentRevisionConversation?.recordId);
+    if (recentRange) {
+        store.recentRevisionConversation = {
+            ...store.recentRevisionConversation,
+            ...recentRange,
+        };
+    }
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        store.recentRevisionConversation = previousRecentConversation;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return updatedRecords;
 }
 
 export async function setSummaryRecordTranslation(recordId, translation) {
@@ -172,16 +236,23 @@ function normalizeRecords(records) {
             const contentHash = createContentHash(content);
             return {
                 id: String(record.id || createId('summary')),
+                batchId: normalizeOptionalId(record.batchId),
                 startId: Math.max(0, Number(record.startId) || 0),
                 endId: Math.max(0, Number(record.endId) || 0),
                 content,
                 contentHash,
+                sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
                 prompt: String(record.prompt || ''),
                 createdAt: String(record.createdAt || new Date().toISOString()),
                 updatedAt: record.updatedAt ? String(record.updatedAt) : null,
                 translation: normalizeTranslation(record.translation, contentHash, record.contentHash),
             };
         });
+}
+
+function normalizeOptionalId(value) {
+    const normalized = String(value ?? '').trim();
+    return normalized || null;
 }
 
 function normalizeTranslation(translation, contentHash, previousContentHash) {

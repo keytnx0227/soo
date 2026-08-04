@@ -1,8 +1,9 @@
-import { Popup, POPUP_TYPE } from '../../../../scripts/popup.js';
-import { createSummaryChunks } from './chunking.js';
+import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { createSummaryChunks } from '../summary/chunking.js';
 import { buildSummaryPrompt } from './prompt-builder.js';
-import { buildCurrentRevisionPromptPreview } from './revision-chat-view.js';
-import { getSettings } from './settings.js';
+import { buildCurrentRevisionPromptPreview } from '../records/revision-chat-view.js';
+import { getSettings } from '../core/settings.js';
+import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 
 export function bindPromptInspector(root) {
     let timer = null;
@@ -14,11 +15,21 @@ export function bindPromptInspector(root) {
 
     root.querySelectorAll('.stsm-preview-prompt').forEach(button => {
         button.addEventListener('click', async () => {
-            const type = button.dataset.previewType;
-            const prompt = type === 'summary'
-                ? formatSummaryPreview(await buildSummaryPrompts(root))
-                : await buildCurrentRevisionPromptPreview();
-            await showPreview(type === 'summary' ? '요약 프롬프트 전체' : '요약 수정 대화 프롬프트 전체', prompt);
+            try {
+                const type = button.dataset.previewType;
+                const prompt = type === 'summary'
+                    ? formatSummaryPreview(await buildSummaryPrompts(root))
+                    : await buildCurrentRevisionPromptPreview();
+                await showPreview(type === 'summary' ? '요약 프롬프트 전체' : '요약 수정 대화 프롬프트 전체', prompt);
+            } catch (error) {
+                console.error('[Chat Summarizer] Prompt preview failed:', error);
+                addExtensionErrorLog(error, {
+                    operation: 'prompt-inspection',
+                    title: '프롬프트 미리보기 실패',
+                    message: '프롬프트 전체 보기를 열지 못했습니다.',
+                });
+                toastr.error('프롬프트 미리보기를 불러오지 못했습니다.');
+            }
         });
     });
     root.querySelectorAll('#stsm-range-start, #stsm-range-end, #stsm-chunk-size')
@@ -51,6 +62,11 @@ export function bindPromptInspector(root) {
             revisionOutput.textContent = `${revisionTokens.toLocaleString()} tokens`;
         } catch (error) {
             console.warn('[Chat Summarizer] Prompt token count failed:', error);
+            addExtensionErrorLog(error, {
+                operation: 'prompt-inspection',
+                title: '프롬프트 토큰 계산 실패',
+                message: '프롬프트 전송 토큰 수를 계산하지 못했습니다.',
+            });
             if (currentRun === runId) {
                 summaryOutput.textContent = '계산 실패';
                 revisionOutput.textContent = '계산 실패';

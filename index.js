@@ -1,20 +1,52 @@
 import { Popup, POPUP_TYPE } from '../../../../scripts/popup.js';
 import { copyText } from '../../../../scripts/utils.js';
-import { bindConnectionSettings } from './connection-settings-view.js';
-import { buildPopup } from './popup-template.js';
-import { bindPromptSettings } from './prompt-settings-view.js';
-import { bindPromptInspector } from './prompt-inspector.js';
-import { bindRecordsView, renderSummaryRecords } from './records-view.js';
-import { clearRevisionSession, openRevisionChat } from './revision-chat-view.js';
-import { getSettings, setChunkSize, setSummarizationSettings, setTranslationSettings } from './settings.js';
-import { initializeSummaryContext, refreshSummaryInjection } from './summary-context.js';
-import { regenerateSummaryRecord, summarizeRange } from './summary-service.js';
-import { deleteSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary-store.js';
+import { bindConnectionSettings } from './connection/connection-settings-view.js';
+import { bindCoverageMap } from './records/coverage-map-view.js';
+import {
+    beginOperation,
+    endOperation,
+    isExtensionEnabled,
+    updateOperation,
+} from './core/extension-state.js';
+import { bindExtensionStatus } from './ui/extension-status-view.js';
+import { buildPopup } from './ui/popup-template.js';
+import {
+    hideAllSummarizedMessages,
+    initializeMessageVisibility,
+    syncSummarizedMessageVisibility,
+    unhideAllSummarizedMessages,
+} from './visibility/message-visibility.js';
+import { bindPromptSettings } from './prompts/prompt-settings-view.js';
+import { bindPromptInspector } from './prompts/prompt-inspector.js';
+import { bindRangeAdjustment } from './records/range-adjustment-view.js';
+import {
+    bindRecordsView,
+    refreshSummaryRecordSourceStates,
+    renderSummaryRecords,
+} from './records/records-view.js';
+import {
+    clearRevisionSession,
+    openRevisionChat,
+    synchronizeRevisionSessionRanges,
+} from './records/revision-chat-view.js';
+import {
+    getSettings,
+    setAutoHideSummarizedMessages,
+    setChunkSize,
+    setSummarizationSettings,
+    setTranslationSettings,
+} from './core/settings.js';
+import { initializeSummaryContext, refreshSummaryInjection } from './summary/summary-context.js';
+import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
+import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary/summary-store.js';
+import { renderSummaryStatus } from './summary/summary-status-view.js';
+import { addExtensionErrorLog } from './diagnostics/summary-error-state.js';
+import { bindSummaryErrorView } from './diagnostics/summary-error-view.js';
 import {
     deleteAllSummaryTranslations,
     translateAllSummaryRecords,
     translateSummaryRecord,
-} from './translation-service.js';
+} from './translation/translation-service.js';
 
 let isMenuReady = false;
 let popup = null;
@@ -56,7 +88,7 @@ async function openSummarizerPopup() {
     getSettings();
     const root = buildPopup();
     currentRoot = root;
-    bindEvents(root);
+    const cleanup = bindEvents(root);
 
     popup = new Popup(root, POPUP_TYPE.TEXT, '', {
         wide: true,
@@ -67,12 +99,31 @@ async function openSummarizerPopup() {
     try {
         await popup.show();
     } finally {
+        cleanup();
         currentRoot = null;
         popup = null;
     }
 }
 
 function bindEvents(root) {
+    const unbindSummaryErrorView = bindSummaryErrorView(root);
+    const unbindExtensionStatus = bindExtensionStatus(root, async enabled => {
+        refreshSummaryInjection();
+        if (!enabled) return;
+
+        try {
+            await syncSummarizedMessageVisibility();
+        } catch (error) {
+            console.error('[Chat Summarizer] Failed to synchronize message visibility after enabling:', error);
+            addExtensionErrorLog(error, {
+                operation: 'message-visibility',
+                title: '확장 활성화 후 자동 숨김 동기화 실패',
+                message: '확장은 켜졌지만 요약 메시지 자동 숨김 동기화에 실패했습니다.',
+            });
+            toastr.warning('확장은 켜졌지만 요약 메시지 자동 숨김 동기화에 실패했습니다.');
+        }
+    });
+
     root.querySelectorAll('.stsm-tab').forEach(tab => {
         tab.addEventListener('click', () => setActiveTab(root, tab.dataset.tab));
     });
@@ -86,6 +137,7 @@ function bindEvents(root) {
     });
     bindSummarizationSettings(root);
     bindRangeActions(root);
+    bindCoverageMap(root);
 
     root.querySelector('#stsm-summarize').addEventListener('click', () => runSummarization(root));
     bindTranslationSettings(root);
@@ -96,6 +148,20 @@ function bindEvents(root) {
     bindPromptSettings(root);
     bindPromptInspector(root);
     bindRecordsView(root, bindRecordEvents);
+    bindRangeAdjustment(root, {
+        onApplied: async updatedRecords => {
+            synchronizeRevisionSessionRanges(updatedRecords);
+            renderSummaryRecords(root, bindRecordEvents);
+            renderRangeActions(root);
+            renderSummaryStatus(root);
+            await syncSummarizedMessageVisibility();
+        },
+    });
+    renderSummaryStatus(root);
+    return () => {
+        unbindSummaryErrorView();
+        unbindExtensionStatus();
+    };
 }
 
 function bindSummarizationSettings(root) {
@@ -105,12 +171,16 @@ function bindSummarizationSettings(root) {
     const depth = root.querySelector('#stsm-injection-depth');
     const role = root.querySelector('#stsm-injection-role');
     const position = root.querySelector('#stsm-injection-position');
+    const recordTemplate = root.querySelector('#stsm-summary-record-template');
+    const autoHide = root.querySelector('#stsm-auto-hide-summarized');
 
     maxTokens.value = settings.injectionMaxTokens;
     mode.value = settings.injection.mode;
     depth.value = settings.injection.depth;
     role.value = settings.injection.role;
     position.value = settings.injection.position;
+    recordTemplate.value = settings.recordTemplate;
+    autoHide.checked = settings.autoHideSummarizedMessages;
 
     maxTokens.addEventListener('change', event => setSummarizationSettings({ injectionMaxTokens: event.target.value }));
     mode.addEventListener('change', event => {
@@ -120,7 +190,63 @@ function bindSummarizationSettings(root) {
     depth.addEventListener('change', event => setSummarizationSettings({ injection: { ...getSettings().summarization.injection, depth: event.target.value } }));
     role.addEventListener('change', event => setSummarizationSettings({ injection: { ...getSettings().summarization.injection, role: event.target.value } }));
     position.addEventListener('change', event => setSummarizationSettings({ injection: { ...getSettings().summarization.injection, position: event.target.value } }));
+    recordTemplate.addEventListener('change', event => setSummarizationSettings({ recordTemplate: event.target.value }));
+    autoHide.addEventListener('change', async event => {
+        const enabled = setAutoHideSummarizedMessages(event.target.checked);
+        if (!enabled) return;
+
+        try {
+            const result = await syncSummarizedMessageVisibility();
+            if (result.hidden) toastr.success(`${result.hidden}개의 요약된 메시지를 숨겼습니다.`);
+        } catch (error) {
+            console.error('[Chat Summarizer] Failed to enable automatic message hiding:', error);
+            addExtensionErrorLog(error, {
+                operation: 'message-visibility',
+                title: '자동 숨김 적용 실패',
+                message: '요약 메시지 자동 숨김 적용에 실패했습니다.',
+            });
+            toastr.error('요약 메시지 자동 숨김 적용에 실패했습니다.');
+        }
+    });
+    root.querySelector('#stsm-hide-all-summarized').addEventListener('click', () => hideSummarizedMessages());
+    root.querySelector('#stsm-unhide-all-summarized').addEventListener('click', () => unhideSummarizedMessages());
     renderInjectionFields(root);
+}
+
+async function hideSummarizedMessages() {
+    let operationToken = null;
+    try {
+        operationToken = beginOperation('hiding', '요약 메시지 숨김 처리 중');
+        const result = await hideAllSummarizedMessages();
+        if (result.hidden) toastr.success(`${result.hidden}개의 요약된 메시지를 숨겼습니다.`);
+        else toastr.info('새로 숨길 요약 메시지가 없습니다.');
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to hide summarized messages:', error);
+        addExtensionErrorLog(error, {
+            operation: 'message-visibility',
+            title: '메시지 일괄 숨김 실패',
+            message: '요약 메시지 일괄 숨김에 실패했습니다.',
+        });
+        toastr.error('요약 메시지 일괄 숨김에 실패했습니다.');
+    } finally {
+        if (operationToken) endOperation(operationToken);
+    }
+}
+
+async function unhideSummarizedMessages() {
+    try {
+        const result = await unhideAllSummarizedMessages();
+        if (result.unhidden) toastr.success(`${result.unhidden}개의 요약 메시지 숨김을 해제했습니다.`);
+        else toastr.info('이 확장이 숨긴 메시지가 없습니다.');
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to unhide summarized messages:', error);
+        addExtensionErrorLog(error, {
+            operation: 'message-visibility',
+            title: '메시지 숨김 해제 실패',
+            message: '요약 메시지 숨김 해제에 실패했습니다.',
+        });
+        toastr.error('요약 메시지 숨김 해제에 실패했습니다.');
+    }
 }
 
 function bindRangeActions(root) {
@@ -223,16 +349,22 @@ async function runSummarization(root) {
     const startId = root.querySelector('#stsm-range-start').value;
     const endId = root.querySelector('#stsm-range-end').value;
 
+    let operationToken = null;
     try {
+        const initialLabel = startId.trim() && endId.trim()
+            ? `#${startId.trim()} ~ #${endId.trim()} 요약 중`
+            : '요약 준비 중';
+        operationToken = beginOperation('summarizing', initialLabel);
         setSummarizing(root, true);
         const records = await summarizeRange({
             startId,
             endId,
-            onProgress: ({ current, total }) => {
+            onProgress: ({ current, total, chunk }) => {
+                updateOperation(operationToken, `#${chunk.startId} ~ #${chunk.endId} 요약 중`);
                 root.querySelector('#stsm-summarize').textContent = `요약 중 ${current}/${total}`;
             },
             onRecord: async record => {
-                await autoTranslateRecord(record);
+                await autoTranslateRecord(record, operationToken);
                 renderSummaryRecords(root, bindRecordEvents);
             },
         });
@@ -240,9 +372,24 @@ async function runSummarization(root) {
         toastr.success(`${records.length}개의 요약 블록을 생성했습니다.`);
     } catch (error) {
         console.error('[Chat Summarizer] Summarization failed:', error);
-        toastr.error(error.message || '요약 생성에 실패했습니다.');
+        if (error?.summaryBatch) {
+            addExtensionErrorLog(error, {
+                operation: 'summarization',
+                title: '요약 배치 실패',
+            });
+            toastr.error(error.message, '요약 작업 중단', {
+                closeButton: true,
+                timeOut: 12000,
+                extendedTimeOut: 3000,
+            });
+        } else {
+            toastr.error(error.message || '요약 생성에 실패했습니다.');
+        }
     } finally {
-        setSummarizing(root, false);
+        if (operationToken) {
+            setSummarizing(root, false);
+            endOperation(operationToken);
+        }
         renderRangeActions(root);
     }
 }
@@ -283,11 +430,22 @@ function bindRecordEvents(record) {
     record.querySelector('.stsm-record-cancel').addEventListener('click', () => cancelRecordEdit(record));
     record.querySelector('.stsm-record-save').addEventListener('click', () => saveRecordEdit(record));
     record.querySelector('.stsm-record-reroll').addEventListener('click', () => rerollRecord(record));
-    record.querySelector('.stsm-record-chat').addEventListener('click', () => openRevisionChat(record.dataset.recordId, {
-        onApplied: () => {
-            if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
-        },
-    }));
+    record.querySelector('.stsm-record-chat').addEventListener('click', () => {
+        openRevisionChat(record.dataset.recordId, {
+            onApplied: () => {
+                if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
+            },
+        }).catch(error => {
+            console.error('[Chat Summarizer] Failed to open revision chat:', error);
+            addExtensionErrorLog(error, {
+                operation: 'revision-chat',
+                title: '요약 수정 대화 열기 실패',
+                message: '요약 수정 대화 화면을 열지 못했습니다.',
+                context: { range: getRecordRange(record) },
+            });
+            toastr.error('요약 수정 대화 화면을 열지 못했습니다.');
+        });
+    });
     record.querySelector('.stsm-record-delete').addEventListener('click', () => showDeleteConfirmation(record));
 }
 
@@ -304,6 +462,11 @@ async function copyRecordContent(record) {
         toastr.success('복사 완료!');
     } catch (error) {
         console.error('[Chat Summarizer] Failed to copy summary:', error);
+        addExtensionErrorLog(error, {
+            operation: 'clipboard',
+            title: '요약 복사 실패',
+            message: '요약 복사에 실패했습니다.',
+        });
         toastr.error('요약 복사에 실패했습니다.');
     }
 }
@@ -346,16 +509,31 @@ async function translateRecord(recordElement) {
     }
 
     const button = recordElement.querySelector('.stsm-record-translate');
-    button.disabled = true;
+    const record = getSummaryRecord(recordElement.dataset.recordId);
+    let operationToken = null;
     try {
+        operationToken = beginOperation(
+            'translating',
+            record ? `#${record.startId} ~ #${record.endId} 번역 중` : '요약 번역 중',
+        );
+        button.disabled = true;
         await translateSummaryRecord(recordElement.dataset.recordId);
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
         toastr.success('요약을 번역했습니다.');
     } catch (error) {
         console.error('[Chat Summarizer] Translation failed:', error);
+        addExtensionErrorLog(error, {
+            operation: 'translation',
+            title: '요약 번역 실패',
+            message: '요약 번역에 실패했습니다.',
+            context: { range: getRecordRange(record) },
+        });
         toastr.error(error.message || '요약 번역에 실패했습니다.');
     } finally {
-        button.disabled = false;
+        if (operationToken) {
+            button.disabled = false;
+            endOperation(operationToken);
+        }
     }
 }
 
@@ -407,6 +585,12 @@ async function saveRecordEdit(record) {
         toastr.success('요약을 수정했습니다.');
     } catch (error) {
         console.error('[Chat Summarizer] Failed to update summary:', error);
+        addExtensionErrorLog(error, {
+            operation: 'record-update',
+            title: '요약 수정 저장 실패',
+            message: '요약 수정 내용을 저장하지 못했습니다.',
+            context: { range: getRecordRange(record) },
+        });
         toastr.error(error.message || '요약 수정에 실패했습니다.');
     } finally {
         setRecordBusy(record, false);
@@ -421,27 +605,49 @@ async function rerollRecord(record) {
     if (!confirmed) return;
     if (busyRecordIds.has(recordId)) return;
 
+    const sourceRecord = getSummaryRecord(recordId);
+    let operationToken = null;
     try {
+        operationToken = beginOperation(
+            'rerolling',
+            sourceRecord ? `#${sourceRecord.startId} ~ #${sourceRecord.endId} 재생성 중` : '요약 재생성 중',
+        );
         setRecordBusy(record, true);
         const updatedRecord = await regenerateSummaryRecord(recordId);
-        await autoTranslateRecord(updatedRecord);
+        await autoTranslateRecord(updatedRecord, operationToken);
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
         toastr.success('요약을 재생성했습니다.');
     } catch (error) {
         console.error('[Chat Summarizer] Failed to regenerate summary:', error);
+        addExtensionErrorLog(error, {
+            operation: 'regeneration',
+            title: '요약 재생성 실패',
+            message: '요약 재생성에 실패했습니다.',
+            context: { range: getRecordRange(sourceRecord) },
+        });
         toastr.error(error.message || '요약 재생성에 실패했습니다.');
     } finally {
-        setRecordBusy(record, false);
+        if (operationToken) {
+            setRecordBusy(record, false);
+            endOperation(operationToken);
+        }
     }
 }
 
-async function autoTranslateRecord(record) {
-    if (!getSettings().translation.autoTranslate) return;
+async function autoTranslateRecord(record, operationToken) {
+    if (!isExtensionEnabled() || !getSettings().translation.autoTranslate) return;
 
     try {
+        updateOperation(operationToken, `#${record.startId} ~ #${record.endId} 번역 중`);
         await translateSummaryRecord(record.id);
     } catch (error) {
         console.error('[Chat Summarizer] Automatic translation failed:', error);
+        addExtensionErrorLog(error, {
+            operation: 'translation',
+            title: '자동 번역 실패',
+            message: '요약 생성은 완료됐지만 자동 번역에 실패했습니다.',
+            context: { range: getRecordRange(record) },
+        });
         toastr.warning(`#${record.startId} ~ #${record.endId} 요약의 자동 번역에 실패했습니다.`);
     }
 }
@@ -454,6 +660,15 @@ function setRecordBusy(record, value) {
     record.querySelectorAll('button, textarea').forEach(element => {
         element.disabled = value;
     });
+}
+
+function getRecordRange(recordOrElement) {
+    const record = recordOrElement instanceof HTMLElement
+        ? getSummaryRecord(recordOrElement.dataset.recordId)
+        : recordOrElement;
+    const startId = Number(record?.startId);
+    const endId = Number(record?.endId);
+    return Number.isInteger(startId) && Number.isInteger(endId) ? { startId, endId } : null;
 }
 
 async function showDeleteConfirmation(record) {
@@ -471,6 +686,12 @@ async function showDeleteConfirmation(record) {
         toastr.success('요약 기록을 삭제했습니다.');
     } catch (error) {
         console.error('[Chat Summarizer] Failed to delete summary record:', error);
+        addExtensionErrorLog(error, {
+            operation: 'record-delete',
+            title: '요약 기록 삭제 실패',
+            message: '요약 기록 삭제에 실패했습니다.',
+            context: { range: getRecordRange(getSummaryRecord(record.dataset.recordId)) },
+        });
         toastr.error('요약 기록 삭제에 실패했습니다.');
     }
 }
@@ -481,10 +702,13 @@ async function translateAllRecords(root) {
     if (!confirmed) return;
 
     const button = root.querySelector('#stsm-translate-all');
+    let operationToken = null;
     try {
+        operationToken = beginOperation('translating', '일괄 번역 준비 중');
         setTranslating(root, true);
         const result = await translateAllSummaryRecords({
-            onProgress: ({ current, total }) => {
+            onProgress: ({ current, total, record }) => {
+                updateOperation(operationToken, `#${record.startId} ~ #${record.endId} 번역 중 (${current}/${total})`);
                 button.textContent = `번역 중 ${current}/${total}`;
             },
         });
@@ -498,15 +722,29 @@ async function translateAllRecords(root) {
             toastr.warning(`${result.translated}개 번역 완료, ${result.failures.length}개 번역 실패`);
             result.failures.forEach(({ record, error }) => {
                 console.error(`[Chat Summarizer] Failed to translate #${record.startId} ~ #${record.endId}:`, error);
+                addExtensionErrorLog(error, {
+                    operation: 'translation',
+                    title: '일괄 번역 중 레코드 번역 실패',
+                    message: '일괄 번역 중 일부 요약을 번역하지 못했습니다.',
+                    context: { range: getRecordRange(record) },
+                });
             });
         } else {
             toastr.success(`${result.translated}개의 요약 기록을 번역했습니다.`);
         }
     } catch (error) {
         console.error('[Chat Summarizer] Bulk translation failed:', error);
+        addExtensionErrorLog(error, {
+            operation: 'translation',
+            title: '일괄 번역 처리 실패',
+            message: '일괄 번역 처리에 실패했습니다.',
+        });
         toastr.error('일괄 번역 처리에 실패했습니다.');
     } finally {
-        setTranslating(root, false);
+        if (operationToken) {
+            setTranslating(root, false);
+            endOperation(operationToken);
+        }
     }
 }
 
@@ -523,6 +761,11 @@ async function deleteAllTranslations(root) {
         else toastr.info('삭제할 번역이 없습니다.');
     } catch (error) {
         console.error('[Chat Summarizer] Failed to delete translations:', error);
+        addExtensionErrorLog(error, {
+            operation: 'translation-delete',
+            title: '번역 일괄 삭제 실패',
+            message: '번역 삭제에 실패했습니다.',
+        });
         toastr.error('번역 삭제에 실패했습니다.');
     } finally {
         setTranslating(root, false);
@@ -558,11 +801,28 @@ function initialize() {
         currentRoot.querySelector('#stsm-range-end').value = '';
         renderSummaryRecords(currentRoot, bindRecordEvents);
         renderRangeActions(currentRoot);
+        renderSummaryStatus(currentRoot);
     });
     window.addEventListener('stsm:records-changed', () => {
-        if (currentRoot) renderRangeActions(currentRoot);
+        if (!currentRoot) return;
+        renderRangeActions(currentRoot);
+        renderSummaryStatus(currentRoot);
     });
+    [
+        context.eventTypes.MESSAGE_SENT,
+        context.eventTypes.MESSAGE_RECEIVED,
+        context.eventTypes.MESSAGE_DELETED,
+        context.eventTypes.MESSAGE_EDITED,
+        context.eventTypes.MESSAGE_UPDATED,
+        context.eventTypes.MESSAGE_SWIPED,
+    ]
+        .forEach(eventType => context.eventSource.on(eventType, () => {
+            if (!currentRoot) return;
+            renderSummaryStatus(currentRoot);
+            refreshSummaryRecordSourceStates(currentRoot);
+        }));
     initializeSummaryContext();
+    initializeMessageVisibility();
     addMenuItem();
 }
 
