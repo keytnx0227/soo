@@ -15,7 +15,7 @@ export async function saveAtlasEntityCorrection(category, entityId, fields) {
     assertCategory(category);
     const store = getAtlasStore();
     const previous = structuredClone(store.corrections[category]);
-    const normalizedFields = normalizeCorrectionFields(fields);
+    const normalizedFields = normalizeCorrectionFields(fields, category);
     if (Object.keys(normalizedFields).length) {
         store.corrections[category][String(entityId)] = { fields: normalizedFields };
     } else {
@@ -73,7 +73,10 @@ function getAtlasStore() {
     if (!root.atlas.corrections || typeof root.atlas.corrections !== 'object') root.atlas.corrections = {};
     if (!root.atlas.translations || typeof root.atlas.translations !== 'object') root.atlas.translations = {};
     for (const category of CATEGORIES) {
-        root.atlas.corrections[category] = normalizeEntityMap(root.atlas.corrections[category], normalizeCorrection);
+        root.atlas.corrections[category] = normalizeEntityMap(
+            root.atlas.corrections[category],
+            entry => normalizeCorrection(entry, category),
+        );
         root.atlas.translations[category] = normalizeEntityMap(root.atlas.translations[category], normalizeTranslation);
     }
     return root.atlas;
@@ -86,15 +89,15 @@ function normalizeEntityMap(value, normalizer) {
         .filter(([, entry]) => entry));
 }
 
-function normalizeCorrection(value) {
+function normalizeCorrection(value, category) {
     if (!value || typeof value !== 'object') return null;
-    const fields = normalizeCorrectionFields(value.fields);
+    const fields = normalizeCorrectionFields(value.fields, category);
     return Object.keys(fields).length ? { fields } : null;
 }
 
-function normalizeCorrectionFields(value) {
+function normalizeCorrectionFields(value, category = null) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    return Object.fromEntries(Object.entries(value).map(([path, entry]) => {
+    const normalized = Object.fromEntries(Object.entries(value).map(([path, entry]) => {
         if (!entry || typeof entry !== 'object' || !Object.hasOwn(entry, 'value')) return [path, null];
         return [String(path), {
             value: structuredClone(entry.value),
@@ -103,6 +106,29 @@ function normalizeCorrectionFields(value) {
             editedAt: String(entry.editedAt || new Date().toISOString()),
         }];
     }).filter(([, entry]) => entry));
+    return category === 'people' ? normalizePeopleCorrectionPaths(normalized) : normalized;
+}
+
+function normalizePeopleCorrectionPaths(fields) {
+    const allowed = new Set([
+        'name', 'provisional', 'aliases', 'role', 'age', 'occupation', 'appearance',
+        'affiliations', 'traits', 'voice', 'lastKnownState.location',
+        'lastKnownState.physicalCondition', 'relationships',
+    ]);
+    const normalized = {};
+    for (const [path, entry] of Object.entries(fields)) {
+        const mappedPath = {
+            roles: 'role',
+            personalityTraits: 'traits',
+            speechPatterns: 'voice',
+        }[path] || path;
+        if (!allowed.has(mappedPath) || Object.hasOwn(normalized, mappedPath)) continue;
+        const value = ['role', 'voice'].includes(mappedPath) && Array.isArray(entry.value)
+            ? entry.value.map(item => String(item || '').trim()).filter(Boolean).join('; ') || null
+            : entry.value;
+        normalized[mappedPath] = { ...entry, value };
+    }
+    return normalized;
 }
 
 function normalizeTranslation(value) {

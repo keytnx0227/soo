@@ -41,12 +41,15 @@ export function createAtlasSourceHash(category, entity) {
 export function serializeAtlasEntity(category, entity) {
     const lines = [`# ${['commitments', 'events'].includes(category) ? entity.title : entity.name}`];
     appendList(lines, 'aliases', entity.aliases);
-    appendList(lines, 'facts', entity.facts);
     if (category === 'people') {
-        appendList(lines, 'roles', entity.roles);
+        if (entity.provisional) lines.push('- provisional: true');
+        appendScalar(lines, 'role', entity.role);
+        appendScalar(lines, 'age', entity.age);
+        appendScalar(lines, 'occupation', entity.occupation);
+        appendScalar(lines, 'appearance', entity.appearance);
         appendList(lines, 'affiliations', entity.affiliations);
-        appendList(lines, 'personality', entity.personalityTraits);
-        appendList(lines, 'speech patterns', entity.speechPatterns);
+        appendList(lines, 'traits', entity.traits);
+        appendScalar(lines, 'voice', entity.voice);
         appendState(lines, entity.lastKnownState, {
             location: 'location',
             physicalCondition: 'physical condition',
@@ -62,6 +65,7 @@ export function serializeAtlasEntity(category, entity) {
             }
         }
     } else if (category === 'items') {
+        appendList(lines, 'facts', entity.facts);
         appendList(lines, 'functions', entity.functions);
         appendState(lines, entity.lastKnownState, {
             owner: 'owner',
@@ -80,6 +84,7 @@ export function serializeAtlasEntity(category, entity) {
         }
         appendList(lines, 'conditions', entity.conditions);
         if (entity.deadline) lines.push(`- deadline: ${entity.deadline}`);
+        appendList(lines, 'facts', entity.facts);
         lines.push(`- status: ${entity.status}`);
         if (entity.statusReason) lines.push(`- status reason: ${entity.statusReason}`);
     } else {
@@ -106,6 +111,10 @@ function getEntity(category, entityId) {
 
 function appendList(lines, label, values) {
     if (Array.isArray(values) && values.length) lines.push(`- ${label}: ${values.join('; ')}`);
+}
+
+function appendScalar(lines, label, value) {
+    if (value) lines.push(`- ${label}: ${value}`);
 }
 
 function appendState(lines, state, labels) {

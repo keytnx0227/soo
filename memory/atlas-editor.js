@@ -9,12 +9,15 @@ import { getAtlasProjection } from './atlas-projection-service.js';
 
 const PEOPLE_FIELDS = Object.freeze([
     { path: 'name', label: '이름', type: 'scalar' },
+    { path: 'provisional', label: '임시 이름', type: 'boolean' },
     { path: 'aliases', label: '별칭', type: 'list' },
-    { path: 'facts', label: '객관 정보', type: 'list' },
-    { path: 'roles', label: '역할', type: 'list' },
+    { path: 'role', label: '극중 역할', type: 'scalar' },
+    { path: 'age', label: '나이', type: 'scalar' },
+    { path: 'occupation', label: '직업·직위', type: 'scalar' },
+    { path: 'appearance', label: '외형', type: 'scalar' },
     { path: 'affiliations', label: '소속', type: 'list' },
-    { path: 'personalityTraits', label: '성격', type: 'list' },
-    { path: 'speechPatterns', label: '말투', type: 'list' },
+    { path: 'traits', label: '성격', type: 'list' },
+    { path: 'voice', label: '말투', type: 'scalar' },
     { path: 'lastKnownState.location', label: '마지막 위치', type: 'scalar' },
     { path: 'lastKnownState.physicalCondition', label: '마지막 신체 상태', type: 'scalar' },
 ]);
@@ -196,6 +199,12 @@ function renderFieldInput(definition, value) {
             <option value="turning_point" ${value === 'turning_point' ? 'selected' : ''}>변곡점</option>
         </select>`;
     }
+    if (definition.type === 'boolean') {
+        return `<select class="text_pole">
+            <option value="false" ${value !== 'true' ? 'selected' : ''}>아니오</option>
+            <option value="true" ${value === 'true' ? 'selected' : ''}>예</option>
+        </select>`;
+    }
     return `<input class="text_pole" type="text" value="${escapeHtml(value)}" />`;
 }
 
@@ -314,6 +323,7 @@ function readFieldValue(editor, definition) {
     if (definition.type === 'long') return normalizeScalar(editor.querySelector('textarea').value);
     if (definition.type === 'status') return editor.querySelector('select').value;
     if (definition.type === 'importance') return editor.querySelector('select').value;
+    if (definition.type === 'boolean') return editor.querySelector('select').value === 'true';
     return normalizeScalar(editor.querySelector('input[type="text"]').value);
 }
 

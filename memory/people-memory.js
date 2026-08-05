@@ -1,23 +1,41 @@
-const REPLACE_FIELDS = Object.freeze(['roles', 'affiliations', 'personalityTraits', 'speechPatterns']);
+const REPLACE_FIELDS = Object.freeze([
+    'provisional',
+    'role',
+    'age',
+    'occupation',
+    'appearance',
+    'affiliations',
+    'traits',
+    'voice',
+]);
+const LIST_FIELDS = new Set(['affiliations', 'traits']);
 
 export function buildPeopleMemoryPromptContext(people) {
-    return JSON.stringify(people.map(person => ({
-        id: person.id,
-        name: person.name,
-        aliases: person.aliases,
-        facts: person.facts,
-        roles: person.roles,
-        affiliations: person.affiliations,
-        personalityTraits: person.personalityTraits,
-        speechPatterns: person.speechPatterns,
-        lastKnownState: person.lastKnownState,
-        relationships: person.relationships.map(relationship => ({
-            targetId: relationship.targetId,
-            targetName: relationship.targetName,
-            relationship: relationship.relationship,
-            feelings: relationship.feelings,
-        })),
-    })), null, 2);
+    return JSON.stringify(people.map(compactPersonForPrompt), null, 2);
+}
+
+function compactPersonForPrompt(person) {
+    const result = { id: person.id, name: person.name };
+    if (person.provisional) result.provisional = true;
+    for (const field of ['role', 'age', 'occupation', 'appearance', 'voice']) {
+        if (person[field]) result[field] = person[field];
+    }
+    for (const field of ['aliases', 'affiliations', 'traits']) {
+        if (person[field]?.length) result[field] = person[field];
+    }
+    const lastKnownState = Object.fromEntries(Object.entries(person.lastKnownState || {})
+        .filter(([, value]) => value));
+    if (Object.keys(lastKnownState).length) result.lastKnownState = lastKnownState;
+    const relationships = (person.relationships || []).map(relationship => {
+        const item = {};
+        if (relationship.targetId) item.targetId = relationship.targetId;
+        if (relationship.targetName) item.targetName = relationship.targetName;
+        if (relationship.relationship?.length) item.relationship = relationship.relationship;
+        if (relationship.feelings?.length) item.feelings = relationship.feelings;
+        return item;
+    }).filter(item => Object.keys(item).length);
+    if (relationships.length) result.relationships = relationships;
+    return result;
 }
 
 export function derivePeopleAtlas(records) {
@@ -71,12 +89,15 @@ function createPersonEntry(id, proposal, range, sourceRecordId) {
     const person = {
         id,
         name: String(proposal.name),
+        provisional: Boolean(proposal.provisional),
         aliases: dedupeStrings(proposal.aliases),
-        facts: dedupeStrings(proposal.facts),
-        roles: dedupeStrings(proposal.roles),
+        role: normalizeLegacyScalar(proposal.role, proposal.roles),
+        age: normalizeScalar(proposal.age),
+        occupation: normalizeScalar(proposal.occupation),
+        appearance: normalizeScalar(proposal.appearance),
         affiliations: dedupeStrings(proposal.affiliations),
-        personalityTraits: dedupeStrings(proposal.personalityTraits),
-        speechPatterns: dedupeStrings(proposal.speechPatterns),
+        traits: dedupeStrings(proposal.traits ?? proposal.personalityTraits),
+        voice: normalizeLegacyScalar(proposal.voice, proposal.speechPatterns),
         lastKnownState: {
             location: proposal.lastKnownState?.location || null,
             physicalCondition: proposal.lastKnownState?.physicalCondition || null,
@@ -90,7 +111,6 @@ function createPersonEntry(id, proposal, range, sourceRecordId) {
         _relationshipSources: {},
     };
     person._valueSources.aliases = createValueSources(person.aliases, range);
-    person._valueSources.facts = createValueSources(person.facts, range);
     for (const field of ['name', ...REPLACE_FIELDS, 'lastKnownState.location', 'lastKnownState.physicalCondition']) {
         person._sources[field] = { ...range };
     }
@@ -100,11 +120,9 @@ function createPersonEntry(id, proposal, range, sourceRecordId) {
 function applyPersonUpdate(person, update, range, sourceRecordId, peopleById) {
     let changed = false;
     const aliases = dedupeStrings(update.append?.aliases);
-    const facts = dedupeStrings(update.append?.facts);
     changed = appendUniqueTracked(person.aliases, person._valueSources.aliases, aliases, range) || changed;
-    changed = appendUniqueTracked(person.facts, person._valueSources.facts, facts, range) || changed;
 
-    const replace = update.replace || {};
+    const replace = normalizePersonReplace(update.replace);
     if (Object.hasOwn(replace, 'name') && replace.name && canReplace(person, 'name', range)) {
         if (person.name !== replace.name) {
             appendUniqueTracked(person.aliases, person._valueSources.aliases, [person.name], range);
@@ -115,7 +133,11 @@ function applyPersonUpdate(person, update, range, sourceRecordId, peopleById) {
     }
     for (const field of REPLACE_FIELDS) {
         if (!Object.hasOwn(replace, field) || !canReplace(person, field, range)) continue;
-        person[field] = dedupeStrings(replace[field]);
+        person[field] = field === 'provisional'
+            ? Boolean(replace[field])
+            : LIST_FIELDS.has(field)
+                ? dedupeStrings(replace[field])
+                : normalizeScalar(replace[field]);
         person._sources[field] = { ...range };
         changed = true;
     }
@@ -134,6 +156,25 @@ function applyPersonUpdate(person, update, range, sourceRecordId, peopleById) {
         person.lastUpdatedRange = newerRange(person.lastUpdatedRange, range);
         appendUnique(person.sourceRecordIds, [String(sourceRecordId)]);
     }
+}
+
+function normalizePersonReplace(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const replace = {};
+    for (const field of ['name', 'provisional', 'age', 'occupation', 'appearance', 'affiliations']) {
+        if (Object.hasOwn(source, field)) replace[field] = source[field];
+    }
+    if (Object.hasOwn(source, 'role') || Object.hasOwn(source, 'roles')) {
+        replace.role = normalizeLegacyScalar(source.role, source.roles);
+    }
+    if (Object.hasOwn(source, 'traits') || Object.hasOwn(source, 'personalityTraits')) {
+        replace.traits = source.traits ?? source.personalityTraits;
+    }
+    if (Object.hasOwn(source, 'voice') || Object.hasOwn(source, 'speechPatterns')) {
+        replace.voice = normalizeLegacyScalar(source.voice, source.speechPatterns);
+    }
+    if (Object.hasOwn(source, 'lastKnownState')) replace.lastKnownState = source.lastKnownState;
+    return replace;
 }
 
 function applyRelationshipUpdates(person, updates, range, peopleById) {
@@ -218,6 +259,18 @@ function dedupeStrings(values) {
     const result = [];
     appendUnique(result, Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : []);
     return result;
+}
+
+function normalizeScalar(value) {
+    const normalized = String(value ?? '').trim();
+    return normalized || null;
+}
+
+function normalizeLegacyScalar(value, legacyValues) {
+    const normalized = normalizeScalar(value);
+    if (normalized) return normalized;
+    const legacy = dedupeStrings(legacyValues);
+    return legacy.length ? legacy.join('; ') : null;
 }
 
 function normalizeKey(value) {

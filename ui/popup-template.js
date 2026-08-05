@@ -82,7 +82,13 @@ export function buildPopup() {
                                 </div>
                             </div>
                         </div>
-                        <button id="stsm-summarize" class="menu_button interactable" type="button">요약하기</button>
+                        <div class="stsm-summary-execution-actions">
+                            <button id="stsm-summarize" class="menu_button interactable" type="button">요약하기</button>
+                            <button id="stsm-cancel-summary" class="menu_button interactable" type="button" hidden>
+                                <i class="fa-solid fa-stop" aria-hidden="true"></i>
+                                <span>중단</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

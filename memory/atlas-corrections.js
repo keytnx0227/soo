@@ -1,9 +1,25 @@
 const CUMULATIVE_FIELDS = Object.freeze({
-    people: new Set(['aliases', 'facts']),
+    people: new Set(['aliases']),
     items: new Set(['aliases', 'facts']),
     commitments: new Set(['facts']),
     events: new Set(),
 });
+
+const PEOPLE_FIELDS = new Set([
+    'name',
+    'provisional',
+    'aliases',
+    'role',
+    'age',
+    'occupation',
+    'appearance',
+    'affiliations',
+    'traits',
+    'voice',
+    'lastKnownState.location',
+    'lastKnownState.physicalCondition',
+    'relationships',
+]);
 
 export function applyAtlasCorrections(raw, corrections) {
     const orphanCorrections = { people: [], items: [], commitments: [], events: [] };
@@ -24,7 +40,8 @@ function applyCategoryCorrections(category, entities, correctionMap, orphanCorre
         if (!entitiesById.has(entityId)) orphanCorrections.push(entityId);
     }
     return entities.map(entity => {
-        const fields = correctionMap?.[entity.id]?.fields || {};
+        const sourceFields = correctionMap?.[entity.id]?.fields || {};
+        const fields = category === 'people' ? normalizePeopleCorrectionFields(sourceFields) : sourceFields;
         if (!Object.keys(fields).length) return entity;
         const corrected = structuredClone(entity);
         corrected.manualCorrections = structuredClone(fields);
@@ -37,6 +54,23 @@ function applyCategoryCorrections(category, entities, correctionMap, orphanCorre
         }
         return corrected;
     });
+}
+
+function normalizePeopleCorrectionFields(fields) {
+    const normalized = {};
+    for (const [path, correction] of Object.entries(fields || {})) {
+        const mappedPath = {
+            roles: 'role',
+            personalityTraits: 'traits',
+            speechPatterns: 'voice',
+        }[path] || path;
+        if (!PEOPLE_FIELDS.has(mappedPath) || Object.hasOwn(normalized, mappedPath)) continue;
+        const value = ['role', 'voice'].includes(mappedPath) && Array.isArray(correction.value)
+            ? correction.value.map(item => String(item || '').trim()).filter(Boolean).join('; ') || null
+            : correction.value;
+        normalized[mappedPath] = { ...correction, value };
+    }
+    return normalized;
 }
 
 function applyCommitmentStatusCorrection(commitment, fields) {

@@ -326,6 +326,21 @@
     min-width: 92px;
 }
 
+.stsm-summary-execution-actions {
+    display: grid;
+    min-width: 92px;
+}
+
+.stsm-summary-execution-actions > .menu_button {
+    grid-area: 1 / 1;
+}
+
+#stsm-cancel-summary {
+    width: 100%;
+    gap: 6px;
+    white-space: nowrap;
+}
+
 .stsm-range-chunk-actions {
     display: flex;
     gap: 6px;
@@ -2237,6 +2252,14 @@
     }
 
     #stsm-summarize {
+        width: 100%;
+    }
+
+    .stsm-summary-execution-actions {
+        width: 100%;
+    }
+
+    .stsm-summary-execution-actions > .menu_button {
         width: 100%;
     }
 

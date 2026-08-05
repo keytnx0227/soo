@@ -101,14 +101,22 @@ function renderPersonValues(person) {
     return {
         sumiPersonId: person.id,
         sumiPersonName: person.name,
+        sumiPersonProvisional: person.provisional ? '- provisional: true' : '',
         sumiPersonAliases: listBlock('aliases', person.aliases),
-        sumiPersonFacts: listBlock('facts', person.facts),
-        sumiPersonRoles: listBlock('roles', person.roles),
+        sumiPersonRole: scalarBlock('role', person.role),
+        sumiPersonAge: scalarBlock('age', person.age),
+        sumiPersonOccupation: scalarBlock('occupation', person.occupation),
+        sumiPersonAppearance: scalarBlock('appearance', person.appearance),
         sumiPersonAffiliations: listBlock('affiliations', person.affiliations),
-        sumiPersonPersonality: listBlock('personality', person.personalityTraits),
-        sumiPersonSpeech: listBlock('speech patterns', person.speechPatterns),
+        sumiPersonTraits: listBlock('traits', person.traits),
+        sumiPersonVoice: scalarBlock('voice', person.voice),
         sumiPersonState: state ? `- last known state: ${state}` : '',
         sumiPersonRelationships: listBlock('relationships', relationships),
+        // Legacy macros keep custom pre-v10 templates readable without restoring facts.
+        sumiPersonFacts: '',
+        sumiPersonRoles: scalarBlock('role', person.role),
+        sumiPersonPersonality: listBlock('traits', person.traits),
+        sumiPersonSpeech: scalarBlock('voice', person.voice),
     };
 }
 
@@ -150,6 +158,10 @@ function renderCommitmentValues(commitment) {
 
 function listBlock(label, values) {
     return Array.isArray(values) && values.length ? `- ${label}: ${values.join('; ')}` : '';
+}
+
+function scalarBlock(label, value) {
+    return value ? `- ${label}: ${value}` : '';
 }
 
 function compactPairs(values) {

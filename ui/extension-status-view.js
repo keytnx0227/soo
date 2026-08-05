@@ -52,6 +52,13 @@ export function bindExtensionStatus(root, onEnabledChanged) {
 
 export function renderExtensionStatus(root, state = getExtensionState()) {
     const isWorking = Boolean(state.operation);
+    const activeOperations = Array.isArray(state.operations)
+        ? state.operations
+        : state.operation ? [state.operation] : [];
+    const canCancelSummary = activeOperations.some(item => item.type === 'summarizing');
+    const isSummaryExecutionActive = activeOperations.some(item => (
+        item.type === 'summarizing' || item.type === 'cancelling-summary'
+    ));
     const face = root.querySelector('.stsm-extension-status-face');
     const enabled = root.querySelector('.stsm-extension-status-enabled');
     const operation = root.querySelector('.stsm-extension-status-operation');
@@ -62,6 +69,14 @@ export function renderExtensionStatus(root, state = getExtensionState()) {
     operation.textContent = `· ${state.operation?.label || '작업 없음'}`;
     toggle.checked = state.enabled;
     toggle.disabled = isWorking;
+    const cancelSummary = root.querySelector('#stsm-cancel-summary');
+    if (cancelSummary) {
+        const summarize = root.querySelector('#stsm-summarize');
+        summarize.hidden = isSummaryExecutionActive;
+        cancelSummary.hidden = !isSummaryExecutionActive;
+        cancelSummary.disabled = !canCancelSummary;
+        cancelSummary.querySelector('span').textContent = canCancelSummary ? '중단' : '중단 중';
+    }
     root.querySelector('.stsm-extension-status').classList.toggle('stsm-extension-status-off', !state.enabled);
     root.querySelector('.stsm-extension-status').classList.toggle('stsm-extension-status-working', isWorking);
 

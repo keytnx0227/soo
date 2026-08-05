@@ -62,6 +62,8 @@ let popup = null;
 let currentRoot = null;
 let isSummarizing = false;
 let isTranslating = false;
+let summaryAbortController = null;
+let summaryOperationToken = null;
 const busyRecordIds = new Set();
 
 function addMenuItem() {
@@ -151,6 +153,7 @@ function bindEvents(root) {
     bindCoverageMap(root);
 
     root.querySelector('#stsm-summarize').addEventListener('click', () => runSummarization(root));
+    root.querySelector('#stsm-cancel-summary').addEventListener('click', cancelSummarization);
     bindTranslationSettings(root);
     root.querySelector('#stsm-translate-all').addEventListener('click', () => translateAllRecords(root));
     root.querySelector('#stsm-delete-all-translations').addEventListener('click', () => deleteAllTranslations(root));
@@ -387,27 +390,39 @@ async function runSummarization(root) {
     const endId = root.querySelector('#stsm-range-end').value;
 
     let operationToken = null;
+    const abortController = new AbortController();
     try {
         const initialLabel = startId.trim() && endId.trim()
             ? `#${startId.trim()} ~ #${endId.trim()} 요약 중`
             : '요약 준비 중';
         operationToken = beginOperation('summarizing', initialLabel);
+        summaryAbortController = abortController;
+        summaryOperationToken = operationToken;
         setSummarizing(root, true);
         const records = await summarizeRange({
             startId,
             endId,
+            signal: abortController.signal,
             onProgress: ({ current, total, chunk }) => {
                 updateOperation(operationToken, `#${chunk.startId} ~ #${chunk.endId} 요약 중`);
                 root.querySelector('#stsm-summarize').textContent = `요약 중 ${current}/${total}`;
             },
             onRecord: async record => {
-                await autoTranslateRecord(record, operationToken);
+                if (!abortController.signal.aborted) {
+                    await autoTranslateRecord(record, operationToken);
+                }
                 renderSummaryRecords(root, bindRecordEvents);
             },
         });
         setActiveTab(root, 'records');
         toastr.success(`${records.length}개의 요약 블록을 생성했습니다.`);
     } catch (error) {
+        if (error?.code === 'STSM_SUMMARY_CANCELLED') {
+            const completedCount = error.summaryCancellation?.completedChunks?.length || 0;
+            const suffix = completedCount ? ` 완료된 ${completedCount}개 청크는 유지됩니다.` : '';
+            toastr.info(`요약 작업을 중단했어요.${suffix}`);
+            return;
+        }
         console.error('[Chat Summarizer] Summarization failed:', error);
         if (error?.summaryBatch) {
             addExtensionErrorLog(error, {
@@ -423,6 +438,8 @@ async function runSummarization(root) {
             toastr.error(error.message || '요약 생성에 실패했습니다.');
         }
     } finally {
+        if (summaryAbortController === abortController) summaryAbortController = null;
+        if (summaryOperationToken === operationToken) summaryOperationToken = null;
         if (operationToken) {
             setSummarizing(root, false);
             endOperation(operationToken);
@@ -431,11 +448,20 @@ async function runSummarization(root) {
     }
 }
 
+function cancelSummarization() {
+    if (!isSummarizing || !summaryAbortController || summaryAbortController.signal.aborted) return;
+    summaryAbortController.abort();
+    if (summaryOperationToken) {
+        updateOperation(summaryOperationToken, '현재 요청 완료 후 중단', 'cancelling-summary');
+    }
+}
+
 function setSummarizing(root, value) {
     isSummarizing = value;
     root.querySelectorAll('button, input, select, textarea').forEach(element => {
         if (element.classList.contains('stsm-tab')
             || element.id === 'stsm-records-fullscreen'
+            || element.id === 'stsm-cancel-summary'
             || element.matches('.stsm-record-translate, .stsm-record-translation-toggle, #stsm-translate-all')) return;
         if (value) {
             element.dataset.stsmWasDisabled = String(element.disabled);

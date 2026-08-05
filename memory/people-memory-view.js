@@ -7,13 +7,15 @@ import { getAtlasTranslations } from './atlas-metadata.js';
 import { getPeopleAtlas } from './people-memory-service.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
 
-const FIELD_LABELS = Object.freeze({
-    facts: '객관 정보',
-    roles: '역할',
-    affiliations: '소속',
-    personalityTraits: '성격',
-    speechPatterns: '말투',
-});
+const FIELD_DEFINITIONS = Object.freeze([
+    { key: 'role', label: '극중 역할' },
+    { key: 'age', label: '나이' },
+    { key: 'occupation', label: '직업·직위' },
+    { key: 'appearance', label: '외형' },
+    { key: 'affiliations', label: '소속', list: true },
+    { key: 'traits', label: '성격', list: true },
+    { key: 'voice', label: '말투' },
+]);
 
 export function bindPeopleMemoryView(root) {
     const list = root.querySelector('#stsm-people-memory-list');
@@ -48,6 +50,7 @@ function renderPerson(person, cachedTranslation) {
             <header>
                 <div>
                     <strong>${escapeHtml(person.name)}</strong>
+                    ${person.provisional ? '<span class="stsm-atlas-correction-state">임시 이름</span>' : ''}
                     ${person.aliases.length ? `<span>${person.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
                     ${renderCorrectionState(person.manualCorrections)}
                 </div>
@@ -65,7 +68,9 @@ function renderPerson(person, cachedTranslation) {
                 </div>
             </header>
             <div class="stsm-person-fields stsm-atlas-original">
-                ${Object.entries(FIELD_LABELS).map(([key, label]) => renderField(label, person[key])).join('')}
+                ${FIELD_DEFINITIONS.map(field => field.list
+                    ? renderField(field.label, person[field.key])
+                    : renderScalarField(field.label, person[field.key])).join('')}
                 ${renderLastKnownState(person.lastKnownState)}
                 ${renderRelationships(person.relationships)}
             </div>
@@ -152,6 +157,10 @@ function renderField(label, values) {
             <div>${values.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div>
         </div>
     `;
+}
+
+function renderScalarField(label, value) {
+    return value ? renderField(label, [value]) : '';
 }
 
 function renderLastKnownState(state) {

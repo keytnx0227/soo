@@ -45,7 +45,7 @@ export function validateSummaryRange(startId, endId) {
     return { start, end, chat };
 }
 
-export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
+export async function summarizeRange({ startId, endId, onProgress, onRecord, signal }) {
     assertExtensionEnabled();
     const { start, end, chat } = validateSummaryRange(startId, endId);
     validateUncoveredRange(start, end);
@@ -59,6 +59,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
     const batchId = createId('batch');
     const records = [];
     for (let index = 0; index < chunks.length; index += 1) {
+        throwIfSummaryCancelled(signal, records);
         const chunk = chunks[index];
         let record;
         try {
@@ -67,11 +68,13 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
 
             const outputConfiguration = getSummaryOutputConfiguration();
             const prompt = await buildSummaryPrompt(chunk, outputConfiguration);
+            throwIfSummaryCancelled(signal, records);
             if (!prompt.trim()) {
                 throw new Error('조립된 요약 프롬프트가 비어 있습니다.');
             }
 
             const response = await generateSummary(prompt);
+            throwIfSummaryCancelled(signal, records);
             ensureChatUnchanged(chat);
             if (!response) {
                 throw new Error('요약 응답이 비어 있습니다.');
@@ -103,6 +106,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
                 },
             });
         } catch (error) {
+            if (error?.code === 'STSM_SUMMARY_CANCELLED') throw error;
             throw createBatchInterruptionError({
                 error,
                 batchId,
@@ -115,9 +119,20 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
 
         records.push(record);
         await onRecord?.(record);
+        throwIfSummaryCancelled(signal, records);
     }
 
     return records;
+}
+
+function throwIfSummaryCancelled(signal, completedRecords) {
+    if (!signal?.aborted) return;
+    const error = new Error('요약 작업을 중단했어요. 완료된 청크는 유지됩니다.');
+    error.code = 'STSM_SUMMARY_CANCELLED';
+    error.summaryCancellation = {
+        completedChunks: completedRecords.map(({ startId, endId }) => ({ startId, endId })),
+    };
+    throw error;
 }
 
 function createBatchInterruptionError({

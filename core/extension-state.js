@@ -43,10 +43,14 @@ export function beginOperation(type, label) {
     return token;
 }
 
-export function updateOperation(token, label) {
+export function updateOperation(token, label, type = null) {
     const operation = operations.get(token);
     if (!operation) return false;
-    operations.set(token, { ...operation, label: String(label || '작업 중') });
+    operations.set(token, {
+        ...operation,
+        type: type === null ? operation.type : String(type || 'working'),
+        label: String(label || '작업 중'),
+    });
     notifyStateChanged();
     return true;
 }

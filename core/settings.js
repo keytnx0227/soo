@@ -14,7 +14,7 @@ export const PROMPT_TYPES = Object.freeze({
     REVISION: 'revision',
 });
 
-const PROMPT_SCHEMA_VERSION = 9;
+const PROMPT_SCHEMA_VERSION = 10;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -79,57 +79,39 @@ Track dates in chronological order. Use an explicit in-story date when one is av
     tags: '# Retrieval Tags\n\nCreate specific retrieval concepts for the chunk as a whole. Prioritize named people, places, objects, distinctive events, relationship milestones, promises, and memorable topics. Avoid generic tags such as "conversation", "event", or "emotion". canonical follows the configured output language; matchTerms contains concise source-language words or phrases that could recall this memory later.',
     people: `# People Memory Updates
 
-Extract durable person-memory proposals from the Summary Target. These proposals maintain a current reference snapshot, not a second chronological summary.
+Maintain compact current profile cards for recurring people. This is not a plot summary, event history, or action log.
 
-## Evidence boundary
+## Selection and identity
 
-- Propose information only when it is established or meaningfully changed by the Summary Target.
-- Character profiles, World Info, recent summaries, and Current People Memory may resolve identity and context, but they are not evidence that a change occurred in this target.
-- Do not repeat unchanged information merely because it appears in the supplied context.
-- Prefer an empty update list over a speculative, redundant, or trivial update.
+- The two leads belong in the atlas when the Summary Target first characterizes them; an empty Current People Memory means they are not recorded yet.
+- Create a card for another named person at their first meaningful characterization or when they gain durable narrative relevance. Ignore throwaway background figures.
+- A pivotal unnamed person may use a short, stable handle as name with provisional set to true. Reuse exactly the same handle until a real name is established. When named, replace name, set provisional to false, and preserve the old handle in aliases.
+- Reuse an existing targetId exactly. Never invent, alter, or guess an ID. Similar names, titles, or occupations do not prove identity.
 
-## Identity and creation
+## Evidence and updates
 
-- Add a person to created only when the target establishes a person who has no matching entry in Current People Memory.
-- Use the most stable established name as name. Put genuine aliases, titles used as names, and alternate forms in aliases.
-- Never invent an ID. The extension assigns IDs after validation.
-- Similar names alone do not prove that two references identify the same person.
-- Do not create entries for unnamed crowds, incidental background figures, or a person mentioned without durable relevance.
+- Use only the Summary Target as evidence for creation or change. Other context may resolve identity but does not itself justify an update.
+- Do not repeat unchanged fields. Prefer empty created and updated arrays over speculative, trivial, or redundant entries.
+- append contains only newly established aliases. replace contains only current snapshot fields that meaningfully changed.
+- For an array in replace, return its complete concise current value.
 
-## Updating existing people
+## Compact field policy
 
-- Add an entry to updated only when its targetId was supplied by Current People Memory. Copy the ID exactly.
-- Never guess, synthesize, or modify a targetId.
-- append.aliases and append.facts contain only newly established durable information that should coexist with prior values.
-- replace contains only fields whose latest known snapshot changed in this target. Omit every unchanged field.
-- When replacing an array field, return the complete intended current array, not only the newly changed element.
-- Do not use replace to rewrite stable information merely for style or wording.
+- role: the person's compact role in the story, or null. Do not recount actions.
+- age: an explicitly established age or concise age description, otherwise null.
+- occupation: current occupation or position, otherwise null.
+- appearance: only stable identifying appearance in one compact phrase or sentence. Exclude temporary expressions, clothing changes, wounds, and scene actions unless they became durable.
+- affiliations: only current meaningful groups or institutions; use a short list.
+- traits: a few stable personality traits supported by meaningful characterization. Exclude temporary moods.
+- voice: one compact pattern describing how the person speaks, such as register, forms of address, recurring phrasing, or sentence endings. Never include sample dialogue or quotations.
+- lastKnownState: only the last observed location and physical condition in the summarized chronology. Keep both concise.
+- relationships and feelings are directional current snapshots toward one named person. Keep only standing ties and durable feelings, not every scene emotion.
 
-## Field policy
+## Brevity and safety
 
-- facts: durable objective information that does not fit a more specific field. Do not duplicate roles or affiliations here.
-- roles: current occupations, positions, social functions, or narrative roles established in-world.
-- affiliations: current membership in houses, organizations, factions, institutions, or groups.
-- personalityTraits: stable behavioral tendencies supported across meaningful behavior. Do not store a momentary mood as personality.
-- speechPatterns: distinctive forms of address, register, recurring phrasing, or sentence-ending habits. Preserve useful source-language examples when wording matters.
-- lastKnownState: only the last location and physical condition actually observed within the target. It means last known in summarized chronology, not the live chat's present state.
-
-## Relationships and feelings
-
-- Store a relationship under the observing person's entry; relationships and feelings are directional.
-- relationship describes the latest durable relationship status toward one specific person.
-- feelings contains the latest durable feelings toward that person, not every emotion experienced in the scene.
-- Use targetId when the related person has one in Current People Memory. Otherwise use targetName and set targetId to null.
-- For relationshipUpdates, return the complete current relationship and feelings arrays for that pair.
-- Do not add targetless, fleeting, or scene-only emotions to People Memory.
-
-## Safety and output discipline
-
-- Never propose deleting a person entry.
-- Never erase history by describing past states as current states.
-- Do not infer hidden thoughts, relationships, traits, roles, or affiliations without source support.
-- Keep each value concise, factual, and useful for future roleplay continuity.
-- If no durable person memory was created or changed, return empty created and updated arrays.`,
+- Use short labels or one compact sentence per scalar field. Do not include evidence, explanations, chronology, dialogue, or lists of actions inside profile fields.
+- Do not duplicate information across fields. Never propose deleting a person.
+- If no durable profile was created or changed, return empty created and updated arrays.`,
     items: `# Item Memory Updates
 
 Extract durable item-memory proposals from the Summary Target. These proposals maintain a current reference snapshot of narratively relevant objects, not an inventory of every object mentioned and not a second chronological summary.
@@ -314,6 +296,29 @@ const DEFAULT_SUMMARY_RECORD_TEMPLATE = `<Summary range="#{{sumiRecordStartId}} 
 {{sumiRecordContent}}
 </Summary>`;
 
+const LEGACY_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
+{{sumiPersonAliases}}
+{{sumiPersonFacts}}
+{{sumiPersonRoles}}
+{{sumiPersonAffiliations}}
+{{sumiPersonPersonality}}
+{{sumiPersonSpeech}}
+{{sumiPersonState}}
+{{sumiPersonRelationships}}`;
+
+const DEFAULT_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
+{{sumiPersonProvisional}}
+{{sumiPersonAliases}}
+{{sumiPersonRole}}
+{{sumiPersonAge}}
+{{sumiPersonOccupation}}
+{{sumiPersonAppearance}}
+{{sumiPersonAffiliations}}
+{{sumiPersonTraits}}
+{{sumiPersonVoice}}
+{{sumiPersonState}}
+{{sumiPersonRelationships}}`;
+
 export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
     RECORDS: 'records',
     EVENTS: 'events',
@@ -345,15 +350,7 @@ const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
         kind: SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE,
         name: '현재 인물 도감',
         prefixTemplate: '# Current People',
-        entryTemplate: `## {{sumiPersonName}}
-{{sumiPersonAliases}}
-{{sumiPersonFacts}}
-{{sumiPersonRoles}}
-{{sumiPersonAffiliations}}
-{{sumiPersonPersonality}}
-{{sumiPersonSpeech}}
-{{sumiPersonState}}
-{{sumiPersonRelationships}}`,
+        entryTemplate: DEFAULT_PERSON_CONTEXT_TEMPLATE,
         suffixTemplate: '',
     },
     {
@@ -970,7 +967,10 @@ function normalizeSummaryContextBlocks(value, legacyRecordTemplate) {
             name: fallback.name,
             enabled: candidate.enabled === undefined ? fallback.enabled : Boolean(candidate.enabled),
             prefixTemplate: String(candidate.prefixTemplate ?? fallback.prefixTemplate),
-            entryTemplate: String(candidate.entryTemplate ?? fallback.entryTemplate),
+            entryTemplate: fallback.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE
+                && String(candidate.entryTemplate ?? '') === LEGACY_PERSON_CONTEXT_TEMPLATE
+                ? fallback.entryTemplate
+                : String(candidate.entryTemplate ?? fallback.entryTemplate),
             suffixTemplate: String(candidate.suffixTemplate ?? fallback.suffixTemplate),
         });
     }
@@ -1192,6 +1192,23 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
             }),
             ...migratedBlocks.slice(insertIndex),
         ];
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 10) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const config = normalizePromptBlockConfig(block.kind, block.config);
+            return {
+                ...block,
+                config: {
+                    ...config,
+                    rules: {
+                        ...config.rules,
+                        people: DEFAULT_SUMMARY_EXTRACTION_RULES.people,
+                    },
+                },
+            };
+        });
     }
 
     return {

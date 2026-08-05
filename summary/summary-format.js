@@ -1,4 +1,4 @@
-export const SUMMARY_FORMAT_VERSION = 1;
+export const SUMMARY_FORMAT_VERSION = 2;
 
 export const SUMMARY_LANGUAGE_MODES = Object.freeze({
     ENGLISH: 'english',
@@ -151,12 +151,15 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         example.memoryUpdates.people = {
                 created: [{
                     name: 'Canonical character name',
+                    provisional: false,
                     aliases: ['Established alias'],
-                    facts: ['Durable objective fact'],
-                    roles: ['Current role'],
+                    role: 'Compact role in the story or null',
+                    age: 'Explicit age or concise age description, otherwise null',
+                    occupation: 'Current occupation or position, otherwise null',
+                    appearance: 'Compact stable identifying appearance or null',
                     affiliations: ['Current affiliation'],
-                    personalityTraits: ['Stable personality trait'],
-                    speechPatterns: ['Distinctive speech pattern'],
+                    traits: ['Stable personality trait'],
+                    voice: 'Compact speech pattern without sample dialogue or null',
                     lastKnownState: {
                         location: 'Last location observed in the target or null',
                         physicalCondition: 'Last physical condition observed in the target or null',
@@ -172,14 +175,17 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
                     targetId: 'ID copied exactly from Current People Memory',
                     append: {
                         aliases: ['Newly established alias'],
-                        facts: ['New durable objective fact'],
                     },
                     replace: {
                         name: 'New canonical name only when the name changed',
-                        roles: ['Complete current role snapshot'],
+                        provisional: false,
+                        role: 'Complete current story-role snapshot or null',
+                        age: 'Complete current age snapshot or null',
+                        occupation: 'Complete current occupation snapshot or null',
+                        appearance: 'Complete current stable appearance snapshot or null',
                         affiliations: ['Complete current affiliation snapshot'],
-                        personalityTraits: ['Complete current personality snapshot'],
-                        speechPatterns: ['Complete current speech-pattern snapshot'],
+                        traits: ['Complete concise personality snapshot'],
+                        voice: 'Complete compact speech-pattern snapshot or null',
                         lastKnownState: {
                             location: 'Last location observed in the target or null',
                             physicalCondition: 'Last physical condition observed in the target or null',
@@ -543,12 +549,15 @@ function normalizeCreatedPerson(value) {
     if (!name) return null;
     return {
         name,
+        provisional: Boolean(value.provisional),
         aliases: normalizeStringList(value.aliases),
-        facts: normalizeStringList(value.facts),
-        roles: normalizeStringList(value.roles),
+        role: normalizeLegacyScalar(value.role, value.roles),
+        age: normalizeNullableString(value.age),
+        occupation: normalizeNullableString(value.occupation),
+        appearance: normalizeNullableString(value.appearance),
         affiliations: normalizeStringList(value.affiliations),
-        personalityTraits: normalizeStringList(value.personalityTraits),
-        speechPatterns: normalizeStringList(value.speechPatterns),
+        traits: normalizeStringList(value.traits ?? value.personalityTraits),
+        voice: normalizeLegacyScalar(value.voice, value.speechPatterns),
         lastKnownState: normalizeLastKnownState(value.lastKnownState),
         relationships: normalizeRelationships(value.relationships),
     };
@@ -562,19 +571,36 @@ function normalizeUpdatedPerson(value) {
     const replace = isPlainObject(value.replace) ? value.replace : {};
     const normalizedReplace = {};
     if (Object.hasOwn(replace, 'name')) normalizedReplace.name = normalizeNullableString(replace.name);
-    for (const key of ['roles', 'affiliations', 'personalityTraits', 'speechPatterns']) {
-        if (Object.hasOwn(replace, key)) normalizedReplace[key] = normalizeStringList(replace[key]);
+    if (Object.hasOwn(replace, 'provisional')) normalizedReplace.provisional = Boolean(replace.provisional);
+    if (Object.hasOwn(replace, 'role') || Object.hasOwn(replace, 'roles')) {
+        normalizedReplace.role = normalizeLegacyScalar(replace.role, replace.roles);
+    }
+    for (const key of ['age', 'occupation', 'appearance']) {
+        if (Object.hasOwn(replace, key)) normalizedReplace[key] = normalizeNullableString(replace[key]);
+    }
+    if (Object.hasOwn(replace, 'affiliations')) normalizedReplace.affiliations = normalizeStringList(replace.affiliations);
+    if (Object.hasOwn(replace, 'traits') || Object.hasOwn(replace, 'personalityTraits')) {
+        normalizedReplace.traits = normalizeStringList(replace.traits ?? replace.personalityTraits);
+    }
+    if (Object.hasOwn(replace, 'voice') || Object.hasOwn(replace, 'speechPatterns')) {
+        normalizedReplace.voice = normalizeLegacyScalar(replace.voice, replace.speechPatterns);
     }
     if (Object.hasOwn(replace, 'lastKnownState')) normalizedReplace.lastKnownState = normalizeLastKnownStatePatch(replace.lastKnownState);
     return {
         targetId,
         append: {
             aliases: normalizeStringList(append.aliases),
-            facts: normalizeStringList(append.facts),
         },
         replace: normalizedReplace,
         relationshipUpdates: normalizeRelationships(value.relationshipUpdates),
     };
+}
+
+function normalizeLegacyScalar(value, legacyValues) {
+    const normalized = normalizeNullableString(value);
+    if (normalized) return normalized;
+    const legacy = normalizeStringList(legacyValues);
+    return legacy.length ? legacy.join('; ') : null;
 }
 
 function normalizeLastKnownState(value) {

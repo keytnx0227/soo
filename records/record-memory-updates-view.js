@@ -1,12 +1,14 @@
 import { escapeHtml } from '../core/utils.js';
 
 const FIELD_LABELS = Object.freeze({
-    aliases: '별칭',
-    facts: '객관 정보',
-    roles: '역할',
+    provisional: '임시 이름',
+    role: '극중 역할',
+    age: '나이',
+    occupation: '직업·직위',
+    appearance: '외형',
     affiliations: '소속',
-    personalityTraits: '성격',
-    speechPatterns: '말투',
+    traits: '성격',
+    voice: '말투',
     name: '이름',
 });
 
@@ -85,12 +87,15 @@ function renderCreatedPerson(person) {
     return `
         <article class="stsm-memory-update-card">
             <header><span>신규 인물</span><strong>${escapeHtml(person.name)}</strong></header>
+            ${renderValueRow('임시 이름', person.provisional ? '예' : '아니오')}
             ${renderValueRow('별칭', person.aliases)}
-            ${renderValueRow('객관 정보', person.facts)}
-            ${renderValueRow('역할', person.roles)}
+            ${renderValueRow('극중 역할', person.role)}
+            ${renderValueRow('나이', person.age)}
+            ${renderValueRow('직업·직위', person.occupation)}
+            ${renderValueRow('외형', person.appearance)}
             ${renderValueRow('소속', person.affiliations)}
-            ${renderValueRow('성격', person.personalityTraits)}
-            ${renderValueRow('말투', person.speechPatterns)}
+            ${renderValueRow('성격', person.traits)}
+            ${renderValueRow('말투', person.voice)}
             ${renderLastKnownState(person.lastKnownState)}
             ${renderRelationships('관계 및 감정', person.relationships)}
         </article>
@@ -106,7 +111,6 @@ function renderUpdatedPerson(update) {
         <article class="stsm-memory-update-card">
             <header><span>기존 인물 변경</span><strong>${escapeHtml(update.targetId)}</strong></header>
             ${renderValueRow('추가 · 별칭', update.append?.aliases)}
-            ${renderValueRow('추가 · 객관 정보', update.append?.facts)}
             ${replaceRows}
             ${update.replace && Object.hasOwn(update.replace, 'lastKnownState')
                 ? renderLastKnownState(update.replace.lastKnownState, '교체 · 마지막 확인 상태')
