@@ -33,6 +33,8 @@ export const DEFAULT_SUMMARY_SECTIONS = Object.freeze({
 export const DEFAULT_MEMORY_SECTIONS = Object.freeze({
     people: true,
     items: true,
+    commitments: true,
+    events: true,
 });
 
 export const SUMMARY_SECTION_DESCRIPTIONS = Object.freeze({
@@ -47,6 +49,8 @@ export const SUMMARY_SECTION_DESCRIPTIONS = Object.freeze({
     tags: '청크를 나중에 다시 찾기 위한 검색용 메타데이터를 생성합니다. 태그는 요약 본문이나 {{sumiSummary}}에 출력되지 않습니다.',
     people: '요약 대상에서 확인된 인물의 장기 정보와 기존 인물에 대한 변경안을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
     items: '요약 대상에서 확인된 중요한 아이템의 장기 정보와 기존 아이템에 대한 변경안을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
+    commitments: '향후 추적할 약속과 서약, 명시적인 의무가 붙은 비밀의 생성 및 상태 변경을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
+    events: '미래 맥락에 남길 사건과 이야기의 변곡점을 간결한 연대기로 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
 });
 
 const SECTION_KEYS_BY_KIND = Object.freeze({
@@ -81,6 +85,8 @@ export function getEnabledMemorySections(value) {
     return {
         people: source.people ?? DEFAULT_MEMORY_SECTIONS.people,
         items: source.items ?? DEFAULT_MEMORY_SECTIONS.items,
+        commitments: source.commitments ?? DEFAULT_MEMORY_SECTIONS.commitments,
+        events: source.events ?? DEFAULT_MEMORY_SECTIONS.events,
     };
 }
 
@@ -138,7 +144,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
             matchTerms: ['Relevant source-language term'],
         }];
     }
-    if (memorySections.people || memorySections.items) {
+    if (memorySections.people || memorySections.items || memorySections.commitments || memorySections.events) {
         example.memoryUpdates = {};
     }
     if (memorySections.people) {
@@ -223,6 +229,66 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
             }],
         };
     }
+    if (memorySections.commitments) {
+        example.memoryUpdates.commitments = {
+            created: [{
+                title: 'Concise commitment title',
+                terms: 'What was promised, required, protected, or expected',
+                participants: [{
+                    personId: 'Existing person ID or null',
+                    personName: 'Participant name',
+                    role: 'Participant role in this commitment',
+                }],
+                conditions: ['Condition required for fulfillment or relevance'],
+                deadline: 'Explicit or relative deadline, or null',
+                facts: ['Durable supporting fact'],
+                status: 'pending',
+                statusReason: 'Why this status currently applies',
+            }],
+            updated: [{
+                targetId: 'ID copied exactly from Current Commitment Memory',
+                append: {
+                    facts: ['New durable supporting fact'],
+                },
+                replace: {
+                    title: 'Updated title only when needed',
+                    terms: 'Complete current terms',
+                    participants: [{
+                        personId: 'Existing person ID or null',
+                        personName: 'Participant name',
+                        role: 'Participant role',
+                    }],
+                    conditions: ['Complete current condition snapshot'],
+                    deadline: 'Current deadline or null',
+                    status: 'pending, fulfilled, or obsolete',
+                    statusReason: 'Why the new status applies',
+                },
+            }],
+        };
+    }
+    if (memorySections.events) {
+        example.memoryUpdates.events = {
+            created: [{
+                title: 'Concise event title',
+                date: 'Established date or Day N',
+                location: 'Established location or location transition',
+                summary: 'Concise cause, event, and durable result',
+                importance: 'ordinary or turning_point',
+                shifts: ['Durable change caused by a turning point; empty for ordinary'],
+            }],
+            updated: [{
+                targetId: 'ID copied exactly from Current Major Event Memory',
+                replace: {
+                    title: 'Complete revised title',
+                    date: 'Complete revised date',
+                    location: 'Complete revised location',
+                    summary: 'Complete revised event summary',
+                    importance: 'ordinary or turning_point',
+                    shifts: ['Complete revised shift list'],
+                },
+            }],
+        };
+    }
 
     return [
         '# JSON Output Contract',
@@ -238,6 +304,17 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         ...(memorySections.items ? [
             'For items.updated entries, omit optional replace properties that did not change; the example shows the available property shapes, not a requirement to repeat them all.',
             'When there are no supported item-memory proposals, return empty created and updated arrays.',
+        ] : []),
+        ...(memorySections.commitments ? [
+            'For commitments.updated entries, omit optional replace properties that did not change; the example shows available property shapes.',
+            'Commitment status must be exactly pending, fulfilled, or obsolete.',
+            'When there are no supported commitment-memory proposals, return empty created and updated arrays.',
+        ] : []),
+        ...(memorySections.events ? [
+            'For events.updated entries, omit optional replace properties that did not change; the example shows available property shapes.',
+            'Event importance must be exactly ordinary or turning_point.',
+            'For ordinary events, shifts must be an empty array. For turning_point events, shifts must contain at least one durable change.',
+            'When there are no supported major-event proposals, return empty created and updated arrays.',
         ] : []),
         '',
         JSON.stringify(example, null, 2),
@@ -276,7 +353,126 @@ function normalizeMemoryUpdates(value, memorySections) {
     return {
         people: memorySections.people ? normalizePeopleUpdates(source.people) : { created: [], updated: [] },
         items: memorySections.items ? normalizeItemUpdates(source.items) : { created: [], updated: [] },
+        commitments: memorySections.commitments ? normalizeCommitmentUpdates(source.commitments) : { created: [], updated: [] },
+        events: memorySections.events ? normalizeEventUpdates(source.events) : { created: [], updated: [] },
     };
+}
+
+function normalizeEventUpdates(value) {
+    const source = isPlainObject(value) ? value : {};
+    return {
+        created: Array.isArray(source.created) ? source.created.map(normalizeCreatedEvent).filter(Boolean) : [],
+        updated: Array.isArray(source.updated) ? source.updated.map(normalizeUpdatedEvent).filter(Boolean) : [],
+    };
+}
+
+function normalizeCreatedEvent(value) {
+    if (!isPlainObject(value)) return null;
+    const title = normalizeNullableString(value.title);
+    const summary = normalizeNullableString(value.summary);
+    if (!title || !summary) return null;
+    const importance = normalizeEventImportance(value.importance);
+    const shifts = normalizeEventShifts(value.shifts, importance);
+    return {
+        title,
+        date: normalizeNullableString(value.date),
+        location: normalizeNullableString(value.location),
+        summary,
+        importance,
+        shifts,
+    };
+}
+
+function normalizeUpdatedEvent(value) {
+    if (!isPlainObject(value)) return null;
+    const targetId = normalizeNullableString(value.targetId);
+    if (!targetId) return null;
+    const replace = isPlainObject(value.replace) ? value.replace : {};
+    const normalizedReplace = {};
+    if (Object.hasOwn(replace, 'title')) normalizedReplace.title = normalizeNullableString(replace.title);
+    if (Object.hasOwn(replace, 'date')) normalizedReplace.date = normalizeNullableString(replace.date);
+    if (Object.hasOwn(replace, 'location')) normalizedReplace.location = normalizeNullableString(replace.location);
+    if (Object.hasOwn(replace, 'summary')) normalizedReplace.summary = normalizeNullableString(replace.summary);
+    if (Object.hasOwn(replace, 'importance')) normalizedReplace.importance = normalizeEventImportance(replace.importance);
+    if (Object.hasOwn(replace, 'shifts')) {
+        const importance = normalizedReplace.importance || null;
+        normalizedReplace.shifts = normalizeEventShifts(replace.shifts, importance);
+    }
+    if (normalizedReplace.importance === 'ordinary') normalizedReplace.shifts = [];
+    return { targetId, replace: normalizedReplace };
+}
+
+function normalizeEventImportance(value) {
+    return value === 'turning_point' ? 'turning_point' : 'ordinary';
+}
+
+function normalizeEventShifts(value, importance) {
+    return importance === 'ordinary' ? [] : normalizeStringList(value);
+}
+
+function normalizeCommitmentUpdates(value) {
+    const source = isPlainObject(value) ? value : {};
+    return {
+        created: Array.isArray(source.created) ? source.created.map(normalizeCreatedCommitment).filter(Boolean) : [],
+        updated: Array.isArray(source.updated) ? source.updated.map(normalizeUpdatedCommitment).filter(Boolean) : [],
+    };
+}
+
+function normalizeCreatedCommitment(value) {
+    if (!isPlainObject(value)) return null;
+    const title = normalizeNullableString(value.title);
+    const terms = normalizeNullableString(value.terms);
+    if (!title || !terms) return null;
+    return {
+        title,
+        terms,
+        participants: normalizeCommitmentParticipants(value.participants),
+        conditions: normalizeStringList(value.conditions),
+        deadline: normalizeNullableString(value.deadline),
+        facts: normalizeStringList(value.facts),
+        status: normalizeCommitmentStatus(value.status),
+        statusReason: normalizeNullableString(value.statusReason),
+    };
+}
+
+function normalizeUpdatedCommitment(value) {
+    if (!isPlainObject(value)) return null;
+    const targetId = normalizeNullableString(value.targetId);
+    if (!targetId) return null;
+    const append = isPlainObject(value.append) ? value.append : {};
+    const replace = isPlainObject(value.replace) ? value.replace : {};
+    const normalizedReplace = {};
+    if (Object.hasOwn(replace, 'title')) normalizedReplace.title = normalizeNullableString(replace.title);
+    if (Object.hasOwn(replace, 'terms')) normalizedReplace.terms = normalizeNullableString(replace.terms);
+    if (Object.hasOwn(replace, 'participants')) normalizedReplace.participants = normalizeCommitmentParticipants(replace.participants);
+    if (Object.hasOwn(replace, 'conditions')) normalizedReplace.conditions = normalizeStringList(replace.conditions);
+    if (Object.hasOwn(replace, 'deadline')) normalizedReplace.deadline = normalizeNullableString(replace.deadline);
+    if (Object.hasOwn(replace, 'status')) normalizedReplace.status = normalizeCommitmentStatus(replace.status);
+    if (Object.hasOwn(replace, 'statusReason')) normalizedReplace.statusReason = normalizeNullableString(replace.statusReason);
+    return {
+        targetId,
+        append: { facts: normalizeStringList(append.facts) },
+        replace: normalizedReplace,
+    };
+}
+
+function normalizeCommitmentParticipants(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(participant => {
+        if (!isPlainObject(participant)) return null;
+        const personId = normalizeNullableString(participant.personId);
+        const personName = normalizeNullableString(participant.personName);
+        if (!personId && !personName) return null;
+        return {
+            personId,
+            personName,
+            role: normalizeNullableString(participant.role),
+        };
+    }).filter(Boolean);
+}
+
+function normalizeCommitmentStatus(value) {
+    return ['pending', 'fulfilled', 'obsolete'].includes(value) ? value : 'pending';
 }
 
 function normalizeItemUpdates(value) {

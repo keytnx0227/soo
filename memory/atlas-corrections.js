@@ -1,0 +1,125 @@
+const CUMULATIVE_FIELDS = Object.freeze({
+    people: new Set(['aliases', 'facts']),
+    items: new Set(['aliases', 'facts']),
+    commitments: new Set(['facts']),
+    events: new Set(),
+});
+
+export function applyAtlasCorrections(raw, corrections) {
+    const orphanCorrections = { people: [], items: [], commitments: [], events: [] };
+    return {
+        ...raw,
+        people: applyCategoryCorrections('people', raw.people, corrections.people, orphanCorrections.people),
+        items: applyCategoryCorrections('items', raw.items, corrections.items, orphanCorrections.items),
+        commitments: applyCategoryCorrections('commitments', raw.commitments, corrections.commitments, orphanCorrections.commitments),
+        events: applyCategoryCorrections('events', raw.events, corrections.events, orphanCorrections.events)
+            .map(event => event.importance === 'ordinary' ? { ...event, shifts: [] } : event),
+        orphanCorrections,
+    };
+}
+
+function applyCategoryCorrections(category, entities, correctionMap, orphanCorrections) {
+    const entitiesById = new Map(entities.map(entity => [entity.id, entity]));
+    for (const entityId of Object.keys(correctionMap || {})) {
+        if (!entitiesById.has(entityId)) orphanCorrections.push(entityId);
+    }
+    return entities.map(entity => {
+        const fields = correctionMap?.[entity.id]?.fields || {};
+        if (!Object.keys(fields).length) return entity;
+        const corrected = structuredClone(entity);
+        corrected.manualCorrections = structuredClone(fields);
+        const handledFields = category === 'commitments'
+            ? applyCommitmentStatusCorrection(corrected, fields)
+            : new Set();
+        for (const [path, correction] of Object.entries(fields)) {
+            if (handledFields.has(path)) continue;
+            applyFieldCorrection(category, corrected, path, correction);
+        }
+        return corrected;
+    });
+}
+
+function applyCommitmentStatusCorrection(commitment, fields) {
+    const statusCorrection = fields.status;
+    if (!statusCorrection) return new Set();
+    const reasonCorrection = fields.statusReason;
+    let status = statusCorrection.value;
+    let reason = reasonCorrection ? reasonCorrection.value : commitment.statusReason;
+    let latestAcceptedRange = statusCorrection.appliedThroughId;
+    const futureEvents = statusCorrection.locked ? [] : (commitment.provenance?.statusHistory || [])
+        .filter(event => Number(event.range?.endId) > statusCorrection.appliedThroughId)
+        .sort((left, right) => Number(left.range?.endId) - Number(right.range?.endId));
+
+    for (const event of futureEvents) {
+        if (['fulfilled', 'obsolete'].includes(status) && event.status !== status) continue;
+        status = event.status;
+        if (event.statusReason !== null && event.statusReason !== undefined) reason = event.statusReason;
+        latestAcceptedRange = Number(event.range?.endId) || latestAcceptedRange;
+    }
+
+    if (reasonCorrection) {
+        const futureReasonApplied = !reasonCorrection.locked && latestAcceptedRange > reasonCorrection.appliedThroughId;
+        if (reasonCorrection.locked || !futureReasonApplied) reason = reasonCorrection.value;
+    }
+    commitment.status = status;
+    commitment.statusReason = reason;
+    return new Set(reasonCorrection ? ['status', 'statusReason'] : ['status']);
+}
+
+function applyFieldCorrection(category, entity, path, correction) {
+    if (CUMULATIVE_FIELDS[category].has(path)) {
+        const laterValues = correction.locked ? [] : (entity.provenance?.values?.[path] || [])
+            .filter(source => Number(source.range?.endId) > correction.appliedThroughId)
+            .map(source => source.value);
+        setPath(entity, path, dedupeStrings([...(Array.isArray(correction.value) ? correction.value : []), ...laterValues]));
+        return;
+    }
+
+    if (path === 'relationships') {
+        setPath(entity, path, mergeRelationships(correction.value, entity.relationships, correction));
+        return;
+    }
+
+    const sourceEndId = Number(entity.provenance?.fields?.[path]?.endId) || 0;
+    if (correction.locked || sourceEndId <= correction.appliedThroughId) {
+        setPath(entity, path, structuredClone(correction.value));
+    }
+}
+
+function mergeRelationships(manualValue, automaticValue, correction) {
+    const result = Array.isArray(manualValue) ? structuredClone(manualValue) : [];
+    if (correction.locked) return result;
+    const later = (Array.isArray(automaticValue) ? automaticValue : [])
+        .filter(item => Number(item.lastObservedRange?.endId) > correction.appliedThroughId);
+    for (const relationship of later) {
+        const key = relationshipKey(relationship);
+        const index = result.findIndex(item => relationshipKey(item) === key);
+        if (index >= 0) result[index] = structuredClone(relationship);
+        else result.push(structuredClone(relationship));
+    }
+    return result;
+}
+
+function relationshipKey(value) {
+    return value?.targetId ? `id:${value.targetId}` : `name:${String(value?.targetName || '').toLocaleLowerCase()}`;
+}
+
+function setPath(target, path, value) {
+    const segments = path.split('.');
+    let parent = target;
+    for (const segment of segments.slice(0, -1)) {
+        if (!parent[segment] || typeof parent[segment] !== 'object') parent[segment] = {};
+        parent = parent[segment];
+    }
+    parent[segments.at(-1)] = value;
+}
+
+function dedupeStrings(values) {
+    const known = new Set();
+    return values.map(value => String(value || '').trim()).filter(value => {
+        const key = value.toLocaleLowerCase();
+        if (!key || known.has(key)) return false;
+        known.add(key);
+        return true;
+    });
+}

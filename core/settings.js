@@ -14,7 +14,7 @@ export const PROMPT_TYPES = Object.freeze({
     REVISION: 'revision',
 });
 
-const PROMPT_SCHEMA_VERSION = 7;
+const PROMPT_SCHEMA_VERSION = 9;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -36,6 +36,8 @@ export const BLOCK_KINDS = Object.freeze({
     SUMMARY_OUTPUT_CONTRACT: 'summaryOutputContract',
     PEOPLE_MEMORY: 'peopleMemory',
     ITEM_MEMORY: 'itemMemory',
+    COMMITMENT_MEMORY: 'commitmentMemory',
+    EVENT_MEMORY: 'eventMemory',
     SUMMARY_TITLE: SUMMARY_SECTION_KINDS.TITLE,
     SUMMARY_DATE: SUMMARY_SECTION_KINDS.DATE,
     SUMMARY_TIME: SUMMARY_SECTION_KINDS.TIME,
@@ -59,6 +61,8 @@ export const SUMMARY_EXTRACTION_RULE_DEFINITIONS = Object.freeze([
     { key: 'tags', label: '검색 태그', kind: SUMMARY_SECTION_KINDS.TAGS },
     { key: 'people', label: '인물 도감', kind: null, category: 'memory' },
     { key: 'items', label: '아이템 도감', kind: null, category: 'memory' },
+    { key: 'commitments', label: '서약 장부', kind: null, category: 'memory' },
+    { key: 'events', label: '주요 사건', kind: null, category: 'memory' },
 ]);
 
 const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
@@ -173,6 +177,99 @@ Extract durable item-memory proposals from the Summary Target. These proposals m
 - Do not infer ownership, abilities, provenance, or significance without source support.
 - Keep each value concise, factual, and useful for future roleplay continuity.
 - If no durable item memory was created or changed, return empty created and updated arrays.`,
+    commitments: `# Commitment Memory Updates
+
+Extract durable commitments from the Summary Target. A commitment is a promise, vow, agreement, obligation, or a secret with an explicit future duty to reveal, protect, deliver, resolve, or otherwise act upon it.
+
+## Scope and evidence boundary
+
+- Create or update commitments only from events established in the Summary Target.
+- Character profiles, World Info, recent summaries, and current memory blocks may resolve identity and context, but they are not evidence that a commitment changed in this target.
+- Do not treat an ordinary secret, general goal, casual intention, speculation, desire, threat, or rhetorical statement as a commitment.
+- Do not use this ledger for unresolved plot hooks without a specific duty or expected future action. Those belong to a separate future system.
+- Prefer empty arrays over speculative, redundant, trivial, or already irrelevant entries.
+
+## Creation and identity
+
+- Add to created only when the target establishes a new commitment with future continuity value and no matching entry exists in Current Commitment Memory.
+- Use a concise title and a self-contained terms statement identifying what must happen.
+- Never invent an ID. The extension assigns IDs after validation.
+- Do not create duplicates when an existing commitment is restated, clarified, transferred, or given a new deadline.
+- A commitment created and fully resolved inside the same target should usually be omitted unless its completion has durable future significance.
+
+## Participants and supporting fields
+
+- participants identifies people or entities directly responsible for, owed, protected by, benefiting from, or witnessing the commitment.
+- Copy personId exactly when it is available in Current People Memory. Otherwise use personName and set personId to null.
+- role should concisely state the participant's function, such as promisor, beneficiary, witness, custodian, or obligated party.
+- conditions contains concrete requirements affecting fulfillment or continued relevance.
+- deadline contains only an explicit or reliably relative deadline. Otherwise return null.
+- facts contains durable supporting information that should coexist with existing facts and does not duplicate terms, conditions, or status.
+
+## Status policy
+
+- status must be exactly pending, fulfilled, or obsolete.
+- pending means the commitment still requires tracking.
+- fulfilled means the promised action or required condition was actually completed. Repeating an intention, preparing to act, or partially progressing is not fulfillment.
+- obsolete means fulfillment did not occur but tracking is no longer meaningful because the commitment was cancelled, waived, superseded, made impossible, or otherwise lost relevance.
+- Use statusReason to state the concrete evidence for the current status.
+- Never automatically move a fulfilled or obsolete commitment back to pending. If the prior status was wrong, leave correction to the user.
+
+## Updating existing commitments
+
+- Add to updated only when targetId was supplied by Current Commitment Memory. Copy it exactly.
+- Never guess, synthesize, or modify a targetId.
+- append.facts contains only newly established durable supporting facts.
+- replace contains only fields whose latest snapshot changed in this target. Omit every unchanged field.
+- When replacing participants or conditions, return the complete intended current array.
+- Never propose deleting a commitment. Completed and obsolete entries remain as history.
+
+## Output discipline
+
+- Keep values concise, factual, and useful for future continuity.
+- Do not infer fulfillment, cancellation, deadlines, or participant obligations without source evidence.
+- If no commitment was created or changed, return empty created and updated arrays.`,
+    events: `# Major Event Memory Updates
+
+Extract a selective chronology of durable narrative events from the Summary Target. This is not a transcript and must not duplicate every plot bullet.
+
+## Scope and evidence boundary
+
+- Create or update events only from developments established in the Summary Target.
+- Character profiles, World Info, recent summaries, and current memory blocks may resolve identity and context, but they are not evidence that an event occurred or changed in this target.
+- Record only events worth preserving for future narrative continuity. Omit routine movement, small talk, and actions with no durable consequence.
+- Prefer empty arrays over trivial, speculative, redundant, or duplicate events.
+
+## Creation and identity
+
+- Add to created only when the target establishes a distinct event not already represented in Current Major Event Memory.
+- Use a short, recognizable title and a concise summary preserving the event's cause, central action, and durable result.
+- Never invent an ID. The extension assigns IDs after validation.
+- Do not create a duplicate merely because a later target reveals additional consequences or changes the event's perceived importance. Update the existing event instead.
+
+## Date and location
+
+- Use the same established date notation as the chunk summary. Preserve explicit dates; otherwise continue the reliable Day N chronology.
+- Keep date and location concise. Represent a meaningful transition with \" -> \" when the event spans multiple dates or locations.
+
+## Importance and shifts
+
+- importance must be exactly ordinary or turning_point.
+- ordinary means a continuity-worthy event that does not fundamentally redirect the story.
+- turning_point means the event substantially changes a relationship, goal, conflict, power balance, or persistent world state.
+- shifts describes only durable before-to-after consequences caused by a turning point. Each shift must state what became different after the event.
+- For ordinary events, shifts must be an empty array.
+- For turning_point events, provide at least one concrete shift.
+
+## Updating existing events
+
+- Add to updated only when targetId was supplied by Current Major Event Memory. Copy it exactly.
+- Never guess, synthesize, or modify a targetId.
+- replace contains only fields whose established value or interpretation changed in this target. Omit every unchanged field.
+- A later consequence may promote an ordinary event to turning_point. When doing so, replace importance and shifts together.
+- If changing a turning point back to ordinary, return importance as ordinary and shifts as an empty array.
+- Never propose deleting an event. Leave deletion or correction to the user.
+- If no major event was created or changed, return empty created and updated arrays.`,
 });
 
 const LEGACY_SUMMARY_EXTRACTION_IDS = Object.freeze({
@@ -217,6 +314,91 @@ const DEFAULT_SUMMARY_RECORD_TEMPLATE = `<Summary range="#{{sumiRecordStartId}} 
 {{sumiRecordContent}}
 </Summary>`;
 
+export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
+    RECORDS: 'records',
+    EVENTS: 'events',
+    PEOPLE: 'people',
+    ITEMS: 'items',
+    COMMITMENTS: 'commitments',
+});
+
+const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
+    {
+        kind: SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS,
+        name: '시간순 요약 레코드',
+        prefixTemplate: '',
+        entryTemplate: DEFAULT_SUMMARY_RECORD_TEMPLATE,
+        suffixTemplate: '',
+    },
+    {
+        kind: SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS,
+        name: '주요 사건',
+        prefixTemplate: '# Major Events',
+        entryTemplate: `## {{sumiEventTitle}}
+- date: {{sumiEventDate}}
+- location: {{sumiEventLocation}}
+- event: {{sumiEventSummary}}
+{{sumiEventShifts}}`,
+        suffixTemplate: '',
+    },
+    {
+        kind: SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE,
+        name: '현재 인물 도감',
+        prefixTemplate: '# Current People',
+        entryTemplate: `## {{sumiPersonName}}
+{{sumiPersonAliases}}
+{{sumiPersonFacts}}
+{{sumiPersonRoles}}
+{{sumiPersonAffiliations}}
+{{sumiPersonPersonality}}
+{{sumiPersonSpeech}}
+{{sumiPersonState}}
+{{sumiPersonRelationships}}`,
+        suffixTemplate: '',
+    },
+    {
+        kind: SUMMARY_CONTEXT_BLOCK_KINDS.ITEMS,
+        name: '현재 아이템 도감',
+        prefixTemplate: '# Current Items',
+        entryTemplate: `## {{sumiItemName}}
+{{sumiItemAliases}}
+{{sumiItemFacts}}
+{{sumiItemFunctions}}
+{{sumiItemState}}`,
+        suffixTemplate: '',
+    },
+    {
+        kind: SUMMARY_CONTEXT_BLOCK_KINDS.COMMITMENTS,
+        name: '서약 장부',
+        prefixTemplate: '# Commitment Ledger',
+        entryTemplate: `## {{sumiCommitmentTitle}}
+- status: {{sumiCommitmentStatus}}
+- terms: {{sumiCommitmentTerms}}
+{{sumiCommitmentParticipants}}
+{{sumiCommitmentConditions}}
+{{sumiCommitmentDeadline}}
+{{sumiCommitmentFacts}}
+{{sumiCommitmentStatusReason}}`,
+        suffixTemplate: '',
+    },
+]);
+
+export function getDefaultSummaryContextBlocks() {
+    const order = [
+        SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS,
+        SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE,
+        SUMMARY_CONTEXT_BLOCK_KINDS.ITEMS,
+        SUMMARY_CONTEXT_BLOCK_KINDS.COMMITMENTS,
+        SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS,
+    ];
+    return [...SUMMARY_CONTEXT_BLOCK_DEFINITIONS]
+        .sort((left, right) => order.indexOf(left.kind) - order.indexOf(right.kind))
+        .map(definition => ({
+        ...definition,
+        enabled: true,
+        }));
+}
+
 export const defaultSettings = Object.freeze({
     enabled: true,
     connectionMode: 'profile',
@@ -246,6 +428,7 @@ export const defaultSettings = Object.freeze({
         injectionMaxTokens: 24000,
         autoHideSummarizedMessages: false,
         recordTemplate: DEFAULT_SUMMARY_RECORD_TEMPLATE,
+        contextBlocks: getDefaultSummaryContextBlocks(),
         injection: {
             mode: 'macro',
             position: 'after',
@@ -272,8 +455,9 @@ export function getSettings() {
         extensionSettings[MODULE_NAME] = structuredClone(defaultSettings);
     }
 
+    const migrateLegacyContextBlocks = !Array.isArray(extensionSettings[MODULE_NAME]?.summarization?.contextBlocks);
     mergeDefaults(extensionSettings[MODULE_NAME], defaultSettings);
-    normalizeSettings(extensionSettings[MODULE_NAME]);
+    normalizeSettings(extensionSettings[MODULE_NAME], { migrateLegacyContextBlocks });
     return extensionSettings[MODULE_NAME];
 }
 
@@ -329,6 +513,44 @@ export function setMemorySectionEnabled(section, enabled) {
     settings.summarization.memorySections[section] = Boolean(enabled);
     saveSettings();
     return settings.summarization.memorySections[section];
+}
+
+export function getSummaryContextBlocks() {
+    return structuredClone(getSettings().summarization.contextBlocks);
+}
+
+export function setSummaryContextBlockEnabled(kind, enabled) {
+    return updateSummaryContextBlock(kind, { enabled: Boolean(enabled) });
+}
+
+export function updateSummaryContextBlock(kind, patch) {
+    const settings = getSettings();
+    const block = settings.summarization.contextBlocks.find(item => item.kind === kind);
+    if (!block) return null;
+    if (Object.hasOwn(patch, 'enabled')) block.enabled = Boolean(patch.enabled);
+    for (const key of ['prefixTemplate', 'entryTemplate', 'suffixTemplate']) {
+        if (Object.hasOwn(patch, key)) block[key] = String(patch[key] ?? '');
+    }
+    if (kind === SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS && Object.hasOwn(patch, 'entryTemplate')) {
+        settings.summarization.recordTemplate = block.entryTemplate;
+    }
+    saveSettings();
+    window.dispatchEvent(new CustomEvent('stsm:injection-settings-changed'));
+    return structuredClone(block);
+}
+
+export function moveSummaryContextBlock(sourceKind, targetKind) {
+    const settings = getSettings();
+    const blocks = settings.summarization.contextBlocks;
+    const sourceIndex = blocks.findIndex(block => block.kind === sourceKind);
+    const targetIndex = blocks.findIndex(block => block.kind === targetKind);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return false;
+    const [source] = blocks.splice(sourceIndex, 1);
+    const insertionIndex = blocks.findIndex(block => block.kind === targetKind);
+    blocks.splice(insertionIndex, 0, source);
+    saveSettings();
+    window.dispatchEvent(new CustomEvent('stsm:injection-settings-changed'));
+    return true;
 }
 
 export function setTranslationSettings(patch) {
@@ -423,6 +645,9 @@ export function isRequiredPromptBlock(block) {
         BLOCK_KINDS.SUMMARY_EXTRACTION_RULES,
         BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT,
         BLOCK_KINDS.PEOPLE_MEMORY,
+        BLOCK_KINDS.ITEM_MEMORY,
+        BLOCK_KINDS.COMMITMENT_MEMORY,
+        BLOCK_KINDS.EVENT_MEMORY,
     ].includes(block?.kind);
 }
 
@@ -586,6 +811,20 @@ function createStructuredSummaryBlocks() {
             kind: BLOCK_KINDS.ITEM_MEMORY,
         }),
         createPromptBlock({
+            id: 'commitment-memory',
+            name: '현재 서약 장부',
+            content: '<Current Commitment Memory>\n{{sumiCommitmentMemory}}\n</Current Commitment Memory>',
+            locked: true,
+            kind: BLOCK_KINDS.COMMITMENT_MEMORY,
+        }),
+        createPromptBlock({
+            id: 'event-memory',
+            name: '현재 주요 사건',
+            content: '<Current Major Event Memory>\n{{sumiEventMemory}}\n</Current Major Event Memory>',
+            locked: true,
+            kind: BLOCK_KINDS.EVENT_MEMORY,
+        }),
+        createPromptBlock({
             id: 'summary-output-contract',
             name: 'JSON 출력 형식 · 자동 생성',
             content: '{{sumiSummaryJsonContract}}',
@@ -681,7 +920,7 @@ function replaceActivePreset(type, nextPreset) {
     ));
 }
 
-function normalizeSettings(settings) {
+function normalizeSettings(settings, { migrateLegacyContextBlocks = false } = {}) {
     settings.enabled = Boolean(settings.enabled);
     settings.connectionMode = ['profile', 'custom'].includes(settings.connectionMode) ? settings.connectionMode : 'profile';
     settings.connection.profile = normalizeConnection(settings.connection.profile, defaultSettings.connection.profile);
@@ -696,6 +935,10 @@ function normalizeSettings(settings) {
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
     settings.summarization.autoHideSummarizedMessages = Boolean(settings.summarization.autoHideSummarizedMessages);
     settings.summarization.recordTemplate = String(settings.summarization.recordTemplate ?? defaultSettings.summarization.recordTemplate);
+    settings.summarization.contextBlocks = normalizeSummaryContextBlocks(
+        migrateLegacyContextBlocks ? [] : settings.summarization.contextBlocks,
+        settings.summarization.recordTemplate,
+    );
     settings.summarization.injection = normalizeInjectionSettings(settings.summarization.injection);
     settings.translation = normalizeTranslationSettings(settings.translation);
 
@@ -712,6 +955,35 @@ function normalizeInjectionSettings(injection) {
         depth: clampInteger(source.depth, 0, 10000, 4),
         role: ['system', 'user', 'assistant'].includes(source.role) ? source.role : 'system',
     };
+}
+
+function normalizeSummaryContextBlocks(value, legacyRecordTemplate) {
+    const defaults = getDefaultSummaryContextBlocks();
+    const defaultsByKind = new Map(defaults.map(block => [block.kind, block]));
+    const source = Array.isArray(value) ? value : [];
+    const normalized = [];
+    for (const candidate of source) {
+        const fallback = defaultsByKind.get(candidate?.kind);
+        if (!fallback || normalized.some(block => block.kind === fallback.kind)) continue;
+        normalized.push({
+            kind: fallback.kind,
+            name: fallback.name,
+            enabled: candidate.enabled === undefined ? fallback.enabled : Boolean(candidate.enabled),
+            prefixTemplate: String(candidate.prefixTemplate ?? fallback.prefixTemplate),
+            entryTemplate: String(candidate.entryTemplate ?? fallback.entryTemplate),
+            suffixTemplate: String(candidate.suffixTemplate ?? fallback.suffixTemplate),
+        });
+    }
+    for (const fallback of defaults) {
+        if (normalized.some(block => block.kind === fallback.kind)) continue;
+        normalized.push({
+            ...fallback,
+            entryTemplate: fallback.kind === SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS
+                ? String(legacyRecordTemplate || fallback.entryTemplate)
+                : fallback.entryTemplate,
+        });
+    }
+    return normalized;
 }
 
 function normalizeTranslationSettings(translation) {
@@ -881,6 +1153,42 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 content: '<Current Item Memory>\n{{sumiItemMemory}}\n</Current Item Memory>',
                 locked: true,
                 kind: BLOCK_KINDS.ITEM_MEMORY,
+            }),
+            ...migratedBlocks.slice(insertIndex),
+        ];
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY
+        && sourceSchemaVersion < 8
+        && !migratedBlocks.some(block => block.kind === BLOCK_KINDS.COMMITMENT_MEMORY)) {
+        const contractIndex = migratedBlocks.findIndex(block => block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT);
+        const insertIndex = contractIndex < 0 ? migratedBlocks.length : contractIndex;
+        migratedBlocks = [
+            ...migratedBlocks.slice(0, insertIndex),
+            createPromptBlock({
+                id: 'commitment-memory',
+                name: '현재 서약 장부',
+                content: '<Current Commitment Memory>\n{{sumiCommitmentMemory}}\n</Current Commitment Memory>',
+                locked: true,
+                kind: BLOCK_KINDS.COMMITMENT_MEMORY,
+            }),
+            ...migratedBlocks.slice(insertIndex),
+        ];
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY
+        && sourceSchemaVersion < 9
+        && !migratedBlocks.some(block => block.kind === BLOCK_KINDS.EVENT_MEMORY)) {
+        const contractIndex = migratedBlocks.findIndex(block => block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT);
+        const insertIndex = contractIndex < 0 ? migratedBlocks.length : contractIndex;
+        migratedBlocks = [
+            ...migratedBlocks.slice(0, insertIndex),
+            createPromptBlock({
+                id: 'event-memory',
+                name: '현재 주요 사건',
+                content: '<Current Major Event Memory>\n{{sumiEventMemory}}\n</Current Major Event Memory>',
+                locked: true,
+                kind: BLOCK_KINDS.EVENT_MEMORY,
             }),
             ...migratedBlocks.slice(insertIndex),
         ];

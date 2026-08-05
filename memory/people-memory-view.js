@@ -1,5 +1,11 @@
 import { escapeHtml } from '../core/utils.js';
+import { Popup } from '../../../../../scripts/popup.js';
+import { beginOperation, endOperation } from '../core/extension-state.js';
+import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
+import { resetAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { getAtlasTranslations } from './atlas-metadata.js';
 import { getPeopleAtlas } from './people-memory-service.js';
+import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
 
 const FIELD_LABELS = Object.freeze({
     facts: '객관 정보',
@@ -10,6 +16,11 @@ const FIELD_LABELS = Object.freeze({
 });
 
 export function bindPeopleMemoryView(root) {
+    const list = root.querySelector('#stsm-people-memory-list');
+    if (list && !list.dataset.bound) {
+        list.dataset.bound = 'true';
+        list.addEventListener('click', event => handleAtlasAction(event, 'people'));
+    }
     renderPeopleMemory(root);
 }
 
@@ -20,34 +31,117 @@ export function renderPeopleMemory(root) {
     if (!list || !count || !skipped) return;
 
     const atlas = getPeopleAtlas();
+    const translations = getAtlasTranslations('people');
     count.textContent = `${atlas.people.length.toLocaleString()}명`;
-    skipped.innerHTML = renderSkippedUpdates(atlas.skippedUpdates);
-    skipped.hidden = !atlas.skippedUpdates.length;
+    skipped.innerHTML = renderSkippedUpdates(atlas.skippedUpdates, atlas.orphanCorrections);
+    skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.people.length
-        ? atlas.people.map(renderPerson).join('')
+        ? atlas.people.map(person => renderPerson(person, translations[person.id])).join('')
         : '<div class="stsm-empty">아직 추출된 인물 도감이 없습니다.</div>';
 }
 
-function renderPerson(person) {
+function renderPerson(person, cachedTranslation) {
+    const translation = getValidAtlasTranslation('people', person, cachedTranslation || null);
+    const hasCorrection = Boolean(Object.keys(person.manualCorrections || {}).length);
     return `
-        <article class="stsm-person-card">
+        <article class="stsm-person-card" data-atlas-category="people" data-entity-id="${escapeHtml(person.id)}">
             <header>
                 <div>
                     <strong>${escapeHtml(person.name)}</strong>
                     ${person.aliases.length ? `<span>${person.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
+                    ${renderCorrectionState(person.manualCorrections)}
                 </div>
-                <div>
-                    <code>${escapeHtml(person.id)}</code>
-                    <span>#${person.firstSeenRange.startId} ~ #${person.lastUpdatedRange.endId}</span>
+                <div class="stsm-atlas-card-side">
+                    <div class="stsm-atlas-card-actions">
+                        ${renderAction('edit', 'fa-pen', '수정')}
+                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
+                        ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
+                    </div>
+                    <div class="stsm-atlas-card-meta">
+                        <code>${escapeHtml(person.id)}</code>
+                        <span>#${person.firstSeenRange.startId} ~ #${person.lastUpdatedRange.endId}</span>
+                    </div>
                 </div>
             </header>
-            <div class="stsm-person-fields">
+            <div class="stsm-person-fields stsm-atlas-original">
                 ${Object.entries(FIELD_LABELS).map(([key, label]) => renderField(label, person[key])).join('')}
                 ${renderLastKnownState(person.lastKnownState)}
                 ${renderRelationships(person.relationships)}
             </div>
+            ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
         </article>
     `;
+}
+
+async function handleAtlasAction(event, category) {
+    const button = event.target.closest('[data-atlas-action]');
+    const card = button?.closest('[data-entity-id]');
+    if (!button || !card) return;
+    const list = card.parentElement;
+    const entityId = card.dataset.entityId;
+    const atlas = getPeopleAtlas();
+    const person = atlas.people.find(entity => entity.id === entityId);
+    if (!person) return;
+    try {
+        if (button.dataset.atlasAction === 'edit') {
+            await showAtlasEditor(category, entityId);
+        } else if (button.dataset.atlasAction === 'reset') {
+            await resetAtlasEntity(category, entityId, person.name);
+        } else if (button.dataset.atlasAction === 'toggle-translation') {
+            toggleTranslation(card, button);
+        } else if (button.dataset.atlasAction === 'translate') {
+            const existing = getValidAtlasTranslation(category, person);
+            if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;
+            const operationToken = beginOperation('translating', `${person.name} 도감 번역 중`);
+            button.disabled = true;
+            try {
+                await translateAtlasEntity(category, entityId);
+                showTranslatedCard(list, entityId);
+                toastr.success('도감 항목을 번역했습니다.');
+            } finally {
+                endOperation(operationToken);
+            }
+        }
+    } catch (error) {
+        console.error('[Chat Summarizer] People atlas action failed:', error);
+        addExtensionErrorLog(error, {
+            operation: 'atlas',
+            title: '인물 도감 작업 실패',
+            message: error.message,
+            context: { entityId },
+        });
+        toastr.error(error.message);
+        button.disabled = false;
+    }
+}
+
+function toggleTranslation(card, button) {
+    const original = card.querySelector('.stsm-atlas-original');
+    const translation = card.querySelector('.stsm-atlas-translation');
+    if (!original || !translation) return;
+    const showTranslation = translation.hidden;
+    translation.hidden = !showTranslation;
+    original.hidden = showTranslation;
+    button.setAttribute('aria-pressed', String(showTranslation));
+}
+
+function showTranslatedCard(list, entityId) {
+    const refreshedCard = [...(list?.querySelectorAll('[data-entity-id]') || [])]
+        .find(element => element.dataset.entityId === entityId);
+    const toggle = refreshedCard?.querySelector('[data-atlas-action="toggle-translation"]');
+    if (refreshedCard && toggle) toggleTranslation(refreshedCard, toggle);
+}
+
+function renderAction(action, icon, title) {
+    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"><i class="fa-solid ${icon}"></i></button>`;
+}
+
+function renderCorrectionState(corrections) {
+    const values = Object.values(corrections || {});
+    if (!values.length) return '';
+    const locked = values.filter(value => value.locked).length;
+    return `<span class="stsm-atlas-correction-state"><i class="fa-solid fa-pen"></i> 사용자 수정 ${values.length}${locked ? ` · <i class="fa-solid fa-lock"></i> 잠금 ${locked}` : ''}</span>`;
 }
 
 function renderField(label, values) {
@@ -78,15 +172,17 @@ function renderRelationships(relationships) {
     return renderField('관계 및 감정', values);
 }
 
-function renderSkippedUpdates(updates) {
-    if (!updates.length) return '';
+function renderSkippedUpdates(updates, orphanCorrections) {
+    if (!updates.length && !orphanCorrections.length) return '';
     return `
         <div class="stsm-people-memory-warning-title">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-            <strong>미적용 변경안 ${updates.length.toLocaleString()}개</strong>
+            <strong>확인이 필요한 도감 데이터</strong>
         </div>
+        ${updates.length ? `<div>미적용 변경안 ${updates.length.toLocaleString()}개</div>` : ''}
         ${updates.map(update => `
             <div>#${update.range.startId} ~ #${update.range.endId} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>
         `).join('')}
+        ${orphanCorrections.length ? `<div>대상을 찾지 못한 사용자 수정: ${orphanCorrections.map(escapeHtml).join(', ')}</div>` : ''}
     `;
 }

@@ -440,14 +440,18 @@
 }
 
 .stsm-people-memory-list,
-.stsm-item-memory-list {
+.stsm-item-memory-list,
+.stsm-commitment-memory-list,
+.stsm-event-memory-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
 .stsm-people-memory-warning,
-.stsm-item-memory-warning {
+.stsm-item-memory-warning,
+.stsm-commitment-memory-warning,
+.stsm-event-memory-warning {
     padding: 9px 10px;
     border: 1px solid var(--SmartThemeQuoteColor);
     border-radius: 6px;
@@ -457,7 +461,9 @@
 }
 
 .stsm-people-memory-warning-title,
-.stsm-item-memory-warning-title {
+.stsm-item-memory-warning-title,
+.stsm-commitment-memory-warning-title,
+.stsm-event-memory-warning-title {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -465,7 +471,9 @@
 }
 
 .stsm-person-card,
-.stsm-item-card {
+.stsm-item-card,
+.stsm-commitment-card,
+.stsm-event-card {
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
@@ -474,10 +482,13 @@
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 6px;
     background: rgb(0 0 0 / 8%);
+    font-family: var(--mainFontFamily), sans-serif;
 }
 
 .stsm-person-card > header,
-.stsm-item-card > header {
+.stsm-item-card > header,
+.stsm-commitment-card > header,
+.stsm-event-card > header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -485,36 +496,179 @@
 }
 
 .stsm-person-card > header > div,
-.stsm-item-card > header > div {
+.stsm-item-card > header > div,
+.stsm-commitment-card > header > div,
+.stsm-event-card > header > div {
     display: flex;
     min-width: 0;
     flex-direction: column;
     gap: 2px;
 }
 
-.stsm-person-card > header > div:last-child,
-.stsm-item-card > header > div:last-child {
+.stsm-atlas-card-side {
     align-items: flex-end;
+}
+
+.stsm-atlas-card-meta {
+    display: flex;
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 2px;
     font-size: 0.76em;
     opacity: 0.58;
 }
 
-.stsm-person-card > header span,
-.stsm-item-card > header span {
+.stsm-person-card > header > div:first-child span,
+.stsm-item-card > header > div:first-child span,
+.stsm-commitment-card > header > div:first-child span {
     font-size: 0.82em;
     opacity: 0.65;
     overflow-wrap: anywhere;
 }
 
+.stsm-person-card .stsm-atlas-correction-state,
+.stsm-item-card .stsm-atlas-correction-state,
+.stsm-commitment-card .stsm-atlas-correction-state,
+.stsm-event-card .stsm-atlas-correction-state {
+    color: var(--SmartThemeQuoteColor);
+    opacity: 0.9;
+}
+
+.stsm-atlas-card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+}
+
+.stsm-atlas-card-actions .menu_button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+}
+
+.stsm-atlas-translation {
+    padding: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.stsm-atlas-editor {
+    display: flex;
+    max-height: min(72vh, 760px);
+    flex-direction: column;
+    gap: 10px;
+}
+
+.stsm-atlas-editor-fields {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.stsm-atlas-editor-field {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stsm-atlas-editor-field-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.stsm-atlas-editor-field-heading > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stsm-atlas-field-lock {
+    position: relative;
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.stsm-atlas-field-lock:has(input:checked) {
+    color: var(--SmartThemeQuoteColor);
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-atlas-field-lock input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.stsm-relationship-editor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stsm-participant-editor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stsm-relationship-editor-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.7fr) minmax(150px, 1fr) minmax(150px, 1fr) auto;
+    align-items: start;
+    gap: 6px;
+}
+
+.stsm-participant-editor-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto;
+    align-items: start;
+    gap: 6px;
+}
+
+.stsm-relationship-editor-row .menu_button {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+}
+
+.stsm-participant-editor-row .menu_button {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+}
+
 .stsm-person-fields,
-.stsm-item-fields {
+.stsm-item-fields,
+.stsm-commitment-fields,
+.stsm-event-fields {
     display: flex;
     flex-direction: column;
     gap: 7px;
 }
 
 .stsm-person-field,
-.stsm-item-field {
+.stsm-item-field,
+.stsm-commitment-field,
+.stsm-event-field {
     display: grid;
     grid-template-columns: minmax(110px, 0.25fr) minmax(0, 1fr);
     align-items: start;
@@ -522,12 +676,16 @@
 }
 
 .stsm-person-field > strong,
-.stsm-item-field > strong {
+.stsm-item-field > strong,
+.stsm-commitment-field > strong,
+.stsm-event-field > strong {
     font-size: 0.82em;
 }
 
 .stsm-person-field > div,
-.stsm-item-field > div {
+.stsm-item-field > div,
+.stsm-commitment-field > div,
+.stsm-event-field > div {
     display: flex;
     min-width: 0;
     gap: 5px;
@@ -535,12 +693,82 @@
 }
 
 .stsm-person-field > div span,
-.stsm-item-field > div span {
+.stsm-item-field > div span,
+.stsm-commitment-field > div span,
+.stsm-event-field > div span {
     padding: 3px 6px;
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 4px;
     font-size: 0.8em;
     overflow-wrap: anywhere;
+}
+
+.stsm-commitment-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stsm-commitment-status-row select {
+    width: auto;
+    min-width: 112px;
+    flex: 0 0 auto;
+}
+
+.stsm-commitment-status-row > span {
+    min-width: 0;
+    font-size: 0.82em;
+    opacity: 0.7;
+    overflow-wrap: anywhere;
+}
+
+.stsm-event-card-turning-point {
+    border-left: 4px solid var(--SmartThemeQuoteColor);
+    background: color-mix(in srgb, transparent, var(--SmartThemeQuoteColor) 8%);
+}
+
+.stsm-event-title-line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.stsm-event-importance {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    gap: 4px;
+    padding: 2px 6px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    font-size: 0.76em;
+    opacity: 0.68;
+}
+
+.stsm-event-importance.is-turning-point {
+    border-color: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeQuoteColor);
+    font-weight: 700;
+    opacity: 1;
+}
+
+.stsm-event-field > p {
+    min-width: 0;
+    margin: 0;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.stsm-event-shifts {
+    padding: 8px;
+    border-left: 3px solid var(--SmartThemeQuoteColor);
+    background: color-mix(in srgb, transparent, var(--SmartThemeQuoteColor) 7%);
+}
+
+.stsm-event-shifts > strong {
+    color: var(--SmartThemeQuoteColor);
 }
 
 .stsm-record {
@@ -778,6 +1006,7 @@
     min-height: min(68vh, 680px);
     flex-direction: column;
     gap: 14px;
+    font-family: var(--mainFontFamily), sans-serif;
 }
 
 .stsm-record-detail-header {
@@ -1414,6 +1643,61 @@
     margin-top: 14px;
 }
 
+.stsm-context-block-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.stsm-context-block {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto auto;
+    min-height: 46px;
+    align-items: center;
+    gap: 7px;
+    padding: 7px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    background: rgb(0 0 0 / 6%);
+    cursor: grab;
+}
+
+.stsm-context-block-grip {
+    display: flex;
+    justify-content: center;
+    opacity: 0.62;
+}
+
+.stsm-context-block-main {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stsm-context-block-main strong,
+.stsm-context-block-main span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stsm-context-block-main span {
+    font-size: 0.84em;
+    opacity: 0.66;
+}
+
+.stsm-context-template-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+
+.stsm-context-template-editor textarea {
+    width: 100%;
+}
+
 .stsm-record-template-help {
     padding: 8px 10px;
     border: 1px solid var(--SmartThemeBorderColor);
@@ -1795,6 +2079,16 @@
 }
 
 @media (max-width: 700px) {
+    .stsm-context-block {
+        grid-template-columns: 20px minmax(0, 1fr) 34px auto;
+    }
+
+    .stsm-context-block .menu_button {
+        min-width: 32px;
+        width: 32px;
+        padding: 0;
+    }
+
     #stsm-root {
         gap: 8px;
     }
@@ -1927,19 +2221,52 @@
 
     .stsm-memory-toolbar,
     .stsm-person-card > header,
-    .stsm-item-card > header {
+    .stsm-item-card > header,
+    .stsm-commitment-card > header,
+    .stsm-event-card > header {
         align-items: flex-start;
         flex-direction: column;
     }
 
-    .stsm-person-card > header > div:last-child,
-    .stsm-item-card > header > div:last-child {
+    .stsm-atlas-card-side,
+    .stsm-atlas-card-meta {
         align-items: flex-start;
     }
 
+    .stsm-atlas-card-actions {
+        justify-content: flex-start;
+    }
+
     .stsm-person-field,
-    .stsm-item-field {
+    .stsm-item-field,
+    .stsm-commitment-field,
+    .stsm-event-field {
         grid-template-columns: 1fr;
+    }
+
+    .stsm-relationship-editor-row {
+        grid-template-columns: 1fr auto;
+    }
+
+    .stsm-relationship-editor-row textarea {
+        grid-column: 1 / -1;
+    }
+
+    .stsm-participant-editor-row {
+        grid-template-columns: 1fr auto;
+    }
+
+    .stsm-participant-editor-row [data-participant-role] {
+        grid-column: 1 / -1;
+    }
+
+    .stsm-commitment-status-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .stsm-commitment-status-row select {
+        width: 100%;
     }
 
     .stsm-auto-translation-field {

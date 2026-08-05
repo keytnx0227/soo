@@ -13,6 +13,9 @@ import { buildPopup } from './ui/popup-template.js';
 import { bindSectionTooltips } from './ui/section-tooltip.js';
 import { bindPeopleMemoryView, renderPeopleMemory } from './memory/people-memory-view.js';
 import { bindItemMemoryView, renderItemMemory } from './memory/item-memory-view.js';
+import { invalidateAtlasProjection } from './memory/atlas-projection-service.js';
+import { bindCommitmentMemoryView, renderCommitmentMemory } from './memory/commitment-memory-view.js';
+import { bindEventMemoryView, renderEventMemory } from './memory/event-memory-view.js';
 import {
     hideAllSummarizedMessages,
     initializeMessageVisibility,
@@ -42,6 +45,7 @@ import {
     setTranslationSettings,
 } from './core/settings.js';
 import { initializeSummaryContext, refreshSummaryInjection } from './summary/summary-context.js';
+import { bindContextBlockSettings } from './summary/context-block-settings-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
@@ -142,6 +146,7 @@ function bindEvents(root) {
         renderChunkRangeActions(root);
     });
     bindSummarizationSettings(root);
+    bindContextBlockSettings(root);
     bindRangeActions(root);
     bindCoverageMap(root);
 
@@ -156,6 +161,8 @@ function bindEvents(root) {
     bindRecordsView(root, bindRecordEvents);
     bindPeopleMemoryView(root);
     bindItemMemoryView(root);
+    bindCommitmentMemoryView(root);
+    bindEventMemoryView(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {
             synchronizeRevisionSessionRanges(updatedRecords);
@@ -181,7 +188,6 @@ function bindSummarizationSettings(root) {
     const depth = root.querySelector('#stsm-injection-depth');
     const role = root.querySelector('#stsm-injection-role');
     const position = root.querySelector('#stsm-injection-position');
-    const recordTemplate = root.querySelector('#stsm-summary-record-template');
     const autoHide = root.querySelector('#stsm-auto-hide-summarized');
     const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
     const memorySectionToggles = root.querySelectorAll('[data-memory-section]');
@@ -192,7 +198,6 @@ function bindSummarizationSettings(root) {
     depth.value = settings.injection.depth;
     role.value = settings.injection.role;
     position.value = settings.injection.position;
-    recordTemplate.value = settings.recordTemplate;
     autoHide.checked = settings.autoHideSummarizedMessages;
     summarySectionToggles.forEach(toggle => {
         toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
@@ -223,7 +228,6 @@ function bindSummarizationSettings(root) {
     depth.addEventListener('change', event => setSummarizationSettings({ injection: { ...getSettings().summarization.injection, depth: event.target.value } }));
     role.addEventListener('change', event => setSummarizationSettings({ injection: { ...getSettings().summarization.injection, role: event.target.value } }));
     position.addEventListener('change', event => setSummarizationSettings({ injection: { ...getSettings().summarization.injection, position: event.target.value } }));
-    recordTemplate.addEventListener('change', event => setSummarizationSettings({ recordTemplate: event.target.value }));
     autoHide.addEventListener('change', async event => {
         const enabled = setAutoHideSummarizedMessages(event.target.checked);
         if (!enabled) return;
@@ -828,20 +832,36 @@ function initialize() {
     context.eventSource.on(context.eventTypes.APP_READY, addMenuItem);
     context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => {
         clearRevisionSession();
+        invalidateAtlasProjection();
         refreshSummaryInjection();
         if (!currentRoot) return;
         currentRoot.querySelector('#stsm-range-start').value = '';
         currentRoot.querySelector('#stsm-range-end').value = '';
         renderSummaryRecords(currentRoot, bindRecordEvents);
+        renderPeopleMemory(currentRoot);
+        renderItemMemory(currentRoot);
+        renderCommitmentMemory(currentRoot);
+        renderEventMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
     });
     window.addEventListener('stsm:records-changed', () => {
+        invalidateAtlasProjection();
         if (!currentRoot) return;
         renderPeopleMemory(currentRoot);
         renderItemMemory(currentRoot);
+        renderCommitmentMemory(currentRoot);
+        renderEventMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
+    });
+    window.addEventListener('stsm:atlas-changed', () => {
+        invalidateAtlasProjection();
+        if (!currentRoot) return;
+        renderPeopleMemory(currentRoot);
+        renderItemMemory(currentRoot);
+        renderCommitmentMemory(currentRoot);
+        renderEventMemory(currentRoot);
     });
     [
         context.eventTypes.MESSAGE_SENT,

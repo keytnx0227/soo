@@ -97,18 +97,7 @@ export function buildPopup() {
                     <label class="stsm-field stsm-injection-role"><span>역할</span><select id="stsm-injection-role" class="text_pole"><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></label>
                     <label class="stsm-field stsm-injection-position"><span>Story/Main Prompt 위치</span><select id="stsm-injection-position" class="text_pole"><option value="before">앞</option><option value="after">뒤</option></select></label>
                 </div>
-                <label class="stsm-field stsm-record-template-field">
-                    <span>개별 요약 레코드 포맷</span>
-                    <textarea id="stsm-summary-record-template" class="text_pole monospace" rows="5"></textarea>
-                </label>
-                <details class="stsm-record-template-help">
-                    <summary>사용 가능한 매크로</summary>
-                    <div class="stsm-record-template-macros">
-                        <div><code>{{sumiRecordStartId}}</code><span>레코드 시작 메시지 ID</span></div>
-                        <div><code>{{sumiRecordEndId}}</code><span>레코드 종료 메시지 ID</span></div>
-                        <div><code>{{sumiRecordContent}}</code><span>저장된 요약 내용</span></div>
-                    </div>
-                </details>
+                <div id="stsm-context-block-list" class="stsm-context-block-list"></div>
             </div>
         </section>
 
@@ -158,6 +147,22 @@ export function buildPopup() {
                     </div>
                     <div id="stsm-item-memory-skipped" class="stsm-item-memory-warning" hidden></div>
                     <div id="stsm-item-memory-list" class="stsm-item-memory-list"></div>
+                </section>
+                <section class="stsm-atlas-section">
+                    <div class="stsm-atlas-section-heading">
+                        <strong>서약 장부</strong>
+                        <span id="stsm-commitment-memory-count">0개</span>
+                    </div>
+                    <div id="stsm-commitment-memory-skipped" class="stsm-commitment-memory-warning" hidden></div>
+                    <div id="stsm-commitment-memory-list" class="stsm-commitment-memory-list"></div>
+                </section>
+                <section class="stsm-atlas-section">
+                    <div class="stsm-atlas-section-heading">
+                        <strong>주요 사건</strong>
+                        <span id="stsm-event-memory-count">0개</span>
+                    </div>
+                    <div id="stsm-event-memory-skipped" class="stsm-event-memory-warning" hidden></div>
+                    <div id="stsm-event-memory-list" class="stsm-event-memory-list"></div>
                 </section>
             </div>
         </section>
@@ -230,6 +235,8 @@ export function buildPopup() {
                 <div class="stsm-summary-section-grid">
                     ${renderMemorySectionToggle('people', '인물 도감')}
                     ${renderMemorySectionToggle('items', '아이템 도감')}
+                    ${renderMemorySectionToggle('commitments', '서약 장부')}
+                    ${renderMemorySectionToggle('events', '주요 사건')}
                 </div>
             </div>
 

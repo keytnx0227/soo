@@ -11,7 +11,12 @@ export function buildPeopleMemoryPromptContext(people) {
         personalityTraits: person.personalityTraits,
         speechPatterns: person.speechPatterns,
         lastKnownState: person.lastKnownState,
-        relationships: person.relationships,
+        relationships: person.relationships.map(relationship => ({
+            targetId: relationship.targetId,
+            targetName: relationship.targetName,
+            relationship: relationship.relationship,
+            feelings: relationship.feelings,
+        })),
     })), null, 2);
 }
 
@@ -81,8 +86,11 @@ function createPersonEntry(id, proposal, range, sourceRecordId) {
         lastUpdatedRange: { ...range },
         sourceRecordIds: [String(sourceRecordId)],
         _sources: {},
+        _valueSources: {},
         _relationshipSources: {},
     };
+    person._valueSources.aliases = createValueSources(person.aliases, range);
+    person._valueSources.facts = createValueSources(person.facts, range);
     for (const field of ['name', ...REPLACE_FIELDS, 'lastKnownState.location', 'lastKnownState.physicalCondition']) {
         person._sources[field] = { ...range };
     }
@@ -93,12 +101,14 @@ function applyPersonUpdate(person, update, range, sourceRecordId, peopleById) {
     let changed = false;
     const aliases = dedupeStrings(update.append?.aliases);
     const facts = dedupeStrings(update.append?.facts);
-    changed = appendUnique(person.aliases, aliases) || changed;
-    changed = appendUnique(person.facts, facts) || changed;
+    changed = appendUniqueTracked(person.aliases, person._valueSources.aliases, aliases, range) || changed;
+    changed = appendUniqueTracked(person.facts, person._valueSources.facts, facts, range) || changed;
 
     const replace = update.replace || {};
     if (Object.hasOwn(replace, 'name') && replace.name && canReplace(person, 'name', range)) {
-        if (person.name !== replace.name) appendUnique(person.aliases, [person.name]);
+        if (person.name !== replace.name) {
+            appendUniqueTracked(person.aliases, person._valueSources.aliases, [person.name], range);
+        }
         person.name = String(replace.name);
         person._sources.name = { ...range };
         changed = true;
@@ -186,6 +196,24 @@ function appendUnique(target, values) {
     return changed;
 }
 
+function appendUniqueTracked(target, sources, values, range) {
+    const known = new Set(target.map(normalizeKey));
+    let changed = false;
+    for (const value of values) {
+        const key = normalizeKey(value);
+        if (!key || known.has(key)) continue;
+        target.push(value);
+        sources.push({ value, range: { ...range } });
+        known.add(key);
+        changed = true;
+    }
+    return changed;
+}
+
+function createValueSources(values, range) {
+    return values.map(value => ({ value, range: { ...range } }));
+}
+
 function dedupeStrings(values) {
     const result = [];
     appendUnique(result, Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : []);
@@ -211,6 +239,12 @@ function createStablePersonId(recordId, index) {
 }
 
 function toPublicPerson(person) {
-    const { _sources, _relationshipSources, ...publicPerson } = person;
-    return structuredClone(publicPerson);
+    const { _sources, _valueSources, _relationshipSources, ...publicPerson } = person;
+    return structuredClone({
+        ...publicPerson,
+        provenance: {
+            fields: _sources,
+            values: _valueSources,
+        },
+    });
 }

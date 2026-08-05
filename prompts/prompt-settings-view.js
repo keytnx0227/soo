@@ -97,6 +97,8 @@ function renderPromptBlock(block, summarySections) {
         BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT,
         BLOCK_KINDS.PEOPLE_MEMORY,
         BLOCK_KINDS.ITEM_MEMORY,
+        BLOCK_KINDS.COMMITMENT_MEMORY,
+        BLOCK_KINDS.EVENT_MEMORY,
     ].includes(block.kind);
     const detailOnly = block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT;
     return `

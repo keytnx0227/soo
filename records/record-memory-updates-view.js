@@ -14,6 +14,8 @@ export function renderRecordMemoryUpdateBadge(record) {
     const groups = [
         ['인물', getPeopleUpdates(record)],
         ['아이템', getItemUpdates(record)],
+        ['서약', getCommitmentUpdates(record)],
+        ['사건', getEventUpdates(record)],
     ];
     return groups.map(([label, updates]) => {
         const parts = [];
@@ -28,7 +30,12 @@ export function renderRecordMemoryUpdateBadge(record) {
 export function renderRecordMemoryUpdateDetails(record) {
     const people = getPeopleUpdates(record);
     const items = getItemUpdates(record);
-    if (!people.created.length && !people.updated.length && !items.created.length && !items.updated.length) return '';
+    const commitments = getCommitmentUpdates(record);
+    const events = getEventUpdates(record);
+    if (!people.created.length && !people.updated.length
+        && !items.created.length && !items.updated.length
+        && !commitments.created.length && !commitments.updated.length
+        && !events.created.length && !events.updated.length) return '';
 
     return `
         ${people.created.length || people.updated.length ? `<section class="stsm-record-detail-section">
@@ -49,6 +56,26 @@ export function renderRecordMemoryUpdateDetails(record) {
             <div class="stsm-memory-update-list">
                 ${items.created.map(renderCreatedItem).join('')}
                 ${items.updated.map(renderUpdatedItem).join('')}
+            </div>
+        </section>` : ''}
+        ${commitments.created.length || commitments.updated.length ? `<section class="stsm-record-detail-section">
+            <div class="stsm-record-detail-section-title">
+                <span>서약 장부 변경안</span>
+                <span>현재 서약 장부를 계산하는 데 사용되는 레코드별 변경 이력</span>
+            </div>
+            <div class="stsm-memory-update-list">
+                ${commitments.created.map(renderCreatedCommitment).join('')}
+                ${commitments.updated.map(renderUpdatedCommitment).join('')}
+            </div>
+        </section>` : ''}
+        ${events.created.length || events.updated.length ? `<section class="stsm-record-detail-section">
+            <div class="stsm-record-detail-section-title">
+                <span>주요 사건 변경안</span>
+                <span>현재 주요 사건 목록을 계산하는 데 사용되는 레코드별 변경 이력</span>
+            </div>
+            <div class="stsm-memory-update-list">
+                ${events.created.map(renderCreatedEvent).join('')}
+                ${events.updated.map(renderUpdatedEvent).join('')}
             </div>
         </section>` : ''}
     `;
@@ -116,6 +143,72 @@ function renderUpdatedItem(update) {
     `;
 }
 
+function renderCreatedCommitment(commitment) {
+    return `
+        <article class="stsm-memory-update-card">
+            <header><span>신규 서약</span><strong>${escapeHtml(commitment.title)}</strong></header>
+            ${renderValueRow('내용', commitment.terms)}
+            ${renderValueRow('참여자', formatParticipants(commitment.participants))}
+            ${renderValueRow('조건', commitment.conditions)}
+            ${renderValueRow('기한', commitment.deadline)}
+            ${renderValueRow('객관 정보', commitment.facts)}
+            ${renderValueRow('상태', commitment.status)}
+            ${renderValueRow('상태 근거', commitment.statusReason)}
+        </article>
+    `;
+}
+
+function renderUpdatedCommitment(update) {
+    const replace = update.replace || {};
+    return `
+        <article class="stsm-memory-update-card">
+            <header><span>기존 서약 변경</span><strong>${escapeHtml(update.targetId)}</strong></header>
+            ${renderValueRow('추가 · 객관 정보', update.append?.facts)}
+            ${Object.hasOwn(replace, 'title') ? renderValueRow('교체 · 제목', replace.title) : ''}
+            ${Object.hasOwn(replace, 'terms') ? renderValueRow('교체 · 내용', replace.terms) : ''}
+            ${Object.hasOwn(replace, 'participants') ? renderValueRow('교체 · 참여자', formatParticipants(replace.participants)) : ''}
+            ${Object.hasOwn(replace, 'conditions') ? renderValueRow('교체 · 조건', replace.conditions) : ''}
+            ${Object.hasOwn(replace, 'deadline') ? renderValueRow('교체 · 기한', replace.deadline) : ''}
+            ${Object.hasOwn(replace, 'status') ? renderValueRow('교체 · 상태', replace.status) : ''}
+            ${Object.hasOwn(replace, 'statusReason') ? renderValueRow('교체 · 상태 근거', replace.statusReason) : ''}
+        </article>
+    `;
+}
+
+function renderCreatedEvent(event) {
+    return `
+        <article class="stsm-memory-update-card">
+            <header><span>신규 사건 · ${event.importance === 'turning_point' ? '변곡점' : '일반'}</span><strong>${escapeHtml(event.title)}</strong></header>
+            ${renderValueRow('날짜', event.date)}
+            ${renderValueRow('장소', event.location)}
+            ${renderValueRow('사건', event.summary)}
+            ${renderValueRow('SHIFT', event.shifts)}
+        </article>
+    `;
+}
+
+function renderUpdatedEvent(update) {
+    const replace = update.replace || {};
+    return `
+        <article class="stsm-memory-update-card">
+            <header><span>기존 사건 변경</span><strong>${escapeHtml(update.targetId)}</strong></header>
+            ${Object.hasOwn(replace, 'title') ? renderValueRow('교체 · 제목', replace.title) : ''}
+            ${Object.hasOwn(replace, 'date') ? renderValueRow('교체 · 날짜', replace.date) : ''}
+            ${Object.hasOwn(replace, 'location') ? renderValueRow('교체 · 장소', replace.location) : ''}
+            ${Object.hasOwn(replace, 'summary') ? renderValueRow('교체 · 사건', replace.summary) : ''}
+            ${Object.hasOwn(replace, 'importance') ? renderValueRow('교체 · 중요도', replace.importance) : ''}
+            ${Object.hasOwn(replace, 'shifts') ? renderValueRow('교체 · SHIFT', replace.shifts) : ''}
+        </article>
+    `;
+}
+
+function formatParticipants(participants) {
+    return (Array.isArray(participants) ? participants : []).map(participant => {
+        const name = participant.personName || participant.personId || '알 수 없는 참여자';
+        return participant.role ? `${name} · ${participant.role}` : name;
+    });
+}
+
 function renderValueRow(label, value) {
     const values = Array.isArray(value) ? value : value === null || value === undefined ? [] : [value];
     if (!values.length) return '';
@@ -174,5 +267,21 @@ function getItemUpdates(record) {
     return {
         created: Array.isArray(items?.created) ? items.created : [],
         updated: Array.isArray(items?.updated) ? items.updated : [],
+    };
+}
+
+function getCommitmentUpdates(record) {
+    const commitments = record?.structuredSummary?.data?.memoryUpdates?.commitments;
+    return {
+        created: Array.isArray(commitments?.created) ? commitments.created : [],
+        updated: Array.isArray(commitments?.updated) ? commitments.updated : [],
+    };
+}
+
+function getEventUpdates(record) {
+    const events = record?.structuredSummary?.data?.memoryUpdates?.events;
+    return {
+        created: Array.isArray(events?.created) ? events.created : [],
+        updated: Array.isArray(events?.updated) ? events.updated : [],
     };
 }

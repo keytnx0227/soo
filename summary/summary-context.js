@@ -10,6 +10,7 @@ import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { isExtensionEnabled } from '../core/extension-state.js';
 import { getSettings } from '../core/settings.js';
 import { getSummaryRecords } from './summary-store.js';
+import { buildContextBlockComposition } from './context-block-composer.js';
 
 const INJECTION_KEY = 'sumi_chat_summarizer_context';
 const MACRO_NAME = 'sumiSummary';
@@ -18,7 +19,8 @@ const RECORD_SEPARATOR = '\n\n';
 export function initializeSummaryContext() {
     registerSummaryMacro();
     refreshSummaryInjection();
-    window.addEventListener('stsm:records-changed', refreshSummaryInjection);
+    window.addEventListener('stsm:records-changed', () => queueMicrotask(refreshSummaryInjection));
+    window.addEventListener('stsm:atlas-changed', () => queueMicrotask(refreshSummaryInjection));
     window.addEventListener('stsm:injection-settings-changed', refreshSummaryInjection);
 }
 
@@ -58,11 +60,13 @@ export function buildSummaryContextDetails() {
             budget: settings.injectionMaxTokens,
         });
     }
-    return buildSummaryRecordsContextDetails(
-        getSummaryRecords(),
-        settings.recordTemplate,
-        settings.injectionMaxTokens,
-    );
+    return {
+        enabled: true,
+        ...buildContextBlockComposition(settings.injectionMaxTokens),
+        sourceRecordCount: getSummaryRecords().length,
+        omittedRecords: [],
+        partialRecord: null,
+    };
 }
 
 export function buildSummaryRecordsContext(sourceRecords, template, budget = Infinity) {

@@ -1,0 +1,167 @@
+import { Popup } from '../../../../../scripts/popup.js';
+import { beginOperation, endOperation } from '../core/extension-state.js';
+import { escapeHtml } from '../core/utils.js';
+import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
+import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
+import { resetAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { getAtlasTranslations } from './atlas-metadata.js';
+import { getEventAtlas } from './event-memory-service.js';
+
+export function bindEventMemoryView(root) {
+    const list = root.querySelector('#stsm-event-memory-list');
+    if (list && !list.dataset.bound) {
+        list.dataset.bound = 'true';
+        list.addEventListener('click', handleAtlasAction);
+    }
+    renderEventMemory(root);
+}
+
+export function renderEventMemory(root) {
+    const list = root.querySelector('#stsm-event-memory-list');
+    const count = root.querySelector('#stsm-event-memory-count');
+    const skipped = root.querySelector('#stsm-event-memory-skipped');
+    if (!list || !count || !skipped) return;
+
+    const atlas = getEventAtlas();
+    const translations = getAtlasTranslations('events');
+    count.textContent = `${atlas.events.length.toLocaleString()}개`;
+    skipped.innerHTML = renderWarnings(atlas.skippedUpdates, atlas.orphanCorrections);
+    skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
+    list.innerHTML = atlas.events.length
+        ? atlas.events.map(event => renderEvent(event, translations[event.id])).join('')
+        : '<div class="stsm-empty">아직 추출된 주요 사건이 없습니다.</div>';
+}
+
+function renderEvent(event, cachedTranslation) {
+    const translation = getValidAtlasTranslation('events', event, cachedTranslation || null);
+    const hasCorrection = Boolean(Object.keys(event.manualCorrections || {}).length);
+    const turningPoint = event.importance === 'turning_point';
+    return `
+        <article class="stsm-event-card${turningPoint ? ' stsm-event-card-turning-point' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
+            <header>
+                <div>
+                    <span class="stsm-event-title-line">
+                        <strong>${escapeHtml(event.title)}</strong>
+                        <span class="stsm-event-importance ${turningPoint ? 'is-turning-point' : ''}">${turningPoint ? '<i class="fa-solid fa-bolt" aria-hidden="true"></i> 변곡점' : '일반'}</span>
+                    </span>
+                    ${renderCorrectionState(event.manualCorrections)}
+                </div>
+                <div class="stsm-atlas-card-side">
+                    <div class="stsm-atlas-card-actions">
+                        ${renderAction('edit', 'fa-pen', '수정')}
+                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
+                        ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
+                    </div>
+                    <div class="stsm-atlas-card-meta">
+                        <code>${escapeHtml(event.id)}</code>
+                        <span>#${event.firstSeenRange.startId} ~ #${event.lastUpdatedRange.endId}</span>
+                    </div>
+                </div>
+            </header>
+            <div class="stsm-event-fields stsm-atlas-original">
+                ${renderField('날짜', event.date ? [event.date] : [])}
+                ${renderField('장소', event.location ? [event.location] : [])}
+                ${renderTextField('사건', event.summary)}
+                ${turningPoint ? renderField('SHIFT', event.shifts, true) : ''}
+            </div>
+            ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
+        </article>
+    `;
+}
+
+async function handleAtlasAction(event) {
+    const button = event.target.closest('[data-atlas-action]');
+    const card = button?.closest('[data-entity-id]');
+    if (!button || !card) return;
+    const list = card.parentElement;
+    const entityId = card.dataset.entityId;
+    const entry = getEventAtlas().events.find(item => item.id === entityId);
+    if (!entry) return;
+    try {
+        if (button.dataset.atlasAction === 'edit') {
+            await showAtlasEditor('events', entityId);
+        } else if (button.dataset.atlasAction === 'reset') {
+            await resetAtlasEntity('events', entityId, entry.title);
+        } else if (button.dataset.atlasAction === 'toggle-translation') {
+            toggleTranslation(card, button);
+        } else if (button.dataset.atlasAction === 'translate') {
+            const existing = getValidAtlasTranslation('events', entry);
+            if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;
+            const operationToken = beginOperation('translating', `${entry.title} 사건 번역 중`);
+            button.disabled = true;
+            try {
+                await translateAtlasEntity('events', entityId);
+                showTranslatedCard(list, entityId);
+                toastr.success('주요 사건을 번역했습니다.');
+            } finally {
+                endOperation(operationToken);
+            }
+        }
+    } catch (error) {
+        handleError(error, entityId);
+        button.disabled = false;
+    }
+}
+
+function handleError(error, entityId) {
+    console.error('[Chat Summarizer] Major event atlas action failed:', error);
+    addExtensionErrorLog(error, {
+        operation: 'atlas',
+        title: '주요 사건 작업 실패',
+        message: error.message,
+        context: { entityId },
+    });
+    toastr.error(error.message);
+}
+
+function toggleTranslation(card, button) {
+    const original = card.querySelector('.stsm-atlas-original');
+    const translation = card.querySelector('.stsm-atlas-translation');
+    if (!original || !translation) return;
+    const showTranslation = translation.hidden;
+    translation.hidden = !showTranslation;
+    original.hidden = showTranslation;
+    button.setAttribute('aria-pressed', String(showTranslation));
+}
+
+function showTranslatedCard(list, entityId) {
+    const refreshedCard = [...(list?.querySelectorAll('[data-entity-id]') || [])]
+        .find(element => element.dataset.entityId === entityId);
+    const toggle = refreshedCard?.querySelector('[data-atlas-action="toggle-translation"]');
+    if (refreshedCard && toggle) toggleTranslation(refreshedCard, toggle);
+}
+
+function renderTextField(label, value) {
+    return value ? `<div class="stsm-event-field"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value)}</p></div>` : '';
+}
+
+function renderField(label, values, emphasized = false) {
+    if (!Array.isArray(values) || !values.length) return '';
+    return `<div class="stsm-event-field${emphasized ? ' stsm-event-shifts' : ''}"><strong>${escapeHtml(label)}</strong><div>${values.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div></div>`;
+}
+
+function renderAction(action, icon, title) {
+    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"><i class="fa-solid ${icon}"></i></button>`;
+}
+
+function renderCorrectionState(corrections) {
+    const values = Object.values(corrections || {});
+    if (!values.length) return '';
+    const locked = values.filter(value => value.locked).length;
+    return `<span class="stsm-atlas-correction-state"><i class="fa-solid fa-pen"></i> 사용자 수정 ${values.length}${locked ? ` · <i class="fa-solid fa-lock"></i> 잠금 ${locked}` : ''}</span>`;
+}
+
+function renderWarnings(updates, orphanCorrections) {
+    if (!updates.length && !orphanCorrections.length) return '';
+    return `
+        <div class="stsm-event-memory-warning-title">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <strong>확인이 필요한 사건 데이터</strong>
+        </div>
+        ${updates.length ? `<div>미적용 변경안 ${updates.length.toLocaleString()}개</div>` : ''}
+        ${updates.map(update => `<div>#${update.range.startId} ~ #${update.range.endId} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>`).join('')}
+        ${orphanCorrections.length ? `<div>원본을 찾지 못한 사용자 수정 ${orphanCorrections.length.toLocaleString()}개</div>` : ''}
+        ${orphanCorrections.map(id => `<div>${escapeHtml(id)} · 생성 근거 레코드가 현재 존재하지 않습니다.</div>`).join('')}
+    `;
+}

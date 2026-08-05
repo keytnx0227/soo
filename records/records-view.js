@@ -79,9 +79,9 @@ async function showSummaryContextPreview() {
     const content = document.createElement('div');
     content.className = 'stsm-prompt-preview';
 
-    if (!details.enabled || !details.sourceRecordCount) {
+    if (!details.enabled || !details.sourceUnitCount) {
         const message = details.enabled
-            ? '저장된 요약 기록이 없어 매크로 결과가 비어 있습니다.'
+            ? '활성화된 블록에 전송할 요약 또는 도감 항목이 없습니다.'
             : '요약 확장이 꺼져 있어 매크로 결과가 비어 있습니다.';
         content.innerHTML = `<div class="stsm-section-title">{{sumiSummary}} 미리보기</div><div class="stsm-empty">${message}</div>`;
     } else {
@@ -118,27 +118,20 @@ function renderContextTokenStatus(details) {
         `;
     }
 
-    const omitted = details.omittedRecords.length
-        ? `<div><strong>완전히 제외:</strong> ${details.omittedRecords.map(formatRecordRange).join(', ')}</div>`
-        : '';
-    const partial = details.partialRecord
-        ? `<div><strong>앞부분 일부 절삭:</strong> ${formatRecordRange(details.partialRecord)}</div>`
-        : '';
+    const omitted = details.blocks
+        .filter(block => block.omittedItems.length)
+        .map(block => `<div><strong>${escapeHtml(block.name)}:</strong> ${block.omittedItems.map(item => escapeHtml(item.label)).join(', ')} 제외</div>`)
+        .join('');
     return `
         <div class="stsm-context-token-status stsm-context-token-status-warning">
             <div class="stsm-context-token-heading">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <strong>토큰 제한으로 오래된 요약부터 잘렸어요.</strong>
+                <strong>토큰 제한으로 앞쪽 항목부터 제외했어요.</strong>
             </div>
             <div>원본 ${details.originalTokenCount.toLocaleString()} tokens → 전송 ${tokenSummary}</div>
             ${omitted}
-            ${partial}
         </div>
     `;
-}
-
-function formatRecordRange(record) {
-    return `#${record.startId} ~ #${record.endId}`;
 }
 
 function renderSummaryRecord(summary, sourceStatus) {

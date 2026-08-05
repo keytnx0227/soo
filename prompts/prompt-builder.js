@@ -12,6 +12,8 @@ import { buildSummaryRecordsContext } from '../summary/summary-context.js';
 import { getSummaryRecords } from '../summary/summary-store.js';
 import { buildPeopleMemoryPromptContext } from '../memory/people-memory-service.js';
 import { buildItemMemoryPromptContext } from '../memory/item-memory-service.js';
+import { buildCommitmentMemoryPromptContext } from '../memory/commitment-memory-service.js';
+import { buildEventMemoryPromptContext } from '../memory/event-memory-service.js';
 import {
     buildSummaryJsonContract,
     getEnabledMemorySections,
@@ -51,6 +53,12 @@ function isSummaryBlockEnabled(block, sections) {
     }
     if (block.kind === BLOCK_KINDS.ITEM_MEMORY) {
         return getEnabledMemorySections(getSettings().summarization.memorySections).items;
+    }
+    if (block.kind === BLOCK_KINDS.COMMITMENT_MEMORY) {
+        return getEnabledMemorySections(getSettings().summarization.memorySections).commitments;
+    }
+    if (block.kind === BLOCK_KINDS.EVENT_MEMORY) {
+        return getEnabledMemorySections(getSettings().summarization.memorySections).events;
     }
     const sectionKey = getSummarySectionKeyForKind(block.kind);
     return sectionKey ? Boolean(sections[sectionKey]) : block.enabled;
@@ -99,6 +107,10 @@ async function renderSummaryBlock(block, chunk) {
             return renderDataBlock(block, 'sumiPeopleMemory', buildPeopleMemoryPromptContext(), commonValues);
         case BLOCK_KINDS.ITEM_MEMORY:
             return renderDataBlock(block, 'sumiItemMemory', buildItemMemoryPromptContext(), commonValues);
+        case BLOCK_KINDS.COMMITMENT_MEMORY:
+            return renderDataBlock(block, 'sumiCommitmentMemory', buildCommitmentMemoryPromptContext(), commonValues);
+        case BLOCK_KINDS.EVENT_MEMORY:
+            return renderDataBlock(block, 'sumiEventMemory', buildEventMemoryPromptContext(), commonValues);
         case BLOCK_KINDS.SUMMARY_EXTRACTION_RULES:
             return renderSummaryExtractionRules(block.config.rules, chunk.sections, chunk.memorySections);
         default:

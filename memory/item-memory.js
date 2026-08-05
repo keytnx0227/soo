@@ -63,7 +63,10 @@ function createItemEntry(id, proposal, range, sourceRecordId) {
         lastUpdatedRange: { ...range },
         sourceRecordIds: [String(sourceRecordId)],
         _sources: {},
+        _valueSources: {},
     };
+    item._valueSources.aliases = createValueSources(item.aliases, range);
+    item._valueSources.facts = createValueSources(item.facts, range);
     for (const field of ['name', ...REPLACE_FIELDS, ...STATE_FIELDS.map(field => `lastKnownState.${field}`)]) {
         item._sources[field] = { ...range };
     }
@@ -72,12 +75,14 @@ function createItemEntry(id, proposal, range, sourceRecordId) {
 
 function applyItemUpdate(item, update, range, sourceRecordId) {
     let changed = false;
-    changed = appendUnique(item.aliases, dedupeStrings(update.append?.aliases)) || changed;
-    changed = appendUnique(item.facts, dedupeStrings(update.append?.facts)) || changed;
+    changed = appendUniqueTracked(item.aliases, item._valueSources.aliases, dedupeStrings(update.append?.aliases), range) || changed;
+    changed = appendUniqueTracked(item.facts, item._valueSources.facts, dedupeStrings(update.append?.facts), range) || changed;
 
     const replace = update.replace || {};
     if (Object.hasOwn(replace, 'name') && replace.name && canReplace(item, 'name', range)) {
-        if (item.name !== replace.name) appendUnique(item.aliases, [item.name]);
+        if (item.name !== replace.name) {
+            appendUniqueTracked(item.aliases, item._valueSources.aliases, [item.name], range);
+        }
         item.name = String(replace.name);
         item._sources.name = { ...range };
         changed = true;
@@ -122,6 +127,24 @@ function appendUnique(target, values) {
     return changed;
 }
 
+function appendUniqueTracked(target, sources, values, range) {
+    const known = new Set(target.map(normalizeKey));
+    let changed = false;
+    for (const value of values) {
+        const key = normalizeKey(value);
+        if (!key || known.has(key)) continue;
+        target.push(value);
+        sources.push({ value, range: { ...range } });
+        known.add(key);
+        changed = true;
+    }
+    return changed;
+}
+
+function createValueSources(values, range) {
+    return values.map(value => ({ value, range: { ...range } }));
+}
+
 function dedupeStrings(values) {
     const result = [];
     appendUnique(result, Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : []);
@@ -147,6 +170,12 @@ function createStableItemId(recordId, index) {
 }
 
 function toPublicItem(item) {
-    const { _sources, ...publicItem } = item;
-    return structuredClone(publicItem);
+    const { _sources, _valueSources, ...publicItem } = item;
+    return structuredClone({
+        ...publicItem,
+        provenance: {
+            fields: _sources,
+            values: _valueSources,
+        },
+    });
 }

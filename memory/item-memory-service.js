@@ -1,8 +1,13 @@
-import { getSummaryRecords } from '../summary/summary-store.js';
-import { buildItemMemoryPromptContext as serializeItemMemory, deriveItemAtlas } from './item-memory.js';
+import { getAtlasProjection } from './atlas-projection-service.js';
+import { buildItemMemoryPromptContext as serializeItemMemory } from './item-memory.js';
 
 export function getItemAtlas() {
-    return deriveItemAtlas(getSummaryRecords());
+    const atlas = getAtlasProjection();
+    return {
+        items: atlas.items,
+        skippedUpdates: atlas.skippedUpdates.items,
+        orphanCorrections: atlas.orphanCorrections.items,
+    };
 }
 
 export function buildItemMemoryPromptContext() {
