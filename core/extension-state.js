@@ -2,12 +2,14 @@ import { getSettings, setExtensionEnabled as saveExtensionEnabled } from './sett
 
 const listeners = new Set();
 
-let operation = null;
+const operations = new Map();
 
 export function getExtensionState() {
+    const activeOperations = [...operations.values()].map(({ type, label }) => ({ type, label }));
     return {
         enabled: Boolean(getSettings().enabled),
-        operation: operation ? { type: operation.type, label: operation.label } : null,
+        operation: activeOperations[0] || null,
+        operations: activeOperations,
     };
 }
 
@@ -16,7 +18,7 @@ export function isExtensionEnabled() {
 }
 
 export function setExtensionEnabled(enabled) {
-    if (operation) throw createControlError('작업 중에는 확장을 켜거나 끌 수 없습니다.');
+    if (operations.size) throw createControlError('작업 중에는 확장을 켜거나 끌 수 없습니다.');
     saveExtensionEnabled(enabled);
     notifyStateChanged();
     return getExtensionState();
@@ -24,28 +26,33 @@ export function setExtensionEnabled(enabled) {
 
 export function beginOperation(type, label) {
     assertExtensionEnabled();
-    if (operation) throw createControlError(`이미 ${operation.label} 작업이 진행 중입니다.`);
+    const normalizedType = String(type || 'working');
+    const activeOperations = [...operations.values()];
+    const canRunConcurrently = normalizedType === 'translating'
+        && activeOperations.every(item => item.type === 'summarizing' || item.type === 'translating');
+    if (activeOperations.length && !canRunConcurrently) {
+        throw createControlError(`이미 ${activeOperations[0].label} 작업이 진행 중입니다.`);
+    }
 
-    const token = Symbol(type);
-    operation = {
-        token,
-        type: String(type || 'working'),
+    const token = Symbol(normalizedType);
+    operations.set(token, {
+        type: normalizedType,
         label: String(label || '작업 중'),
-    };
+    });
     notifyStateChanged();
     return token;
 }
 
 export function updateOperation(token, label) {
-    if (!operation || operation.token !== token) return false;
-    operation = { ...operation, label: String(label || '작업 중') };
+    const operation = operations.get(token);
+    if (!operation) return false;
+    operations.set(token, { ...operation, label: String(label || '작업 중') });
     notifyStateChanged();
     return true;
 }
 
 export function endOperation(token) {
-    if (!operation || operation.token !== token) return false;
-    operation = null;
+    if (!operations.delete(token)) return false;
     notifyStateChanged();
     return true;
 }

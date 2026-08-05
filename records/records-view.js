@@ -8,6 +8,8 @@ import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { renderRecordTagSummary } from './record-tags-view.js';
 import { renderRecordMemoryUpdateBadge } from './record-memory-updates-view.js';
+import { getExtensionState, subscribeExtensionState } from '../core/extension-state.js';
+import { renderExtensionControls } from '../ui/extension-status-view.js';
 
 export function bindRecordsView(root, bindRecordEvents) {
     root.querySelector('#stsm-preview-summary-context').addEventListener('click', async () => {
@@ -20,12 +22,22 @@ export function bindRecordsView(root, bindRecordEvents) {
     root.querySelector('#stsm-record-sort').addEventListener('change', () => {
         renderSummaryRecords(root, bindRecordEvents);
     });
+    root.querySelector('#stsm-records-fullscreen').addEventListener('click', () => {
+        showRecordsFullscreen(root.querySelector('#stsm-record-sort').value, bindRecordEvents).catch(error => {
+            logRecordViewError(error, '요약 기록 전체 화면 열기 실패', '요약 기록 전체 화면을 열지 못했습니다.');
+        });
+    });
     renderSummaryRecords(root, bindRecordEvents);
 }
 
 export function renderSummaryRecords(root, bindRecordEvents) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
+    renderRecordList(list, direction, bindRecordEvents);
+    root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
+}
+
+function renderRecordList(list, direction, bindRecordEvents) {
     const records = [...getSummaryRecords()].sort((left, right) => {
         const difference = left.startId - right.startId || left.endId - right.endId;
         return direction === 'id-asc' ? difference : -difference;
@@ -45,7 +57,48 @@ export function renderSummaryRecords(root, bindRecordEvents) {
         });
         bindRecordEvents(recordElement);
     });
-    root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
+}
+
+async function showRecordsFullscreen(initialDirection, bindRecordEvents) {
+    const content = document.createElement('div');
+    content.className = 'stsm-records-fullscreen';
+    content.innerHTML = `
+        <div class="stsm-records-fullscreen-toolbar">
+            <strong>요약 기록</strong>
+            <label class="stsm-field stsm-sort-field">
+                <select class="stsm-records-fullscreen-sort text_pole" aria-label="요약 기록 정렬">
+                    <option value="id-desc">ID 높은 순</option>
+                    <option value="id-asc">ID 낮은 순</option>
+                </select>
+            </label>
+        </div>
+        <div class="stsm-record-list"></div>
+    `;
+
+    const sort = content.querySelector('.stsm-records-fullscreen-sort');
+    const list = content.querySelector('.stsm-record-list');
+    sort.value = initialDirection === 'id-asc' ? 'id-asc' : 'id-desc';
+    const render = () => {
+        renderRecordList(list, sort.value, bindRecordEvents);
+        renderExtensionControls(content, getExtensionState());
+    };
+    const handleRecordsChanged = () => render();
+    const unsubscribeExtensionState = subscribeExtensionState(state => renderExtensionControls(content, state));
+    sort.addEventListener('change', render);
+    window.addEventListener('stsm:records-changed', handleRecordsChanged);
+    render();
+
+    try {
+        await new Popup(content, POPUP_TYPE.TEXT, '', {
+            okButton: '닫기',
+            wide: true,
+            large: true,
+            allowVerticalScrolling: false,
+        }).show();
+    } finally {
+        unsubscribeExtensionState();
+        window.removeEventListener('stsm:records-changed', handleRecordsChanged);
+    }
 }
 
 function logRecordViewError(error, title, message, context = null) {

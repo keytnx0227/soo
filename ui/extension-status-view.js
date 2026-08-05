@@ -7,13 +7,17 @@ import {
 const ENABLED_EXECUTION_CONTROL_SELECTOR = [
     '#stsm-summarize',
     '#stsm-hide-all-summarized',
+    '.stsm-record-reroll',
+].join(', ');
+
+const TRANSLATION_CONTROL_SELECTOR = [
     '#stsm-translate-all',
     '.stsm-record-translate',
-    '.stsm-record-reroll',
 ].join(', ');
 
 const IDLE_CONTROL_SELECTOR = [
     ENABLED_EXECUTION_CONTROL_SELECTOR,
+    TRANSLATION_CONTROL_SELECTOR,
     '#stsm-unhide-all-summarized',
     '#stsm-delete-all-translations',
     '.stsm-record-edit',
@@ -61,7 +65,22 @@ export function renderExtensionStatus(root, state = getExtensionState()) {
     root.querySelector('.stsm-extension-status').classList.toggle('stsm-extension-status-off', !state.enabled);
     root.querySelector('.stsm-extension-status').classList.toggle('stsm-extension-status-working', isWorking);
 
+    renderExtensionControls(root, state);
+}
+
+export function renderExtensionControls(root, state = getExtensionState()) {
+    const activeOperations = Array.isArray(state.operations)
+        ? state.operations
+        : state.operation ? [state.operation] : [];
+    const isWorking = activeOperations.length > 0;
+    const canTranslate = state.enabled && activeOperations.every(operation => (
+        operation.type === 'summarizing' || operation.type === 'translating'
+    ));
     root.querySelectorAll(IDLE_CONTROL_SELECTOR).forEach(control => {
+        if (control.matches(TRANSLATION_CONTROL_SELECTOR)) {
+            control.disabled = !canTranslate;
+            return;
+        }
         const requiresEnabled = control.matches(ENABLED_EXECUTION_CONTROL_SELECTOR);
         control.disabled = isWorking || (requiresEnabled && !state.enabled);
     });

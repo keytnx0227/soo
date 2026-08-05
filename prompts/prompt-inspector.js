@@ -56,8 +56,9 @@ export function bindPromptInspector(root) {
             ]);
             if (currentRun !== runId) return;
             const summaryTokens = summaryTokenCounts.reduce((total, count) => total + count, 0);
+            const averageSummaryTokens = Math.round(summaryTokens / summaryPrompts.length);
             summaryOutput.textContent = summaryPrompts.length > 1
-                ? `${summaryTokens.toLocaleString()} tokens · ${summaryPrompts.length}회`
+                ? `예상 평균 ${averageSummaryTokens.toLocaleString()} tokens · ${summaryPrompts.length}회`
                 : `${summaryTokens.toLocaleString()} tokens`;
             revisionOutput.textContent = `${revisionTokens.toLocaleString()} tokens`;
         } catch (error) {

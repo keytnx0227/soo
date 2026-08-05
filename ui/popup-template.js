@@ -113,12 +113,17 @@ export function buildPopup() {
                         <span>범위 일괄 교정</span>
                     </button>
                 </div>
-                <label class="stsm-field stsm-sort-field">
-                    <select id="stsm-record-sort" class="text_pole" aria-label="요약 기록 정렬">
-                        <option value="id-desc">ID 높은 순</option>
-                        <option value="id-asc">ID 낮은 순</option>
-                    </select>
-                </label>
+                <div class="stsm-records-view-controls">
+                    <label class="stsm-field stsm-sort-field">
+                        <select id="stsm-record-sort" class="text_pole" aria-label="요약 기록 정렬">
+                            <option value="id-desc">ID 높은 순</option>
+                            <option value="id-asc">ID 낮은 순</option>
+                        </select>
+                    </label>
+                    <button id="stsm-records-fullscreen" class="menu_button menu_button_icon interactable" type="button" title="기록 전체 화면으로 보기" aria-label="기록 전체 화면으로 보기">
+                        <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                    </button>
+                </div>
             </div>
             <div id="stsm-record-list" class="stsm-record-list"></div>
             ${renderTranslationSettings()}

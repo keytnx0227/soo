@@ -434,7 +434,9 @@ async function runSummarization(root) {
 function setSummarizing(root, value) {
     isSummarizing = value;
     root.querySelectorAll('button, input, select, textarea').forEach(element => {
-        if (element.classList.contains('stsm-tab')) return;
+        if (element.classList.contains('stsm-tab')
+            || element.id === 'stsm-records-fullscreen'
+            || element.matches('.stsm-record-translate, .stsm-record-translation-toggle, #stsm-translate-all')) return;
         if (value) {
             element.dataset.stsmWasDisabled = String(element.disabled);
             element.disabled = true;
