@@ -10,13 +10,16 @@ import {
 } from './core/extension-state.js';
 import { bindExtensionStatus } from './ui/extension-status-view.js';
 import { buildPopup } from './ui/popup-template.js';
+import { bindSectionTooltips } from './ui/section-tooltip.js';
+import { bindPeopleMemoryView, renderPeopleMemory } from './memory/people-memory-view.js';
+import { bindItemMemoryView, renderItemMemory } from './memory/item-memory-view.js';
 import {
     hideAllSummarizedMessages,
     initializeMessageVisibility,
     syncSummarizedMessageVisibility,
     unhideAllSummarizedMessages,
 } from './visibility/message-visibility.js';
-import { bindPromptSettings } from './prompts/prompt-settings-view.js';
+import { bindPromptSettings, renderPromptEditor } from './prompts/prompt-settings-view.js';
 import { bindPromptInspector } from './prompts/prompt-inspector.js';
 import { bindRangeAdjustment } from './records/range-adjustment-view.js';
 import {
@@ -33,6 +36,8 @@ import {
     getSettings,
     setAutoHideSummarizedMessages,
     setChunkSize,
+    setMemorySectionEnabled,
+    setSummarySectionEnabled,
     setSummarizationSettings,
     setTranslationSettings,
 } from './core/settings.js';
@@ -107,6 +112,7 @@ async function openSummarizerPopup() {
 
 function bindEvents(root) {
     const unbindSummaryErrorView = bindSummaryErrorView(root);
+    const unbindSectionTooltips = bindSectionTooltips();
     const unbindExtensionStatus = bindExtensionStatus(root, async enabled => {
         refreshSummaryInjection();
         if (!enabled) return;
@@ -148,6 +154,8 @@ function bindEvents(root) {
     bindPromptSettings(root);
     bindPromptInspector(root);
     bindRecordsView(root, bindRecordEvents);
+    bindPeopleMemoryView(root);
+    bindItemMemoryView(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {
             synchronizeRevisionSessionRanges(updatedRecords);
@@ -161,28 +169,53 @@ function bindEvents(root) {
     return () => {
         unbindSummaryErrorView();
         unbindExtensionStatus();
+        unbindSectionTooltips();
     };
 }
 
 function bindSummarizationSettings(root) {
     const settings = getSettings().summarization;
     const maxTokens = root.querySelector('#stsm-injection-max-tokens');
+    const outputLanguage = root.querySelector('#stsm-summary-output-language');
     const mode = root.querySelector('#stsm-injection-mode');
     const depth = root.querySelector('#stsm-injection-depth');
     const role = root.querySelector('#stsm-injection-role');
     const position = root.querySelector('#stsm-injection-position');
     const recordTemplate = root.querySelector('#stsm-summary-record-template');
     const autoHide = root.querySelector('#stsm-auto-hide-summarized');
+    const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
+    const memorySectionToggles = root.querySelectorAll('[data-memory-section]');
 
     maxTokens.value = settings.injectionMaxTokens;
+    outputLanguage.value = settings.outputLanguage;
     mode.value = settings.injection.mode;
     depth.value = settings.injection.depth;
     role.value = settings.injection.role;
     position.value = settings.injection.position;
     recordTemplate.value = settings.recordTemplate;
     autoHide.checked = settings.autoHideSummarizedMessages;
+    summarySectionToggles.forEach(toggle => {
+        toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
+        toggle.addEventListener('change', event => {
+            setSummarySectionEnabled(event.target.dataset.summarySection, event.target.checked);
+            renderPromptEditor(root, 'summary');
+            root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+        });
+    });
+    memorySectionToggles.forEach(toggle => {
+        toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
+        toggle.addEventListener('change', event => {
+            setMemorySectionEnabled(event.target.dataset.memorySection, event.target.checked);
+            renderPromptEditor(root, 'summary');
+            root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+        });
+    });
 
     maxTokens.addEventListener('change', event => setSummarizationSettings({ injectionMaxTokens: event.target.value }));
+    outputLanguage.addEventListener('change', event => {
+        setSummarizationSettings({ outputLanguage: event.target.value });
+        root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+    });
     mode.addEventListener('change', event => {
         setSummarizationSettings({ injection: { ...getSettings().summarization.injection, mode: event.target.value } });
         renderInjectionFields(root);
@@ -805,6 +838,8 @@ function initialize() {
     });
     window.addEventListener('stsm:records-changed', () => {
         if (!currentRoot) return;
+        renderPeopleMemory(currentRoot);
+        renderItemMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
     });

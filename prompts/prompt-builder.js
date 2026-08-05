@@ -1,23 +1,59 @@
 import { substituteParams } from '../../../../../script.js';
 import { getWorldInfoPrompt, world_info_include_names } from '../../../../world-info.js';
 import { isMessageAutoHiddenBySummarizer } from '../visibility/message-visibility-state.js';
-import { BLOCK_KINDS, getActivePreset, getSettings, PROMPT_TYPES } from '../core/settings.js';
+import {
+    BLOCK_KINDS,
+    getActivePreset,
+    getSettings,
+    PROMPT_TYPES,
+    SUMMARY_EXTRACTION_RULE_DEFINITIONS,
+} from '../core/settings.js';
 import { buildSummaryRecordsContext } from '../summary/summary-context.js';
 import { getSummaryRecords } from '../summary/summary-store.js';
+import { buildPeopleMemoryPromptContext } from '../memory/people-memory-service.js';
+import { buildItemMemoryPromptContext } from '../memory/item-memory-service.js';
+import {
+    buildSummaryJsonContract,
+    getEnabledMemorySections,
+    getEnabledSummarySections,
+    getSummarySectionKeyForKind,
+    getSummaryLanguageInstruction,
+} from '../summary/summary-format.js';
 
-export async function buildSummaryPrompt({ messages, startId, endId }) {
+export function getSummaryOutputConfiguration() {
+    const settings = getSettings().summarization;
+    return {
+        sections: getEnabledSummarySections(settings.summarySections),
+        memorySections: getEnabledMemorySections(settings.memorySections),
+        languageMode: settings.outputLanguage,
+    };
+}
+
+export async function buildSummaryPrompt({ messages, startId, endId }, outputConfiguration = getSummaryOutputConfiguration()) {
     const preset = getActivePreset(PROMPT_TYPES.SUMMARY);
     const recentSummaryBlock = preset.blocks.find(block => block.enabled && block.kind === BLOCK_KINDS.RECENT_SUMMARIES);
     const recentSummaries = recentSummaryBlock ? buildRecentSummaryContent(recentSummaryBlock, startId) : '';
-    const chunk = { messages, startId, endId, recentSummaries };
+    const { sections, memorySections, languageMode } = outputConfiguration;
+    const chunk = { messages, startId, endId, recentSummaries, sections, memorySections, languageMode };
     const parts = [];
 
-    for (const block of preset.blocks.filter(block => block.enabled)) {
+    for (const block of preset.blocks.filter(block => isSummaryBlockEnabled(block, sections))) {
         const content = await renderSummaryBlock(block, chunk);
         if (content.trim()) parts.push(content.trim());
     }
 
     return parts.join('\n\n');
+}
+
+function isSummaryBlockEnabled(block, sections) {
+    if (block.kind === BLOCK_KINDS.PEOPLE_MEMORY) {
+        return getEnabledMemorySections(getSettings().summarization.memorySections).people;
+    }
+    if (block.kind === BLOCK_KINDS.ITEM_MEMORY) {
+        return getEnabledMemorySections(getSettings().summarization.memorySections).items;
+    }
+    const sectionKey = getSummarySectionKeyForKind(block.kind);
+    return sectionKey ? Boolean(sections[sectionKey]) : block.enabled;
 }
 
 export async function buildRevisionPrompt({ baseContent, messages }) {
@@ -38,6 +74,8 @@ async function renderSummaryBlock(block, chunk) {
     const commonValues = {
         sumiStartId: chunk.startId,
         sumiEndId: chunk.endId,
+        sumiSummaryLanguageInstruction: getSummaryLanguageInstruction(chunk.languageMode),
+        sumiSummaryJsonContract: buildSummaryJsonContract(chunk.sections, chunk.memorySections),
     };
 
     switch (block.kind) {
@@ -57,9 +95,23 @@ async function renderSummaryBlock(block, chunk) {
             return chunk.recentSummaries ? renderTemplate(block.content, commonValues) : '';
         case BLOCK_KINDS.SUMMARY_MESSAGES:
             return renderSummaryMessages(block.content, chunk, context);
+        case BLOCK_KINDS.PEOPLE_MEMORY:
+            return renderDataBlock(block, 'sumiPeopleMemory', buildPeopleMemoryPromptContext(), commonValues);
+        case BLOCK_KINDS.ITEM_MEMORY:
+            return renderDataBlock(block, 'sumiItemMemory', buildItemMemoryPromptContext(), commonValues);
+        case BLOCK_KINDS.SUMMARY_EXTRACTION_RULES:
+            return renderSummaryExtractionRules(block.config.rules, chunk.sections, chunk.memorySections);
         default:
             return renderTemplate(block.content, commonValues);
     }
+}
+
+function renderSummaryExtractionRules(rules, sections, memorySections) {
+    return SUMMARY_EXTRACTION_RULE_DEFINITIONS
+        .filter(({ key, category }) => category === 'memory' ? memorySections[key] : sections[key])
+        .map(({ key }) => String(rules?.[key] || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
 }
 
 function buildRecentSummaryContent(block, startId) {

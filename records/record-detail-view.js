@@ -3,6 +3,8 @@ import { collectChatRangeMessages, renderChatMessage } from './chat-message-view
 import { getSummaryRecordSourceStatus, SOURCE_STATES } from '../summary/source-tracking.js';
 import { getSummaryRecord } from '../summary/summary-store.js';
 import { escapeHtml } from '../core/utils.js';
+import { renderRecordTagDetails } from './record-tags-view.js';
+import { renderRecordMemoryUpdateDetails } from './record-memory-updates-view.js';
 
 export async function openSummaryRecordDetail(recordId) {
     const record = getSummaryRecord(recordId);
@@ -29,6 +31,8 @@ export async function openSummaryRecordDetail(recordId) {
             <div class="stsm-record-detail-section-title">요약 내용</div>
             <div class="stsm-record-detail-summary">${escapeHtml(record.content)}</div>
         </section>
+        ${renderRecordTagDetails(record)}
+        ${renderRecordMemoryUpdateDetails(record)}
         <section class="stsm-record-detail-section stsm-record-detail-source-section">
             <div class="stsm-record-detail-section-title">
                 <span>원본 메시지</span>

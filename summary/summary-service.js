@@ -1,11 +1,16 @@
 import { createSummaryChunks } from './chunking.js';
 import { generateSummary } from '../connection/generation.js';
 import { assertExtensionEnabled } from '../core/extension-state.js';
-import { buildSummaryPrompt } from '../prompts/prompt-builder.js';
+import { buildSummaryPrompt, getSummaryOutputConfiguration } from '../prompts/prompt-builder.js';
 import { findOverlappingRanges, formatRanges, getUncoveredRanges } from './range-utils.js';
 import { getSettings } from '../core/settings.js';
 import { createSourceFingerprint } from './source-tracking.js';
 import { createId } from '../core/utils.js';
+import {
+    parseStructuredSummaryResponse,
+    renderStructuredSummary,
+    SUMMARY_FORMAT_VERSION,
+} from './summary-format.js';
 import {
     addSummaryRecord,
     getSummaryRecord,
@@ -60,16 +65,27 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
             ensureChatUnchanged(chat);
             onProgress?.({ current: index + 1, total: chunks.length, chunk });
 
-            const prompt = await buildSummaryPrompt(chunk);
+            const outputConfiguration = getSummaryOutputConfiguration();
+            const prompt = await buildSummaryPrompt(chunk, outputConfiguration);
             if (!prompt.trim()) {
                 throw new Error('조립된 요약 프롬프트가 비어 있습니다.');
             }
 
-            const content = await generateSummary(prompt);
+            const response = await generateSummary(prompt);
             ensureChatUnchanged(chat);
-            if (!content) {
+            if (!response) {
                 throw new Error('요약 응답이 비어 있습니다.');
             }
+            const structuredData = parseStructuredSummaryResponse(
+                response,
+                outputConfiguration.sections,
+                outputConfiguration.memorySections,
+            );
+            const content = renderStructuredSummary(structuredData, {
+                startId: chunk.startId,
+                endId: chunk.endId,
+                sections: outputConfiguration.sections,
+            });
 
             record = await addSummaryRecord({
                 batchId,
@@ -78,6 +94,13 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord }) {
                 content,
                 prompt,
                 sourceFingerprint: createSourceFingerprint(chunk.messages),
+                structuredSummary: {
+                    version: SUMMARY_FORMAT_VERSION,
+                    languageMode: outputConfiguration.languageMode,
+                    sections: outputConfiguration.sections,
+                    memorySections: outputConfiguration.memorySections,
+                    data: structuredData,
+                },
             });
         } catch (error) {
             throw createBatchInterruptionError({
@@ -140,17 +163,35 @@ export async function regenerateSummaryRecord(recordId) {
     const [chunk] = createSummaryChunks(chat, start, end, end - start + 1);
     if (!chunk) throw new Error('현재 채팅의 해당 범위에 요약할 메시지가 없습니다.');
 
-    const prompt = await buildSummaryPrompt(chunk);
+    const outputConfiguration = getSummaryOutputConfiguration();
+    const prompt = await buildSummaryPrompt(chunk, outputConfiguration);
     ensureChatUnchanged(chat);
     if (!prompt.trim()) throw new Error('현재 설정으로 조립된 재생성 프롬프트가 비어 있습니다.');
 
-    const content = await generateSummary(prompt);
+    const response = await generateSummary(prompt);
     ensureChatUnchanged(chat);
-    if (!content) throw new Error('재생성된 요약 응답이 비어 있습니다.');
+    if (!response) throw new Error('재생성된 요약 응답이 비어 있습니다.');
+    const structuredData = parseStructuredSummaryResponse(
+        response,
+        outputConfiguration.sections,
+        outputConfiguration.memorySections,
+    );
+    const content = renderStructuredSummary(structuredData, {
+        startId: chunk.startId,
+        endId: chunk.endId,
+        sections: outputConfiguration.sections,
+    });
 
     const updatedRecord = await updateSummaryRecordContent(record.id, content, {
         prompt,
         sourceFingerprint: createSourceFingerprint(chunk.messages),
+        structuredSummary: {
+            version: SUMMARY_FORMAT_VERSION,
+            languageMode: outputConfiguration.languageMode,
+            sections: outputConfiguration.sections,
+            memorySections: outputConfiguration.memorySections,
+            data: structuredData,
+        },
     });
     if (!updatedRecord) throw new Error('재생성 결과를 저장할 요약 기록을 찾지 못했습니다.');
     return updatedRecord;

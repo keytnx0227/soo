@@ -33,7 +33,7 @@ export async function setRecentRevisionConversation(conversation) {
     return structuredClone(normalized);
 }
 
-export async function addSummaryRecord({ batchId, startId, endId, content, prompt, sourceFingerprint }) {
+export async function addSummaryRecord({ batchId, startId, endId, content, prompt, sourceFingerprint, structuredSummary }) {
     const record = {
         id: createId('summary'),
         batchId: normalizeOptionalId(batchId),
@@ -42,6 +42,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
         content: String(content || '').trim(),
         contentHash: createContentHash(content),
         sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
+        structuredSummary: normalizeStructuredSummary(structuredSummary),
         prompt: String(prompt || ''),
         createdAt: new Date().toISOString(),
     };
@@ -75,7 +76,7 @@ export async function deleteSummaryRecord(recordId) {
     return true;
 }
 
-export async function updateSummaryRecordContent(recordId, content, { prompt, sourceFingerprint } = {}) {
+export async function updateSummaryRecordContent(recordId, content, { prompt, sourceFingerprint, structuredSummary } = {}) {
     const normalizedId = String(recordId);
     const normalizedContent = String(content || '').trim();
     if (!normalizedContent) throw new Error('요약 내용은 비워둘 수 없습니다.');
@@ -95,6 +96,7 @@ export async function updateSummaryRecordContent(recordId, content, { prompt, so
             sourceFingerprint: sourceFingerprint === undefined
                 ? record.sourceFingerprint
                 : normalizeSourceFingerprint(sourceFingerprint),
+            structuredSummary: normalizeStructuredSummary(structuredSummary),
             prompt: prompt === undefined ? record.prompt : String(prompt),
             translation: contentHash === record.contentHash ? record.translation : null,
             updatedAt: new Date().toISOString(),
@@ -242,12 +244,26 @@ function normalizeRecords(records) {
                 content,
                 contentHash,
                 sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
+                structuredSummary: normalizeStructuredSummary(record.structuredSummary),
                 prompt: String(record.prompt || ''),
                 createdAt: String(record.createdAt || new Date().toISOString()),
                 updatedAt: record.updatedAt ? String(record.updatedAt) : null,
                 translation: normalizeTranslation(record.translation, contentHash, record.contentHash),
             };
         });
+}
+
+function normalizeStructuredSummary(value) {
+    if (!value || typeof value !== 'object' || !value.data || typeof value.data !== 'object') return null;
+    const version = Number(value.version);
+    if (!Number.isInteger(version) || version < 1) return null;
+    return {
+        version,
+        languageMode: String(value.languageMode || 'english'),
+        sections: value.sections && typeof value.sections === 'object' ? structuredClone(value.sections) : {},
+        memorySections: value.memorySections && typeof value.memorySections === 'object' ? structuredClone(value.memorySections) : {},
+        data: structuredClone(value.data),
+    };
 }
 
 function normalizeOptionalId(value) {

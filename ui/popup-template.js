@@ -1,3 +1,5 @@
+import { SUMMARY_SECTION_DESCRIPTIONS } from '../summary/summary-format.js';
+
 export function buildPopup() {
     const root = document.createElement('div');
     root.id = 'stsm-root';
@@ -6,6 +8,7 @@ export function buildPopup() {
         <div class="stsm-tabs" role="tablist">
             ${renderTab('summary', '요약', true)}
             ${renderTab('records', '기록')}
+            ${renderTab('memory', '도감')}
             ${renderTab('connection', '연결 설정')}
             ${renderTab('settings', '요약 설정')}
         </div>
@@ -132,6 +135,33 @@ export function buildPopup() {
             ${renderTranslationSettings()}
         </section>
 
+        <section id="stsm-panel-memory" class="stsm-panel" role="tabpanel" hidden>
+            <div class="stsm-memory-toolbar">
+                <div>
+                    <strong>도감</strong>
+                    <span>요약 레코드의 변경안을 바탕으로 계산된 장기 기억</span>
+                </div>
+            </div>
+            <div class="stsm-atlas-scroll">
+                <section class="stsm-atlas-section">
+                    <div class="stsm-atlas-section-heading">
+                        <strong>인물 도감</strong>
+                        <span id="stsm-people-memory-count">0명</span>
+                    </div>
+                    <div id="stsm-people-memory-skipped" class="stsm-people-memory-warning" hidden></div>
+                    <div id="stsm-people-memory-list" class="stsm-people-memory-list"></div>
+                </section>
+                <section class="stsm-atlas-section">
+                    <div class="stsm-atlas-section-heading">
+                        <strong>아이템 도감</strong>
+                        <span id="stsm-item-memory-count">0개</span>
+                    </div>
+                    <div id="stsm-item-memory-skipped" class="stsm-item-memory-warning" hidden></div>
+                    <div id="stsm-item-memory-list" class="stsm-item-memory-list"></div>
+                </section>
+            </div>
+        </section>
+
         <section id="stsm-panel-connection" class="stsm-panel" role="tabpanel" hidden>
             <div class="stsm-connection-toolbar">
                 <label class="stsm-field">
@@ -156,6 +186,14 @@ export function buildPopup() {
                     <input id="stsm-chunk-size" class="text_pole" type="number" min="1" max="1000" step="1" />
                 </label>
                 <label class="stsm-field">
+                    <span>요약 작성 언어</span>
+                    <select id="stsm-summary-output-language" class="text_pole">
+                        <option value="english">영어로</option>
+                        <option value="source">원문 언어로</option>
+                        <option value="english-dialogue-source">영어로, 대사만 원문 언어로</option>
+                    </select>
+                </label>
+                <label class="stsm-field">
                     <span>요약 주입 최대 토큰</span>
                     <input id="stsm-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
                 </label>
@@ -170,6 +208,29 @@ export function buildPopup() {
             <div class="stsm-auto-hide-actions">
                 <button id="stsm-unhide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 해제</button>
                 <button id="stsm-hide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 진행</button>
+            </div>
+
+            <div class="stsm-settings-section">
+                <div class="stsm-section-title">요약 항목 설정</div>
+                <div class="stsm-summary-section-grid">
+                    ${renderSummarySectionToggle('plot', '플롯', true)}
+                    ${renderSummarySectionToggle('title', '제목')}
+                    ${renderSummarySectionToggle('date', '날짜')}
+                    ${renderSummarySectionToggle('time', '시간')}
+                    ${renderSummarySectionToggle('location', '장소')}
+                    ${renderSummarySectionToggle('continuity', '연속성 변화')}
+                    ${renderSummarySectionToggle('emotions', '감정 변화')}
+                    ${renderSummarySectionToggle('quotes', '주요 대사')}
+                    ${renderSummarySectionToggle('tags', '검색 태그')}
+                </div>
+            </div>
+
+            <div class="stsm-settings-section">
+                <div class="stsm-section-title">도감 추출 설정</div>
+                <div class="stsm-summary-section-grid">
+                    ${renderMemorySectionToggle('people', '인물 도감')}
+                    ${renderMemorySectionToggle('items', '아이템 도감')}
+                </div>
             </div>
 
             <div class="stsm-settings-section">
@@ -188,6 +249,43 @@ export function buildPopup() {
         </section>
     `;
     return root;
+}
+
+function renderSummarySectionToggle(section, label, required = false) {
+    const title = required ? `${label}은 필수 항목입니다.` : `${label} 추출 켜기/끄기`;
+    const description = SUMMARY_SECTION_DESCRIPTIONS[section];
+    return `
+        <div class="stsm-summary-section-toggle">
+            <span class="stsm-summary-section-label">
+                <span>${label}${required ? ' (필수)' : ''}</span>
+                <button class="stsm-section-info interactable" type="button" data-tooltip="${description}" aria-label="${label} 설명: ${description}">
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                </button>
+            </span>
+            <label class="stsm-switch" title="${title}">
+                <input type="checkbox" data-summary-section="${section}" ${required ? 'checked disabled' : ''} />
+                <span></span>
+            </label>
+        </div>
+    `;
+}
+
+function renderMemorySectionToggle(section, label) {
+    const description = SUMMARY_SECTION_DESCRIPTIONS[section];
+    return `
+        <div class="stsm-summary-section-toggle">
+            <span class="stsm-summary-section-label">
+                <span>${label}</span>
+                <button class="stsm-section-info interactable" type="button" data-tooltip="${description}" aria-label="${label} 설명: ${description}">
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                </button>
+            </span>
+            <label class="stsm-switch" title="${label} 추출 켜기/끄기">
+                <input type="checkbox" data-memory-section="${section}" />
+                <span></span>
+            </label>
+        </div>
+    `;
 }
 
 function renderPromptInspector(type, label) {

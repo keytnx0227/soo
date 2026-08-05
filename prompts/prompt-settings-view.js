@@ -4,8 +4,11 @@ import {
     BLOCK_KINDS,
     createPresetFromActive,
     deleteActivePreset,
+    getDefaultSummaryExtractionRules,
     getActivePreset,
     getPromptEditor,
+    getSettings,
+    isRequiredPromptBlock,
     movePromptBlock,
     PROMPT_TYPES,
     removePromptBlock,
@@ -14,9 +17,17 @@ import {
     setActivePreset,
     setPromptBlockEnabled,
     setPromptSeparatorsHidden,
+    SUMMARY_EXTRACTION_RULE_DEFINITIONS,
     updatePromptBlock,
 } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
+import {
+    buildSummaryJsonContract,
+    getEnabledMemorySections,
+    getEnabledSummarySections,
+    getSummarySectionKeyForKind,
+    SUMMARY_SECTION_DESCRIPTIONS,
+} from '../summary/summary-format.js';
 
 const TYPE_LABELS = Object.freeze({
     [PROMPT_TYPES.SUMMARY]: '요약',
@@ -39,6 +50,7 @@ export function renderPromptEditor(root, type) {
     const container = root.querySelector(`[data-prompt-editor="${type}"]`);
     const editor = getPromptEditor(type);
     const preset = getActivePreset(type);
+    const summarySections = getSettings().summarization.summarySections;
     const defaultPresetId = type === PROMPT_TYPES.SUMMARY ? 'default-summary' : 'default-revision';
 
     container.innerHTML = `
@@ -60,7 +72,7 @@ export function renderPromptEditor(root, type) {
             </div>
         </div>
         <div class="stsm-block-list">
-            ${preset.blocks.filter(block => !editor.hideSeparators || !block.separator).map(renderPromptBlock).join('')}
+            ${preset.blocks.filter(block => !editor.hideSeparators || !block.separator).map(block => renderPromptBlock(block, summarySections)).join('')}
         </div>
     `;
 }
@@ -73,9 +85,22 @@ function renderToolbarButton(action, icon, title, disabled = false) {
     `;
 }
 
-function renderPromptBlock(block) {
+function renderPromptBlock(block, summarySections) {
+    const required = isRequiredPromptBlock(block);
+    const sectionKey = getSummarySectionKeyForKind(block.kind);
+    const controlledBySection = Boolean(sectionKey);
+    const enabled = controlledBySection ? Boolean(summarySections[sectionKey]) : block.enabled || required;
+    const switchDisabled = controlledBySection || required;
+    const generatedBlock = [
+        BLOCK_KINDS.SUMMARY_LANGUAGE,
+        BLOCK_KINDS.SUMMARY_EXTRACTION_RULES,
+        BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT,
+        BLOCK_KINDS.PEOPLE_MEMORY,
+        BLOCK_KINDS.ITEM_MEMORY,
+    ].includes(block.kind);
+    const detailOnly = block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT;
     return `
-        <div class="stsm-block${block.separator ? ' stsm-block-separator' : ''}" data-block-id="${escapeHtml(block.id)}" draggable="true">
+        <div class="stsm-block${block.separator ? ' stsm-block-separator' : ''}${controlledBySection && !enabled ? ' stsm-block-section-disabled' : ''}${generatedBlock ? ' stsm-block-generated' : ''}" data-block-id="${escapeHtml(block.id)}" draggable="true">
             <div class="stsm-block-grip" title="드래그로 이동">
                 <i class="fa-solid fa-grip-vertical"></i>
             </div>
@@ -83,12 +108,14 @@ function renderPromptBlock(block) {
                 <div class="stsm-block-title">${escapeHtml(block.name)}</div>
                 <div class="stsm-block-preview">${escapeHtml(getBlockPreview(block))}</div>
             </div>
-            <label class="stsm-switch" title="전송 여부">
-                <input class="stsm-block-toggle" type="checkbox" ${block.enabled ? 'checked' : ''} />
-                <span></span>
-            </label>
-            <button class="stsm-block-edit menu_button menu_button_icon interactable" data-action="edit-block" type="button" title="수정" aria-label="수정">
-                <i class="fa-solid fa-pen"></i>
+            ${generatedBlock ? '' : `
+                <label class="stsm-switch" title="${controlledBySection ? '요약 항목 설정에서 제어됩니다.' : required ? '필수 프롬프트 블록입니다.' : '전송 여부'}">
+                    <input class="stsm-block-toggle" type="checkbox" ${enabled ? 'checked' : ''} ${switchDisabled ? 'disabled' : ''} />
+                    <span></span>
+                </label>
+            `}
+            <button class="stsm-block-edit menu_button menu_button_icon interactable" data-action="edit-block" type="button" title="${detailOnly ? '상세 보기' : '수정'}" aria-label="${detailOnly ? '상세 보기' : '수정'}">
+                <i class="fa-solid ${detailOnly ? 'fa-eye' : 'fa-pen'}"></i>
             </button>
             ${!block.locked ? `
                 <button class="stsm-block-delete menu_button menu_button_icon interactable" data-action="delete-block" type="button" title="삭제" aria-label="삭제">
@@ -100,6 +127,8 @@ function renderPromptBlock(block) {
 }
 
 function getBlockPreview(block) {
+    if (block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return '항목별 추출 지시문을 한 곳에서 관리합니다.';
+    if (block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT) return '요약 항목 설정에 따라 자동 생성됩니다.';
     return block.content || '';
 }
 
@@ -136,6 +165,18 @@ async function handleEditorClick(root, type, event) {
     } else if (action === 'edit-block') {
         const block = getActivePreset(type).blocks.find(item => item.id === blockId);
         if (!block) return;
+        if (block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT) {
+            await showSummaryOutputContractPopup();
+            return;
+        }
+        if (block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) {
+            const config = await showSummaryExtractionRulesPopup(block);
+            if (!config) return;
+            updatePromptBlock(type, blockId, { config });
+            renderPromptEditor(root, type);
+            root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+            return;
+        }
         const values = await showPromptBlockPopup({ title: '프롬프트 수정', okButton: '수정하기', block });
         if (!values) return;
         updatePromptBlock(type, blockId, values);
@@ -147,6 +188,96 @@ async function handleEditorClick(root, type, event) {
         renderPromptEditor(root, type);
     }
     root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+}
+
+async function showSummaryExtractionRulesPopup(block) {
+    const sections = getEnabledSummarySections(getSettings().summarization.summarySections);
+    const memorySections = getEnabledMemorySections(getSettings().summarization.memorySections);
+    const form = document.createElement('div');
+    form.className = 'stsm-prompt-form stsm-extraction-rules-form';
+    form.innerHTML = `
+        <div class="stsm-section-title">요약 추출 규칙</div>
+        <div class="stsm-extraction-rules-intro">
+            <span>전역 요약 항목 설정에서 켠 규칙만 프롬프트에 포함됩니다.</span>
+            <button class="menu_button interactable stsm-reset-extraction-rules" type="button">
+                <i class="fa-solid fa-rotate-left"></i>
+                기본값으로 초기화
+            </button>
+        </div>
+        <div class="stsm-extraction-rule-list">
+            ${SUMMARY_EXTRACTION_RULE_DEFINITIONS.map(({ key, label, category }) => {
+                const enabled = category === 'memory' ? memorySections[key] : sections[key];
+                return `
+                <div class="stsm-field stsm-extraction-rule" data-rule-key="${escapeHtml(key)}">
+                    <div class="stsm-extraction-rule-heading">
+                        <span class="stsm-extraction-rule-title">
+                            <strong>${escapeHtml(label)}</strong>
+                            <button class="stsm-section-info interactable" type="button" data-tooltip="${escapeHtml(SUMMARY_SECTION_DESCRIPTIONS[key])}" aria-label="${escapeHtml(label)} 설명: ${escapeHtml(SUMMARY_SECTION_DESCRIPTIONS[key])}">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                        <span class="stsm-extraction-rule-actions">
+                            <small class="${enabled ? 'is-enabled' : 'is-disabled'}">${enabled ? '활성' : '비활성'}</small>
+                            <button class="menu_button menu_button_icon interactable stsm-reset-extraction-rule" type="button" title="${escapeHtml(label)} 규칙 초기화" aria-label="${escapeHtml(label)} 규칙 초기화">
+                                <i class="fa-solid fa-rotate-left"></i>
+                            </button>
+                        </span>
+                    </div>
+                    <textarea class="text_pole monospace" rows="5"></textarea>
+                </div>
+            `; }).join('')}
+        </div>
+    `;
+
+    const setValues = rules => {
+        for (const { key } of SUMMARY_EXTRACTION_RULE_DEFINITIONS) {
+            form.querySelector(`[data-rule-key="${key}"] textarea`).value = rules[key] || '';
+        }
+    };
+    setValues(block.config.rules);
+    form.querySelector('.stsm-reset-extraction-rules').addEventListener('click', () => {
+        setValues(getDefaultSummaryExtractionRules());
+        toastr.info('추출 규칙을 기본값으로 되돌렸습니다. 수정하기를 누르면 반영됩니다.');
+    });
+    form.querySelector('.stsm-extraction-rule-list').addEventListener('click', event => {
+        const button = event.target.closest('.stsm-reset-extraction-rule');
+        if (!button) return;
+        const rule = button.closest('.stsm-extraction-rule');
+        const key = rule?.dataset.ruleKey;
+        const definition = SUMMARY_EXTRACTION_RULE_DEFINITIONS.find(item => item.key === key);
+        if (!definition) return;
+        rule.querySelector('textarea').value = getDefaultSummaryExtractionRules()[key];
+        toastr.info(`${definition.label} 추출 규칙을 기본값으로 되돌렸습니다.`);
+    });
+
+    const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', { okButton: '수정하기', cancelButton: '취소' });
+    if (await popup.show() !== 1) return null;
+
+    const rules = Object.fromEntries(SUMMARY_EXTRACTION_RULE_DEFINITIONS.map(({ key }) => [
+        key,
+        form.querySelector(`[data-rule-key="${key}"] textarea`).value.trim(),
+    ]));
+    const missingRule = SUMMARY_EXTRACTION_RULE_DEFINITIONS.find(({ key }) => !rules[key]);
+    if (missingRule) {
+        toastr.info(`${missingRule.label} 추출 규칙을 입력해주세요.`);
+        return null;
+    }
+    return { rules };
+}
+
+async function showSummaryOutputContractPopup() {
+    const sections = getEnabledSummarySections(getSettings().summarization.summarySections);
+    const memorySections = getEnabledMemorySections(getSettings().summarization.memorySections);
+    const form = document.createElement('div');
+    form.className = 'stsm-prompt-form';
+    form.innerHTML = `
+        <div class="stsm-section-title">JSON 출력 형식 · 자동 생성</div>
+        <div class="stsm-muted">전역 요약 항목 설정을 기준으로 실제 전송되는 계약입니다.</div>
+        <textarea class="text_pole monospace" rows="18" readonly></textarea>
+    `;
+    form.querySelector('textarea').value = buildSummaryJsonContract(sections, memorySections);
+    const popup = new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기' });
+    await popup.show();
 }
 
 function handleEditorChange(root, type, event) {

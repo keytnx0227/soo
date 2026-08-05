@@ -6,6 +6,8 @@ import { getSummaryRecordSourceStatuses, SOURCE_STATES } from '../summary/source
 import { getSummaryRecords } from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
+import { renderRecordTagSummary } from './record-tags-view.js';
+import { renderRecordMemoryUpdateBadge } from './record-memory-updates-view.js';
 
 export function bindRecordsView(root, bindRecordEvents) {
     root.querySelector('#stsm-preview-summary-context').addEventListener('click', async () => {
@@ -148,6 +150,7 @@ function renderSummaryRecord(summary, sourceStatus) {
                 <div class="stsm-record-range">
                     <strong>#${summary.startId} ~ #${summary.endId}</strong>
                     <span>${tokenCount.toLocaleString()} tokens</span>
+                    ${renderRecordMemoryUpdateBadge(summary)}
                     <span class="stsm-record-source-state-slot">${renderSourceState(sourceStatus)}</span>
                 </div>
                 <div class="stsm-record-actions">
@@ -163,6 +166,7 @@ function renderSummaryRecord(summary, sourceStatus) {
             </header>
             <div class="stsm-record-content stsm-record-original"${hasTranslation ? ' hidden' : ''}>${escapeHtml(summary.content)}</div>
             <div class="stsm-record-content stsm-record-translation"${hasTranslation ? '' : ' hidden'}>${hasTranslation ? escapeHtml(summary.translation.content) : ''}</div>
+            ${renderRecordTagSummary(summary)}
             <div class="stsm-record-edit-actions" hidden>
                 <button class="stsm-record-save menu_button interactable" type="button">수정</button>
                 <button class="stsm-record-cancel menu_button interactable" type="button">취소</button>
