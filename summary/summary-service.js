@@ -17,6 +17,7 @@ import {
     getSummaryRecords,
     updateSummaryRecordContent,
 } from './summary-store.js';
+import { regenerateCompressedSummary } from './compression-service.js';
 
 export function validateSummaryRange(startId, endId) {
     const chat = SillyTavern.getContext().chat;
@@ -87,7 +88,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord, sig
             const content = renderStructuredSummary(structuredData, {
                 startId: chunk.startId,
                 endId: chunk.endId,
-                sections: outputConfiguration.sections,
+                template: getSettings().summarization.summaryContentTemplate,
             });
 
             record = await addSummaryRecord({
@@ -173,6 +174,7 @@ export async function regenerateSummaryRecord(recordId) {
     assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record) throw new Error('재생성할 요약 기록을 찾지 못했습니다.');
+    if (record.type === 'compressed') return regenerateCompressedSummary(recordId);
 
     const { start, end, chat } = validateSummaryRange(record.startId, record.endId);
     const [chunk] = createSummaryChunks(chat, start, end, end - start + 1);
@@ -194,7 +196,7 @@ export async function regenerateSummaryRecord(recordId) {
     const content = renderStructuredSummary(structuredData, {
         startId: chunk.startId,
         endId: chunk.endId,
-        sections: outputConfiguration.sections,
+        template: getSettings().summarization.summaryContentTemplate,
     });
 
     const updatedRecord = await updateSummaryRecordContent(record.id, content, {

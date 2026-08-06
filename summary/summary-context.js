@@ -9,7 +9,7 @@ import { power_user } from '../../../../../scripts/power-user.js';
 import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { isExtensionEnabled } from '../core/extension-state.js';
 import { getSettings } from '../core/settings.js';
-import { getSummaryRecords } from './summary-store.js';
+import { getActiveSummaryRecords } from './summary-store.js';
 import { buildContextBlockComposition } from './context-block-composer.js';
 
 const INJECTION_KEY = 'sumi_chat_summarizer_context';
@@ -63,7 +63,7 @@ export function buildSummaryContextDetails() {
     return {
         enabled: true,
         ...buildContextBlockComposition(settings.injectionMaxTokens),
-        sourceRecordCount: getSummaryRecords().length,
+        sourceRecordCount: getActiveSummaryRecords().length,
         omittedRecords: [],
         partialRecord: null,
     };

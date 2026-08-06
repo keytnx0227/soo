@@ -2,6 +2,9 @@ import { substituteParams } from '../../../../../script.js';
 import { getWorldInfoPrompt, world_info_include_names } from '../../../../world-info.js';
 import { isMessageAutoHiddenBySummarizer } from '../visibility/message-visibility-state.js';
 import {
+    buildCompressionJsonContract,
+} from '../summary/compression-format.js';
+import {
     BLOCK_KINDS,
     getActivePreset,
     getSettings,
@@ -76,6 +79,34 @@ export async function buildRevisionPrompt({ baseContent, messages }) {
     return parts.join('\n\n');
 }
 
+export function buildCompressionPrompt(records, languageMode = getSettings().summarization.outputLanguage) {
+    const preset = getActivePreset(PROMPT_TYPES.COMPRESSION);
+    const sourceRecords = [...(Array.isArray(records) ? records : [])]
+        .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
+    const values = {
+        sumiCompressionStartId: sourceRecords[0]?.startId ?? '',
+        sumiCompressionEndId: sourceRecords.at(-1)?.endId ?? '',
+        sumiCompressionSources: sourceRecords.map(record => (
+            `[#${record.startId}-#${record.endId}]\n${String(record.content || '').trim()}`
+        )).join('\n\n'),
+        sumiSummaryLanguageInstruction: getSummaryLanguageInstruction(languageMode),
+        sumiCompressionJsonContract: buildCompressionJsonContract(),
+    };
+
+    return preset.blocks
+        .filter(block => block.enabled)
+        .map(block => renderCompressionBlock(block, values))
+        .filter(content => content.trim())
+        .join('\n\n');
+}
+
+function renderCompressionBlock(block, values) {
+    if (block.kind === BLOCK_KINDS.COMPRESSION_SOURCES) {
+        return renderDataBlock(block, 'sumiCompressionSources', values.sumiCompressionSources, values);
+    }
+    return renderTemplate(block.content, values);
+}
+
 async function renderSummaryBlock(block, chunk) {
     const context = SillyTavern.getContext();
     const character = context.characters?.[context.characterId] || {};
@@ -129,7 +160,7 @@ function renderSummaryExtractionRules(rules, sections, memorySections) {
 function buildRecentSummaryContent(block, startId) {
     const config = block.config;
     let records = getSummaryRecords()
-        .filter(record => record.endId < startId)
+        .filter(record => !record.compressedBy && record.endId < startId)
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
 
     if (config.countLimit.enabled) records = records.slice(-config.countLimit.value);

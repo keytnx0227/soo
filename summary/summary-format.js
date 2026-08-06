@@ -1,3 +1,8 @@
+import {
+    DEFAULT_SUMMARY_CONTENT_TEMPLATE,
+    renderSummaryContentTemplate,
+} from './summary-record-template.js';
+
 export const SUMMARY_FORMAT_VERSION = 4;
 
 export const SUMMARY_LANGUAGE_MODES = Object.freeze({
@@ -630,38 +635,8 @@ function normalizeRelationships(value) {
     }).filter(Boolean);
 }
 
-export function renderStructuredSummary(summary, { startId, endId, sections }) {
-    const heading = summary.title
-        ? `### #${startId} ~ #${endId} - ${summary.title}`
-        : `### #${startId} ~ #${endId}`;
-    const lines = [heading];
-
-    appendContextLine(lines, 'date', summary.contextFlow, 'date', sections.date);
-    appendContextLine(lines, 'relative date', summary.contextFlow, 'relativeDate', sections.date);
-    appendContextLine(lines, 'time', summary.contextFlow, 'time', sections.time);
-    appendContextLine(lines, 'location', summary.contextFlow, 'location', sections.location);
-    appendList(lines, 'plot', summary.plot);
-    appendList(lines, 'continuity changes', summary.continuityChanges);
-
-    if (summary.emotions.length) {
-        lines.push('- emotion:');
-        for (const item of summary.emotions) {
-            const target = item.toward ? ` -> ${item.toward}` : '';
-            const flow = item.states
-                .map(state => state.reason ? `${state.emotion} (because ${state.reason})` : state.emotion)
-                .join(' -> ');
-            lines.push(`  - ${item.subject}${target}: ${flow}`);
-        }
-    }
-
-    if (summary.quotes.length) {
-        lines.push('- key dialogue:');
-        for (const quote of summary.quotes) {
-            lines.push(`  - ${quote.speaker}: "${quote.text}"`);
-        }
-    }
-
-    return lines.join('\n');
+export function renderStructuredSummary(summary, { startId, endId, template = DEFAULT_SUMMARY_CONTENT_TEMPLATE }) {
+    return renderSummaryContentTemplate(template, summary, { startId, endId });
 }
 
 function normalizeContextFlow(value, sections) {
@@ -718,22 +693,6 @@ function normalizeTags(value) {
         if (!canonical) return null;
         return { canonical, matchTerms: normalizeStringList(item.matchTerms) };
     }).filter(Boolean);
-}
-
-function appendContextLine(lines, label, contextFlow, key, enabled) {
-    if (!enabled) return;
-    const values = dedupeConsecutive(contextFlow.map(item => item[key]).filter(Boolean));
-    if (values.length) lines.push(`- ${label}: ${values.join(' -> ')}`);
-}
-
-function appendList(lines, label, values) {
-    if (!values?.length) return;
-    lines.push(`- ${label}:`);
-    values.forEach(value => lines.push(`  - ${value}`));
-}
-
-function dedupeConsecutive(values) {
-    return values.filter((value, index) => index === 0 || value !== values[index - 1]);
 }
 
 function normalizeStringList(value) {

@@ -1,14 +1,14 @@
 import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
-import { getSummaryRecords } from './summary-store.js';
+import { getActiveSummaryRecords } from './summary-store.js';
 import { composeAtomicContext } from './context-block-trimmer.js';
 
 export function buildContextBlockComposition(budget = Infinity) {
     const settings = getSettings().summarization;
     const sourceBlocks = buildRenderedBlocks(
         settings.contextBlocks,
-        getSummaryRecords(),
+        getActiveSummaryRecords(),
         getAtlasProjection(),
     );
     return composeAtomicContext(sourceBlocks, budget, getTokenCount);

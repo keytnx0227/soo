@@ -110,6 +110,10 @@ export function buildPopup() {
         <section id="stsm-panel-records" class="stsm-panel" role="tabpanel" hidden>
             <div class="stsm-records-toolbar">
                 <div class="stsm-records-toolbar-actions">
+                    <button id="stsm-open-compression" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-compress" aria-hidden="true"></i>
+                        <span>압축하기</span>
+                    </button>
                     <button id="stsm-preview-summary-context" class="menu_button interactable" type="button">
                         <i class="fa-solid fa-eye"></i>
                         <span>미리보기</span>
@@ -131,7 +135,13 @@ export function buildPopup() {
                     </button>
                 </div>
             </div>
-            <div id="stsm-record-list" class="stsm-record-list"></div>
+            <div class="stsm-record-memory-browser">
+                <div class="stsm-record-memory-tabs" role="tablist" aria-label="기억 종류">
+                    <button class="stsm-record-memory-tab stsm-record-memory-tab-active menu_button interactable" type="button" data-memory-view="active" role="tab" aria-selected="true">상시기억</button>
+                    <button class="stsm-record-memory-tab menu_button interactable" type="button" data-memory-view="long-term" role="tab" aria-selected="false">장기기억</button>
+                </div>
+                <div id="stsm-record-list" class="stsm-record-list"></div>
+            </div>
             ${renderTranslationSettings()}
         </section>
 
@@ -217,6 +227,10 @@ export function buildPopup() {
                     <span>요약 주입 최대 토큰</span>
                     <input id="stsm-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
                 </label>
+                <label class="stsm-field">
+                    <span>기본 압축 레코드 수</span>
+                    <input id="stsm-compression-group-size" class="text_pole" type="number" min="2" max="100" step="1" />
+                </label>
                 <div class="stsm-field stsm-auto-hide-field">
                     <span>요약한 메시지 자동 숨김</span>
                     <label class="stsm-switch" title="요약한 메시지 자동 숨김">
@@ -246,6 +260,16 @@ export function buildPopup() {
             </div>
 
             <div class="stsm-settings-section">
+                <div class="stsm-section-title">요약 레코드 내용 형식</div>
+                <div id="stsm-summary-content-template"></div>
+            </div>
+
+            <div class="stsm-settings-section">
+                <div class="stsm-section-title">압축 요약 레코드 내용 형식</div>
+                <div id="stsm-compression-content-template"></div>
+            </div>
+
+            <div class="stsm-settings-section">
                 <div class="stsm-section-title">도감 추출 설정</div>
                 <div class="stsm-summary-section-grid">
                     ${renderMemorySectionToggle('people', '인물 도감')}
@@ -265,6 +289,12 @@ export function buildPopup() {
                 <div class="stsm-section-title">수정 대화 프롬프트 설정</div>
                 <div data-prompt-editor="revision"></div>
                 ${renderPromptInspector('revision', '요약 수정 대화 프롬프트')}
+            </div>
+
+            <div class="stsm-settings-section">
+                <div class="stsm-section-title">압축 요약 프롬프트 설정</div>
+                <div data-prompt-editor="compression"></div>
+                ${renderPromptInspector('compression', '압축 요약 프롬프트')}
             </div>
 
             <div class="stsm-settings-section stsm-data-management">

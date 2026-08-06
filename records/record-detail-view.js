@@ -13,6 +13,11 @@ export async function openSummaryRecordDetail(recordId) {
         return;
     }
 
+    if (record.type === 'compressed') {
+        await openCompressedRecordDetail(record);
+        return;
+    }
+
     const chat = SillyTavern.getContext().chat;
     const sourceStatus = getSummaryRecordSourceStatus(record, chat);
     const displayRange = getDisplayRange(record, sourceStatus);
@@ -46,6 +51,44 @@ export async function openSummaryRecordDetail(recordId) {
         </section>
     `;
 
+    await new Popup(content, POPUP_TYPE.TEXT, '', {
+        okButton: '닫기',
+        wide: true,
+        large: true,
+        allowVerticalScrolling: true,
+    }).show();
+}
+
+async function openCompressedRecordDetail(record) {
+    const sources = record.compression.sourceRecordIds.map(getSummaryRecord).filter(Boolean);
+    const content = document.createElement('div');
+    content.className = 'stsm-record-detail-popup';
+    content.innerHTML = `
+        <header class="stsm-record-detail-header">
+            <div>
+                <strong>압축 요약 레코드 자세히 보기</strong>
+                <span>#${record.startId} ~ #${record.endId} · Lv.${record.compression.level}</span>
+            </div>
+        </header>
+        <section class="stsm-record-detail-section">
+            <div class="stsm-record-detail-section-title">압축 내용</div>
+            <div class="stsm-record-detail-summary">${escapeHtml(record.content)}</div>
+        </section>
+        <section class="stsm-record-detail-section">
+            <div class="stsm-record-detail-section-title">
+                <span>직계 원본 요약</span>
+                <span>${sources.length.toLocaleString()}개</span>
+            </div>
+            <div class="stsm-compression-source-list">
+                ${sources.map(source => `
+                    <article class="stsm-compression-source-item">
+                        <strong>#${source.startId} ~ #${source.endId}${source.compression ? ` · Lv.${source.compression.level}` : ''}</strong>
+                        <div>${escapeHtml(source.content)}</div>
+                    </article>
+                `).join('') || '<div class="stsm-empty">원본 요약 레코드를 찾지 못했습니다.</div>'}
+            </div>
+        </section>
+    `;
     await new Popup(content, POPUP_TYPE.TEXT, '', {
         okButton: '닫기',
         wide: true,

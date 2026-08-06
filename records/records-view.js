@@ -6,7 +6,7 @@ import { getSummaryRecordSourceStatuses, SOURCE_STATES } from '../summary/source
 import { getSummaryRecords } from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
-import { renderRecordTagSummary } from './record-tags-view.js';
+import { openRecordTagEditor, renderRecordTagSummary } from './record-tags-view.js';
 import { renderRecordMemoryUpdateBadge } from './record-memory-updates-view.js';
 import { getExtensionState, subscribeExtensionState } from '../core/extension-state.js';
 import { renderExtensionControls } from '../ui/extension-status-view.js';
@@ -22,8 +22,13 @@ export function bindRecordsView(root, bindRecordEvents) {
     root.querySelector('#stsm-record-sort').addEventListener('change', () => {
         renderSummaryRecords(root, bindRecordEvents);
     });
+    bindMemoryTabs(root, () => renderSummaryRecords(root, bindRecordEvents));
     root.querySelector('#stsm-records-fullscreen').addEventListener('click', () => {
-        showRecordsFullscreen(root.querySelector('#stsm-record-sort').value, bindRecordEvents).catch(error => {
+        showRecordsFullscreen(
+            root.querySelector('#stsm-record-sort').value,
+            getSelectedMemoryView(root),
+            bindRecordEvents,
+        ).catch(error => {
             logRecordViewError(error, '요약 기록 전체 화면 열기 실패', '요약 기록 전체 화면을 열지 못했습니다.');
         });
     });
@@ -33,20 +38,23 @@ export function bindRecordsView(root, bindRecordEvents) {
 export function renderSummaryRecords(root, bindRecordEvents) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
-    renderRecordList(list, direction, bindRecordEvents);
+    renderRecordList(list, direction, getSelectedMemoryView(root), bindRecordEvents);
     root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
 }
 
-function renderRecordList(list, direction, bindRecordEvents) {
-    const records = [...getSummaryRecords()].sort((left, right) => {
+function renderRecordList(list, direction, memoryView, bindRecordEvents) {
+    const allRecords = getSummaryRecords();
+    const records = allRecords.filter(record => memoryView === 'long-term'
+        ? Boolean(record.compressedBy)
+        : !record.compressedBy).sort((left, right) => {
         const difference = left.startId - right.startId || left.endId - right.endId;
         return direction === 'id-asc' ? difference : -difference;
     });
-    const sourceStatuses = getSummaryRecordSourceStatuses(records);
+    const sourceStatuses = getSummaryRecordSourceStatuses(allRecords);
 
     list.innerHTML = records.length
         ? records.map(record => renderSummaryRecord(record, sourceStatuses.get(record.id))).join('')
-        : '<div class="stsm-empty">저장된 요약 기록이 없습니다.</div>';
+        : `<div class="stsm-empty">${memoryView === 'long-term' ? '저장된 장기기억이 없습니다.' : '저장된 상시기억이 없습니다.'}</div>`;
     list.querySelectorAll('.stsm-record').forEach(recordElement => {
         recordElement.querySelector('.stsm-record-detail').addEventListener('click', () => {
             openSummaryRecordDetail(recordElement.dataset.recordId).catch(error => {
@@ -55,11 +63,22 @@ function renderRecordList(list, direction, bindRecordEvents) {
                 });
             });
         });
+        recordElement.querySelector('.stsm-record-tag-edit')?.addEventListener('click', () => {
+            openRecordTagEditor(recordElement.dataset.recordId)
+                .then(saved => {
+                    if (saved) renderRecordList(list, direction, memoryView, bindRecordEvents);
+                })
+                .catch(error => {
+                    logRecordViewError(error, '장기기억 검색 태그 수정 실패', '검색 태그를 저장하지 못했습니다.', {
+                        range: getElementRecordRange(recordElement),
+                    });
+                });
+        });
         bindRecordEvents(recordElement);
     });
 }
 
-async function showRecordsFullscreen(initialDirection, bindRecordEvents) {
+async function showRecordsFullscreen(initialDirection, initialMemoryView, bindRecordEvents) {
     const content = document.createElement('div');
     content.className = 'stsm-records-fullscreen';
     content.innerHTML = `
@@ -72,19 +91,27 @@ async function showRecordsFullscreen(initialDirection, bindRecordEvents) {
                 </select>
             </label>
         </div>
-        <div class="stsm-record-list"></div>
+        <div class="stsm-record-memory-browser">
+            <div class="stsm-record-memory-tabs" role="tablist" aria-label="기억 종류">
+                <button class="stsm-record-memory-tab menu_button interactable" type="button" data-memory-view="active" role="tab">상시기억</button>
+                <button class="stsm-record-memory-tab menu_button interactable" type="button" data-memory-view="long-term" role="tab">장기기억</button>
+            </div>
+            <div class="stsm-record-list"></div>
+        </div>
     `;
 
     const sort = content.querySelector('.stsm-records-fullscreen-sort');
     const list = content.querySelector('.stsm-record-list');
     sort.value = initialDirection === 'id-asc' ? 'id-asc' : 'id-desc';
+    setSelectedMemoryView(content, initialMemoryView);
     const render = () => {
-        renderRecordList(list, sort.value, bindRecordEvents);
+        renderRecordList(list, sort.value, getSelectedMemoryView(content), bindRecordEvents);
         renderExtensionControls(content, getExtensionState());
     };
     const handleRecordsChanged = () => render();
     const unsubscribeExtensionState = subscribeExtensionState(state => renderExtensionControls(content, state));
     sort.addEventListener('change', render);
+    bindMemoryTabs(content, render);
     window.addEventListener('stsm:records-changed', handleRecordsChanged);
     render();
 
@@ -99,6 +126,32 @@ async function showRecordsFullscreen(initialDirection, bindRecordEvents) {
         unsubscribeExtensionState();
         window.removeEventListener('stsm:records-changed', handleRecordsChanged);
     }
+}
+
+function bindMemoryTabs(root, onChange) {
+    root.querySelectorAll('.stsm-record-memory-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const nextView = tab.dataset.memoryView;
+            if (nextView === getSelectedMemoryView(root)) return;
+            setSelectedMemoryView(root, nextView);
+            onChange();
+        });
+    });
+    setSelectedMemoryView(root, getSelectedMemoryView(root));
+}
+
+function getSelectedMemoryView(root) {
+    return root.dataset.recordMemoryView === 'long-term' ? 'long-term' : 'active';
+}
+
+function setSelectedMemoryView(root, memoryView) {
+    const normalized = memoryView === 'long-term' ? 'long-term' : 'active';
+    root.dataset.recordMemoryView = normalized;
+    root.querySelectorAll('.stsm-record-memory-tab').forEach(tab => {
+        const selected = tab.dataset.memoryView === normalized;
+        tab.classList.toggle('stsm-record-memory-tab-active', selected);
+        tab.setAttribute('aria-selected', String(selected));
+    });
 }
 
 function logRecordViewError(error, title, message, context = null) {
@@ -123,7 +176,8 @@ export function refreshSummaryRecordSourceStates(root) {
     root.querySelectorAll('.stsm-record').forEach(recordElement => {
         const slot = recordElement.querySelector('.stsm-record-source-state-slot');
         if (!slot) return;
-        slot.innerHTML = renderSourceState(sourceStatuses.get(recordElement.dataset.recordId));
+        const record = records.find(item => item.id === recordElement.dataset.recordId);
+        slot.innerHTML = renderSourceState(sourceStatuses.get(recordElement.dataset.recordId), record);
     });
 }
 
@@ -190,29 +244,34 @@ function renderContextTokenStatus(details) {
 function renderSummaryRecord(summary, sourceStatus) {
     const hasTranslation = Boolean(summary.translation?.content);
     const tokenCount = getTokenCount(String(summary.content || ''));
+    const compressedChild = Boolean(summary.compressedBy);
+    const compressionLevel = Number(summary.compression?.level) || 0;
     return `
-        <article class="stsm-record" data-record-id="${escapeHtml(summary.id)}">
+        <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
             <header class="stsm-record-header">
                 <div class="stsm-record-range">
                     <strong>#${summary.startId} ~ #${summary.endId}</strong>
                     <span>${tokenCount.toLocaleString()} tokens</span>
-                    ${renderRecordMemoryUpdateBadge(summary)}
-                    <span class="stsm-record-source-state-slot">${renderSourceState(sourceStatus)}</span>
+                    ${compressionLevel ? `<span class="stsm-record-compression-badge">압축 Lv.${compressionLevel}</span>` : ''}
+                    ${compressedChild ? '<span class="stsm-record-compressed-child-badge">장기기억</span>' : ''}
+                    ${summary.type === 'summary' ? renderRecordMemoryUpdateBadge(summary) : ''}
+                    <span class="stsm-record-source-state-slot">${renderSourceState(sourceStatus, summary)}</span>
                 </div>
                 <div class="stsm-record-actions">
                     ${renderIconButton('detail', 'fa-magnifying-glass', '자세히 보기')}
+                    ${compressedChild ? renderIconButton('tag-edit', 'fa-tags', '검색 태그 편집') : ''}
                     ${renderIconButton('copy', 'fa-copy', '복사')}
                     ${renderIconButton('edit', 'fa-pen', '수정')}
                     ${renderIconButton('translate', 'fa-language', hasTranslation ? '번역 재생성' : '번역')}
                     ${hasTranslation ? renderIconButton('translation-toggle', 'fa-right-left', '원문/번역 전환', true) : ''}
-                    ${renderIconButton('chat', 'fa-comments', '요약 수정 대화')}
-                    ${renderIconButton('reroll', 'fa-rotate-right', '재생성')}
-                    ${renderIconButton('delete', 'fa-trash', '삭제')}
+                    ${compressedChild ? '' : renderIconButton('chat', 'fa-comments', '요약 수정 대화')}
+                    ${compressedChild ? '' : renderIconButton('reroll', 'fa-rotate-right', '재생성')}
+                    ${compressedChild ? '' : renderIconButton('delete', 'fa-trash', '삭제')}
                 </div>
             </header>
             <div class="stsm-record-content stsm-record-original"${hasTranslation ? ' hidden' : ''}>${escapeHtml(summary.content)}</div>
             <div class="stsm-record-content stsm-record-translation"${hasTranslation ? '' : ' hidden'}>${hasTranslation ? escapeHtml(summary.translation.content) : ''}</div>
-            ${renderRecordTagSummary(summary)}
+            ${renderRecordTagSummary(summary, { showEmpty: compressedChild, prominent: compressedChild })}
             <div class="stsm-record-edit-actions" hidden>
                 <button class="stsm-record-save menu_button interactable" type="button">수정</button>
                 <button class="stsm-record-cancel menu_button interactable" type="button">취소</button>
@@ -221,7 +280,8 @@ function renderSummaryRecord(summary, sourceStatus) {
     `;
 }
 
-function renderSourceState(status) {
+function renderSourceState(status, record) {
+    if (record?.type === 'compressed') return '';
     if (!status || status.state === SOURCE_STATES.CURRENT) return '';
     if (status.state === SOURCE_STATES.MOVED) {
         return `<span class="stsm-record-source-state stsm-record-source-moved" title="동일한 원본 메시지가 현재 #${status.startId} ~ #${status.endId}에 있습니다.">ID 이동</span>`;

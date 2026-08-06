@@ -8,6 +8,10 @@ export function getSummaryRecords() {
     return getStore().records;
 }
 
+export function getActiveSummaryRecords() {
+    return getSummaryRecords().filter(record => !record.compressedBy);
+}
+
 export function getSummaryRecord(recordId) {
     return getSummaryRecords().find(record => record.id === String(recordId)) || null;
 }
@@ -36,6 +40,8 @@ export async function setRecentRevisionConversation(conversation) {
 export async function addSummaryRecord({ batchId, startId, endId, content, prompt, sourceFingerprint, structuredSummary }) {
     const record = {
         id: createId('summary'),
+        type: 'summary',
+        compressedBy: null,
         batchId: normalizeOptionalId(batchId),
         startId: Number(startId),
         endId: Number(endId),
@@ -43,6 +49,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
         contentHash: createContentHash(content),
         sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
         structuredSummary: normalizeStructuredSummary(structuredSummary),
+        searchTags: null,
         prompt: String(prompt || ''),
         createdAt: new Date().toISOString(),
     };
@@ -59,11 +66,74 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
     return record;
 }
 
+export async function addCompressedSummaryRecord({ sourceRecordIds, content, prompt, compressionData, languageMode }) {
+    const store = getStore();
+    const normalizedSourceIds = [...new Set((Array.isArray(sourceRecordIds) ? sourceRecordIds : []).map(String))];
+    const sources = normalizedSourceIds.map(id => store.records.find(record => record.id === id));
+    if (sources.length < 2 || sources.some(record => !record)) {
+        throw new Error('압축할 원본 요약 레코드를 두 개 이상 찾지 못했습니다.');
+    }
+    if (sources.some(record => record.compressedBy)) {
+        throw new Error('이미 다른 압축본에 포함된 요약 레코드는 다시 직접 압축할 수 없습니다.');
+    }
+
+    const sortedSources = [...sources].sort((left, right) => left.startId - right.startId || left.endId - right.endId);
+    const normalizedContent = String(content || '').trim();
+    if (!normalizedContent) throw new Error('압축 요약 내용은 비워둘 수 없습니다.');
+    const record = {
+        id: createId('compression'),
+        type: 'compressed',
+        compressedBy: null,
+        batchId: null,
+        startId: sortedSources[0].startId,
+        endId: sortedSources.at(-1).endId,
+        content: normalizedContent,
+        contentHash: createContentHash(normalizedContent),
+        sourceFingerprint: null,
+        structuredSummary: null,
+        searchTags: null,
+        prompt: String(prompt || ''),
+        compression: {
+            version: 1,
+            level: Math.max(...sortedSources.map(source => Number(source.compression?.level) || 0)) + 1,
+            sourceRecordIds: sortedSources.map(source => source.id),
+            languageMode: String(languageMode || 'english'),
+            data: compressionData && typeof compressionData === 'object' ? structuredClone(compressionData) : {},
+        },
+        createdAt: new Date().toISOString(),
+    };
+
+    const previousRecords = store.records;
+    store.records = [
+        ...store.records.map(source => normalizedSourceIds.includes(source.id)
+            ? { ...source, compressedBy: record.id }
+            : source),
+        record,
+    ];
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return structuredClone(record);
+}
+
 export async function deleteSummaryRecord(recordId) {
     const store = getStore();
+    const target = store.records.find(record => record.id === String(recordId));
+    if (!target) return false;
+    if (target.compressedBy) {
+        throw new Error('압축본에 포함된 원본은 해당 압축본을 먼저 삭제해야 합니다.');
+    }
     const previousRecords = store.records;
-    const records = store.records.filter(record => record.id !== String(recordId));
-    if (records.length === store.records.length) return false;
+    const childIds = new Set(target.compression?.sourceRecordIds || []);
+    const records = store.records
+        .filter(record => record.id !== String(recordId))
+        .map(record => childIds.has(record.id) && record.compressedBy === target.id
+            ? { ...record, compressedBy: null }
+            : record);
 
     store.records = records;
     try {
@@ -76,7 +146,12 @@ export async function deleteSummaryRecord(recordId) {
     return true;
 }
 
-export async function updateSummaryRecordContent(recordId, content, { prompt, sourceFingerprint, structuredSummary } = {}) {
+export async function updateSummaryRecordContent(recordId, content, {
+    prompt,
+    sourceFingerprint,
+    structuredSummary,
+    compressionData,
+} = {}) {
     const normalizedId = String(recordId);
     const normalizedContent = String(content || '').trim();
     if (!normalizedContent) throw new Error('요약 내용은 비워둘 수 없습니다.');
@@ -99,6 +174,12 @@ export async function updateSummaryRecordContent(recordId, content, { prompt, so
             structuredSummary: structuredSummary === undefined
                 ? record.structuredSummary
                 : normalizeStructuredSummary(structuredSummary),
+            compression: compressionData === undefined || !record.compression
+                ? record.compression
+                : {
+                    ...record.compression,
+                    data: compressionData && typeof compressionData === 'object' ? structuredClone(compressionData) : {},
+                },
             prompt: prompt === undefined ? record.prompt : String(prompt),
             translation: contentHash === record.contentHash ? record.translation : null,
             updatedAt: new Date().toISOString(),
@@ -116,6 +197,35 @@ export async function updateSummaryRecordContent(recordId, content, { prompt, so
     }
     notifyRecordsChanged();
     return updatedRecord;
+}
+
+export async function updateSummaryRecordTags(recordId, tags) {
+    const normalizedId = String(recordId);
+    const normalizedTags = normalizeRecordTags(tags);
+    const store = getStore();
+    const previousRecords = store.records;
+    let updatedRecord = null;
+
+    store.records = store.records.map(record => {
+        if (record.id !== normalizedId) return record;
+        updatedRecord = {
+            ...record,
+            searchTags: normalizedTags,
+            updatedAt: new Date().toISOString(),
+        };
+        return updatedRecord;
+    });
+
+    if (!updatedRecord) return null;
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return structuredClone(updatedRecord);
 }
 
 export async function updateSummaryRecordRanges(updates) {
@@ -233,13 +343,15 @@ function getStore() {
 function normalizeRecords(records) {
     if (!Array.isArray(records)) return [];
 
-    return records
+    const normalized = records
         .filter(record => record && String(record.content || '').trim())
         .map(record => {
             const content = String(record.content);
             const contentHash = createContentHash(content);
             return {
                 id: String(record.id || createId('summary')),
+                type: record.type === 'compressed' || record.compression ? 'compressed' : 'summary',
+                compressedBy: normalizeOptionalId(record.compressedBy),
                 batchId: normalizeOptionalId(record.batchId),
                 startId: Math.max(0, Number(record.startId) || 0),
                 endId: Math.max(0, Number(record.endId) || 0),
@@ -247,12 +359,40 @@ function normalizeRecords(records) {
                 contentHash,
                 sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
                 structuredSummary: normalizeStructuredSummary(record.structuredSummary),
+                searchTags: Array.isArray(record.searchTags) ? normalizeRecordTags(record.searchTags) : null,
+                compression: normalizeCompression(record.compression),
                 prompt: String(record.prompt || ''),
                 createdAt: String(record.createdAt || new Date().toISOString()),
                 updatedAt: record.updatedAt ? String(record.updatedAt) : null,
                 translation: normalizeTranslation(record.translation, contentHash, record.contentHash),
             };
         });
+    const byId = new Map(normalized.map(record => [record.id, record]));
+    return normalized.map(record => {
+        const compression = record.compression ? {
+            ...record.compression,
+            sourceRecordIds: record.compression.sourceRecordIds.filter(id => byId.has(id) && id !== record.id),
+        } : null;
+        const parent = record.compressedBy ? byId.get(record.compressedBy) : null;
+        const compressedBy = parent?.compression?.sourceRecordIds.includes(record.id) ? parent.id : null;
+        return {
+            ...record,
+            type: compression ? 'compressed' : 'summary',
+            compression,
+            compressedBy,
+        };
+    });
+}
+
+function normalizeCompression(value) {
+    if (!value || typeof value !== 'object' || !Array.isArray(value.sourceRecordIds)) return null;
+    return {
+        version: Math.max(1, Number(value.version) || 1),
+        level: Math.max(1, Number(value.level) || 1),
+        sourceRecordIds: [...new Set(value.sourceRecordIds.map(String).filter(Boolean))],
+        languageMode: String(value.languageMode || 'english'),
+        data: value.data && typeof value.data === 'object' ? structuredClone(value.data) : {},
+    };
 }
 
 function normalizeStructuredSummary(value) {
@@ -266,6 +406,29 @@ function normalizeStructuredSummary(value) {
         memorySections: value.memorySections && typeof value.memorySections === 'object' ? structuredClone(value.memorySections) : {},
         data: structuredClone(value.data),
     };
+}
+
+function normalizeRecordTags(tags) {
+    if (!Array.isArray(tags)) return [];
+    const merged = new Map();
+    for (const tag of tags) {
+        if (!tag || typeof tag !== 'object') continue;
+        const canonical = String(tag.canonical || '').trim();
+        if (!canonical) continue;
+        const key = canonical.toLocaleLowerCase();
+        const current = merged.get(key) || { canonical, matchTerms: [] };
+        const terms = Array.isArray(tag.matchTerms) ? tag.matchTerms : [];
+        const knownTerms = new Set(current.matchTerms.map(term => term.toLocaleLowerCase()));
+        for (const term of terms) {
+            const normalized = String(term || '').trim();
+            const termKey = normalized.toLocaleLowerCase();
+            if (!normalized || knownTerms.has(termKey)) continue;
+            current.matchTerms.push(normalized);
+            knownTerms.add(termKey);
+        }
+        merged.set(key, current);
+    }
+    return [...merged.values()];
 }
 
 function normalizeOptionalId(value) {

@@ -6,6 +6,7 @@ import {
 
 const ENABLED_EXECUTION_CONTROL_SELECTOR = [
     '#stsm-summarize',
+    '#stsm-open-compression',
     '#stsm-hide-all-summarized',
     '.stsm-record-reroll',
 ].join(', ');

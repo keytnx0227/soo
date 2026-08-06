@@ -40,6 +40,7 @@ import {
     getSettings,
     setAutoHideSummarizedMessages,
     setChunkSize,
+    setCompressionGroupSize,
     setMemorySectionEnabled,
     setSummarySectionEnabled,
     setSummarizationSettings,
@@ -47,6 +48,15 @@ import {
 } from './core/settings.js';
 import { initializeSummaryContext, refreshSummaryInjection } from './summary/summary-context.js';
 import { bindContextBlockSettings, renderContextBlockSettings } from './summary/context-block-settings-view.js';
+import {
+    bindSummaryRecordTemplateSettings,
+    renderSummaryRecordTemplateSettings,
+} from './summary/summary-record-template-view.js';
+import {
+    bindCompressionTemplateSettings,
+    renderCompressionTemplateSettings,
+} from './summary/compression-template-view.js';
+import { bindCompressionView } from './summary/compression-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
@@ -150,6 +160,8 @@ function bindEvents(root) {
     });
     bindSummarizationSettings(root);
     bindContextBlockSettings(root);
+    bindSummaryRecordTemplateSettings(root);
+    bindCompressionTemplateSettings(root);
     bindRangeActions(root);
     bindCoverageMap(root);
 
@@ -163,6 +175,12 @@ function bindEvents(root) {
     bindPromptSettings(root);
     bindPromptInspector(root);
     bindRecordsView(root, bindRecordEvents);
+    bindCompressionView(root, {
+        onCreated: () => {
+            renderSummaryRecords(root, bindRecordEvents);
+            setActiveTab(root, 'records');
+        },
+    });
     bindDataTransfer(root, {
         onChatDataChanged: () => {
             clearRevisionSession();
@@ -199,10 +217,15 @@ function bindSummarizationSettings(root) {
     const role = root.querySelector('#stsm-injection-role');
     const position = root.querySelector('#stsm-injection-position');
     const autoHide = root.querySelector('#stsm-auto-hide-summarized');
+    const compressionGroupSize = root.querySelector('#stsm-compression-group-size');
     const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
     const memorySectionToggles = root.querySelectorAll('[data-memory-section]');
 
     renderSummarizationSettings(root);
+    compressionGroupSize.addEventListener('change', event => {
+        event.target.value = setCompressionGroupSize(event.target.value);
+        root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+    });
     summarySectionToggles.forEach(toggle => {
         toggle.addEventListener('change', event => {
             setSummarySectionEnabled(event.target.dataset.summarySection, event.target.checked);
@@ -260,6 +283,7 @@ function renderSummarizationSettings(root) {
     root.querySelector('#stsm-injection-role').value = settings.injection.role;
     root.querySelector('#stsm-injection-position').value = settings.injection.position;
     root.querySelector('#stsm-auto-hide-summarized').checked = settings.autoHideSummarizedMessages;
+    root.querySelector('#stsm-compression-group-size').value = settings.compressionGroupSize;
     root.querySelectorAll('[data-summary-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
     });
@@ -276,7 +300,10 @@ async function applyImportedGlobalSettings(root) {
     renderTranslationSettings(root);
     renderPromptEditor(root, 'summary');
     renderPromptEditor(root, 'revision');
+    renderPromptEditor(root, 'compression');
     renderContextBlockSettings(root);
+    renderSummaryRecordTemplateSettings(root);
+    renderCompressionTemplateSettings(root);
     renderChunkRangeActions(root);
     renderRangeActions(root);
     root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
@@ -536,8 +563,8 @@ function bindRecordEvents(record) {
     record.querySelector('.stsm-record-translation-toggle')?.addEventListener('click', () => toggleRecordTranslation(record));
     record.querySelector('.stsm-record-cancel').addEventListener('click', () => cancelRecordEdit(record));
     record.querySelector('.stsm-record-save').addEventListener('click', () => saveRecordEdit(record));
-    record.querySelector('.stsm-record-reroll').addEventListener('click', () => rerollRecord(record));
-    record.querySelector('.stsm-record-chat').addEventListener('click', () => {
+    record.querySelector('.stsm-record-reroll')?.addEventListener('click', () => rerollRecord(record));
+    record.querySelector('.stsm-record-chat')?.addEventListener('click', () => {
         openRevisionChat(record.dataset.recordId, {
             onApplied: () => {
                 if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
@@ -553,7 +580,7 @@ function bindRecordEvents(record) {
             toastr.error('요약 수정 대화 화면을 열지 못했습니다.');
         });
     });
-    record.querySelector('.stsm-record-delete').addEventListener('click', () => showDeleteConfirmation(record));
+    record.querySelector('.stsm-record-delete')?.addEventListener('click', () => showDeleteConfirmation(record));
 }
 
 async function copyRecordContent(record) {
@@ -783,7 +810,11 @@ function getRecordRange(recordOrElement) {
 }
 
 async function showDeleteConfirmation(record) {
-    const confirmed = await showConfirmation('정말 삭제하시겠습니까? 삭제된 기록은 복구할 수 없습니다.', '삭제');
+    const sourceRecord = getSummaryRecord(record.dataset.recordId);
+    const message = sourceRecord?.type === 'compressed'
+        ? '이 압축본을 삭제하시겠습니까? 압축에 포함된 직계 원본 요약은 다시 활성화됩니다.'
+        : '정말 삭제하시겠습니까? 삭제된 기록은 복구할 수 없습니다.';
+    const confirmed = await showConfirmation(message, '삭제');
     if (!confirmed) return;
 
     try {

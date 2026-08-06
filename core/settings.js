@@ -6,12 +6,15 @@ import {
     SUMMARY_LANGUAGE_MODES,
     SUMMARY_SECTION_KINDS,
 } from '../summary/summary-format.js';
+import { DEFAULT_SUMMARY_CONTENT_TEMPLATE } from '../summary/summary-record-template.js';
+import { DEFAULT_COMPRESSION_CONTENT_TEMPLATE } from '../summary/compression-format.js';
 
 export const MODULE_NAME = 'sumi_chat_summarizer';
 
 export const PROMPT_TYPES = Object.freeze({
     SUMMARY: 'summary',
     REVISION: 'revision',
+    COMPRESSION: 'compression',
 });
 
 const PROMPT_SCHEMA_VERSION = 15;
@@ -34,6 +37,8 @@ export const BLOCK_KINDS = Object.freeze({
     SUMMARY_LANGUAGE: 'summaryLanguage',
     SUMMARY_EXTRACTION_RULES: 'summaryExtractionRules',
     SUMMARY_OUTPUT_CONTRACT: 'summaryOutputContract',
+    COMPRESSION_SOURCES: 'compressionSources',
+    COMPRESSION_OUTPUT_CONTRACT: 'compressionOutputContract',
     PEOPLE_MEMORY: 'peopleMemory',
     ITEM_MEMORY: 'itemMemory',
     COMMITMENT_MEMORY: 'commitmentMemory',
@@ -404,6 +409,20 @@ You are revising an existing conversation summary. Apply the user's feedback acc
 
 const DEFAULT_REVISION_TEMPLATE = 'Return only the revised summary without a preface, explanation, or commentary.';
 
+const DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
+
+Compress the supplied summary records into one dense long-term memory. Preserve chronological causality and durable facts, but remove repetition, scene texture, gestures, pauses, transient reactions, and details already represented by current memory atlases.
+
+Plot: write one concise bullet-worthy sentence per meaningful causal event. Merge adjacent events when meaning remains intact. Do not write a prose paragraph.
+
+Emotion: for each relevant character, reduce each source record to one representative emotion, then join the chronological snapshots into one trajectory. Merge repeated or near-identical states. Omit emotion targets. Give the entire arc one compact causal phrase in parentheses: keep the decisive cause, never retell the event sequence or explain every intermediate state.
+
+Relationship: for each relevant pair, reduce each source record to a one- or two-word relationship snapshot and join the snapshots chronologically. Merge repeated states. Preserve a single snapshot even when the relationship did not change. Example: strangers -> cautious acquaintances -> trusted companions.
+
+Quotes: preserve 1-3 exact source lines whose wording has the highest future recall value. Prefer vows, confessions, revelations, relationship-defining words, and irreversible decisions. Never invent dialogue; return an empty array only when no source quote exists.
+
+Context: merge date, time, and location chronologically. Keep only meaningful transitions. Use only supplied records as evidence, never invent facts, and follow the JSON contract exactly.`;
+
 const DEFAULT_SUMMARY_RECORD_TEMPLATE = `<Summary range="#{{sumiRecordStartId}} ~ #{{sumiRecordEndId}}">
 {{sumiRecordContent}}
 </Summary>`;
@@ -583,6 +602,9 @@ export const defaultSettings = Object.freeze({
         memorySections: DEFAULT_MEMORY_SECTIONS,
         injectionMaxTokens: 24000,
         autoHideSummarizedMessages: false,
+        summaryContentTemplate: DEFAULT_SUMMARY_CONTENT_TEMPLATE,
+        compressionGroupSize: 3,
+        compressionContentTemplate: DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
         recordTemplate: DEFAULT_SUMMARY_RECORD_TEMPLATE,
         contextBlocks: getDefaultSummaryContextBlocks(),
         injection: {
@@ -594,6 +616,7 @@ export const defaultSettings = Object.freeze({
         prompts: {
             summary: createPromptEditorDefaults(PROMPT_TYPES.SUMMARY),
             revision: createPromptEditorDefaults(PROMPT_TYPES.REVISION),
+            compression: createPromptEditorDefaults(PROMPT_TYPES.COMPRESSION),
         },
     },
     translation: {
@@ -685,6 +708,53 @@ export function setSummarySectionEnabled(section, enabled) {
     settings.summarization.summarySections[section] = Boolean(enabled);
     saveSettings();
     return settings.summarization.summarySections[section];
+}
+
+export function getSummaryContentTemplate() {
+    return getSettings().summarization.summaryContentTemplate;
+}
+
+export function setSummaryContentTemplate(template) {
+    const value = String(template || '');
+    if (!value.trim()) throw new Error('요약 레코드 내용 템플릿은 비워둘 수 없습니다.');
+    const settings = getSettings();
+    settings.summarization.summaryContentTemplate = value;
+    saveSettings();
+    return value;
+}
+
+export function resetSummaryContentTemplate() {
+    const settings = getSettings();
+    settings.summarization.summaryContentTemplate = DEFAULT_SUMMARY_CONTENT_TEMPLATE;
+    saveSettings();
+    return settings.summarization.summaryContentTemplate;
+}
+
+export function setCompressionGroupSize(value) {
+    const settings = getSettings();
+    settings.summarization.compressionGroupSize = clampInteger(value, 2, 100, defaultSettings.summarization.compressionGroupSize);
+    saveSettings();
+    return settings.summarization.compressionGroupSize;
+}
+
+export function getCompressionContentTemplate() {
+    return getSettings().summarization.compressionContentTemplate;
+}
+
+export function setCompressionContentTemplate(template) {
+    const value = String(template || '');
+    if (!value.trim()) throw new Error('압축 요약 레코드 템플릿은 비워둘 수 없습니다.');
+    const settings = getSettings();
+    settings.summarization.compressionContentTemplate = value;
+    saveSettings();
+    return value;
+}
+
+export function resetCompressionContentTemplate() {
+    const settings = getSettings();
+    settings.summarization.compressionContentTemplate = DEFAULT_COMPRESSION_CONTENT_TEMPLATE;
+    saveSettings();
+    return settings.summarization.compressionContentTemplate;
 }
 
 export function setMemorySectionEnabled(section, enabled) {
@@ -828,6 +898,8 @@ export function isRequiredPromptBlock(block) {
         BLOCK_KINDS.ITEM_MEMORY,
         BLOCK_KINDS.COMMITMENT_MEMORY,
         BLOCK_KINDS.EVENT_MEMORY,
+        BLOCK_KINDS.COMPRESSION_SOURCES,
+        BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
     ].includes(block?.kind);
 }
 
@@ -941,6 +1013,37 @@ function getDefaultPreset(type) {
                 ...createCurrentSummaryBlocks(),
                 ...createRevisionConversationBlocks(),
                 createPromptBlock({ id: 'revision-template', name: '수정 결과 템플릿', content: DEFAULT_REVISION_TEMPLATE, locked: true }),
+            ],
+        });
+    }
+
+    if (type === PROMPT_TYPES.COMPRESSION) {
+        return createPreset({
+            id: 'default-compression',
+            name: '기본 프리셋',
+            blocks: [
+                createPromptBlock({ id: 'compression-main', name: '압축 기본 지시문', content: DEFAULT_COMPRESSION_MAIN_PROMPT, locked: true }),
+                createPromptBlock({
+                    id: 'compression-language',
+                    name: '출력 언어',
+                    content: '# Output Language\n\n{{sumiSummaryLanguageInstruction}}',
+                    locked: true,
+                    kind: BLOCK_KINDS.SUMMARY_LANGUAGE,
+                }),
+                createPromptBlock({
+                    id: 'compression-sources',
+                    name: '압축 대상 요약 레코드',
+                    content: '{{sumiCompressionSources}}',
+                    locked: true,
+                    kind: BLOCK_KINDS.COMPRESSION_SOURCES,
+                }),
+                createPromptBlock({
+                    id: 'compression-output-contract',
+                    name: '압축 JSON 출력 형식 · 자동 생성',
+                    content: '{{sumiCompressionJsonContract}}',
+                    locked: true,
+                    kind: BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
+                }),
             ],
         });
     }
@@ -1114,6 +1217,18 @@ function normalizeSettings(settings, { migrateLegacyContextBlocks = false } = {}
     delete settings.summarization.autoStartFromLastSummary;
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
     settings.summarization.autoHideSummarizedMessages = Boolean(settings.summarization.autoHideSummarizedMessages);
+    settings.summarization.summaryContentTemplate = String(
+        settings.summarization.summaryContentTemplate || defaultSettings.summarization.summaryContentTemplate,
+    );
+    settings.summarization.compressionGroupSize = clampInteger(
+        settings.summarization.compressionGroupSize,
+        2,
+        100,
+        defaultSettings.summarization.compressionGroupSize,
+    );
+    settings.summarization.compressionContentTemplate = String(
+        settings.summarization.compressionContentTemplate || defaultSettings.summarization.compressionContentTemplate,
+    );
     settings.summarization.recordTemplate = String(settings.summarization.recordTemplate ?? defaultSettings.summarization.recordTemplate);
     settings.summarization.contextBlocks = normalizeSummaryContextBlocks(
         migrateLegacyContextBlocks ? [] : settings.summarization.contextBlocks,

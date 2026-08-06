@@ -1,9 +1,11 @@
 import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { createSummaryChunks } from '../summary/chunking.js';
 import { buildSummaryPrompt } from './prompt-builder.js';
+import { buildCompressionPrompt } from './prompt-builder.js';
 import { buildCurrentRevisionPromptPreview } from '../records/revision-chat-view.js';
 import { getSettings } from '../core/settings.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
+import { getCompressionCandidates, selectCompressionSources } from '../summary/compression-service.js';
 
 export function bindPromptInspector(root) {
     let timer = null;
@@ -19,8 +21,15 @@ export function bindPromptInspector(root) {
                 const type = button.dataset.previewType;
                 const prompt = type === 'summary'
                     ? formatSummaryPreview(await buildSummaryPrompts(root))
-                    : await buildCurrentRevisionPromptPreview();
-                await showPreview(type === 'summary' ? '요약 프롬프트 전체' : '요약 수정 대화 프롬프트 전체', prompt);
+                    : type === 'compression'
+                        ? buildCompressionPreviewPrompt(root)
+                        : await buildCurrentRevisionPromptPreview();
+                const title = type === 'summary'
+                    ? '요약 프롬프트 전체'
+                    : type === 'compression'
+                        ? '압축 요약 프롬프트 전체'
+                        : '요약 수정 대화 프롬프트 전체';
+                await showPreview(title, prompt);
             } catch (error) {
                 console.error('[Chat Summarizer] Prompt preview failed:', error);
                 addExtensionErrorLog(error, {
@@ -32,7 +41,7 @@ export function bindPromptInspector(root) {
             }
         });
     });
-    root.querySelectorAll('#stsm-range-start, #stsm-range-end, #stsm-chunk-size')
+    root.querySelectorAll('#stsm-range-start, #stsm-range-end, #stsm-chunk-size, #stsm-compression-group-size')
         .forEach(input => input.addEventListener('input', schedule));
     root.addEventListener('stsm:settings-tab-opened', schedule);
     root.addEventListener('stsm:prompt-settings-changed', schedule);
@@ -41,18 +50,22 @@ export function bindPromptInspector(root) {
         if (root.dataset.activeTab !== 'settings') return;
         const summaryOutput = root.querySelector('#stsm-token-count-summary');
         const revisionOutput = root.querySelector('#stsm-token-count-revision');
+        const compressionOutput = root.querySelector('#stsm-token-count-compression');
         const currentRun = ++runId;
         summaryOutput.textContent = '계산 중...';
         revisionOutput.textContent = '계산 중...';
+        compressionOutput.textContent = '계산 중...';
         try {
-            const [summaryPrompts, revisionPrompt] = await Promise.all([
+            const [summaryPrompts, revisionPrompt, compressionPrompt] = await Promise.all([
                 buildSummaryPrompts(root),
                 buildCurrentRevisionPromptPreview(),
+                buildCompressionPreviewPrompt(root),
             ]);
             const context = SillyTavern.getContext();
-            const [summaryTokenCounts, revisionTokens] = await Promise.all([
+            const [summaryTokenCounts, revisionTokens, compressionTokens] = await Promise.all([
                 Promise.all(summaryPrompts.map(item => context.getTokenCountAsync(item.prompt))),
                 context.getTokenCountAsync(revisionPrompt),
+                context.getTokenCountAsync(compressionPrompt),
             ]);
             if (currentRun !== runId) return;
             const summaryTokens = summaryTokenCounts.reduce((total, count) => total + count, 0);
@@ -61,6 +74,7 @@ export function bindPromptInspector(root) {
                 ? `예상 평균 ${averageSummaryTokens.toLocaleString()} tokens · ${summaryPrompts.length}회`
                 : `${summaryTokens.toLocaleString()} tokens`;
             revisionOutput.textContent = `${revisionTokens.toLocaleString()} tokens`;
+            compressionOutput.textContent = `${compressionTokens.toLocaleString()} tokens`;
         } catch (error) {
             console.warn('[Chat Summarizer] Prompt token count failed:', error);
             addExtensionErrorLog(error, {
@@ -71,9 +85,27 @@ export function bindPromptInspector(root) {
             if (currentRun === runId) {
                 summaryOutput.textContent = '계산 실패';
                 revisionOutput.textContent = '계산 실패';
+                compressionOutput.textContent = '계산 실패';
             }
         }
     }
+}
+
+function buildCompressionPreviewPrompt(root) {
+    const candidates = getCompressionCandidates();
+    const count = Number(root.querySelector('#stsm-compression-group-size')?.value)
+        || getSettings().summarization.compressionGroupSize;
+    let sources;
+    try {
+        sources = candidates.length ? selectCompressionSources(candidates[0].id, count) : [];
+    } catch {
+        sources = candidates.slice(0, Math.max(2, count));
+    }
+    if (sources.length >= 2) return buildCompressionPrompt(sources);
+    return buildCompressionPrompt([
+        { startId: 0, endId: 4, content: 'Example source summary A.' },
+        { startId: 5, endId: 9, content: 'Example source summary B.' },
+    ]);
 }
 
 async function buildSummaryPrompts(root) {

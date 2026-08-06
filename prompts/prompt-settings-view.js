@@ -1,5 +1,8 @@
 import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import {
+    buildCompressionJsonContract,
+} from '../summary/compression-format.js';
+import {
     addPromptBlock,
     BLOCK_KINDS,
     createPresetFromActive,
@@ -32,6 +35,7 @@ import {
 const TYPE_LABELS = Object.freeze({
     [PROMPT_TYPES.SUMMARY]: '요약',
     [PROMPT_TYPES.REVISION]: '수정 대화',
+    [PROMPT_TYPES.COMPRESSION]: '압축 요약',
 });
 
 export function bindPromptSettings(root) {
@@ -51,7 +55,11 @@ export function renderPromptEditor(root, type) {
     const editor = getPromptEditor(type);
     const preset = getActivePreset(type);
     const summarySections = getSettings().summarization.summarySections;
-    const defaultPresetId = type === PROMPT_TYPES.SUMMARY ? 'default-summary' : 'default-revision';
+    const defaultPresetId = {
+        [PROMPT_TYPES.SUMMARY]: 'default-summary',
+        [PROMPT_TYPES.REVISION]: 'default-revision',
+        [PROMPT_TYPES.COMPRESSION]: 'default-compression',
+    }[type];
 
     container.innerHTML = `
         <div class="stsm-preset-toolbar">
@@ -99,8 +107,10 @@ function renderPromptBlock(block, summarySections) {
         BLOCK_KINDS.ITEM_MEMORY,
         BLOCK_KINDS.COMMITMENT_MEMORY,
         BLOCK_KINDS.EVENT_MEMORY,
+        BLOCK_KINDS.COMPRESSION_SOURCES,
+        BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
     ].includes(block.kind);
-    const detailOnly = block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT;
+    const detailOnly = [BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT, BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT].includes(block.kind);
     return `
         <div class="stsm-block${block.separator ? ' stsm-block-separator' : ''}${controlledBySection && !enabled ? ' stsm-block-section-disabled' : ''}${generatedBlock ? ' stsm-block-generated' : ''}" data-block-id="${escapeHtml(block.id)}" draggable="true">
             <div class="stsm-block-grip" title="드래그로 이동">
@@ -131,6 +141,8 @@ function renderPromptBlock(block, summarySections) {
 function getBlockPreview(block) {
     if (block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return '항목별 추출 지시문을 한 곳에서 관리합니다.';
     if (block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT) return '요약 항목 설정에 따라 자동 생성됩니다.';
+    if (block.kind === BLOCK_KINDS.COMPRESSION_SOURCES) return '선택한 활성 요약 레코드로 자동 구성됩니다.';
+    if (block.kind === BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT) return '압축 스키마에 따라 자동 생성됩니다.';
     return block.content || '';
 }
 
@@ -169,6 +181,10 @@ async function handleEditorClick(root, type, event) {
         if (!block) return;
         if (block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT) {
             await showSummaryOutputContractPopup();
+            return;
+        }
+        if (block.kind === BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT) {
+            await showCompressionOutputContractPopup();
             return;
         }
         if (block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) {
@@ -280,6 +296,18 @@ async function showSummaryOutputContractPopup() {
     form.querySelector('textarea').value = buildSummaryJsonContract(sections, memorySections);
     const popup = new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기' });
     await popup.show();
+}
+
+async function showCompressionOutputContractPopup() {
+    const form = document.createElement('div');
+    form.className = 'stsm-prompt-form';
+    form.innerHTML = `
+        <div class="stsm-section-title">압축 JSON 출력 형식 · 자동 생성</div>
+        <div class="stsm-muted">압축 응답을 검증하고 레코드 형식으로 렌더링하는 계약입니다.</div>
+        <textarea class="text_pole monospace" rows="18" readonly></textarea>
+    `;
+    form.querySelector('textarea').value = buildCompressionJsonContract();
+    await new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기' }).show();
 }
 
 function handleEditorChange(root, type, event) {
