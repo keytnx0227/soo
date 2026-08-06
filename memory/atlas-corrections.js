@@ -27,7 +27,7 @@ export function applyAtlasCorrections(raw, corrections) {
     const items = applyCategoryCorrections('items', raw.items, corrections.items, orphanCorrections.items);
     const commitments = applyCategoryCorrections('commitments', raw.commitments, corrections.commitments, orphanCorrections.commitments);
     const events = applyCategoryCorrections('events', raw.events, corrections.events, orphanCorrections.events)
-        .map(event => event.importance === 'ordinary' ? { ...event, shift: null } : event);
+        .map(event => event.importance === 'minor' ? { ...event, shift: null } : event);
     return {
         ...raw,
         people: people.filter(entity => !entity.excluded),
@@ -73,6 +73,12 @@ function applyCategoryCorrections(category, entities, correctionMap, orphanCorre
 
 function normalizeEventCorrectionFields(fields) {
     const normalized = { ...fields };
+    if (normalized.importance) {
+        normalized.importance = {
+            ...normalized.importance,
+            value: normalizeEventImportance(normalized.importance.value),
+        };
+    }
     if (!Object.hasOwn(normalized, 'shift') && Object.hasOwn(normalized, 'shifts')) {
         const correction = normalized.shifts;
         normalized.shift = {
@@ -82,6 +88,11 @@ function normalizeEventCorrectionFields(fields) {
     }
     delete normalized.shifts;
     return normalized;
+}
+
+function normalizeEventImportance(value) {
+    if (value === 'major' || value === 'turning_point') return 'major';
+    return 'minor';
 }
 
 function normalizePeopleCorrectionFields(fields) {

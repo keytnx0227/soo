@@ -182,7 +182,7 @@ function renderUpdatedCommitment(update) {
 function renderCreatedEvent(event) {
     return `
         <article class="stsm-memory-update-card">
-            <header><span>신규 사건 · ${event.importance === 'turning_point' ? '변곡점' : '일반'}</span><strong>${escapeHtml(event.title)}</strong></header>
+            <header><span>신규 사건 · ${isMajorEvent(event.importance) ? 'Major' : 'Minor'}</span><strong>${escapeHtml(event.title)}</strong></header>
             ${renderValueRow('날짜', event.date)}
             ${renderValueRow('장소', event.location)}
             ${renderValueRow('사건', event.summary)}
@@ -200,12 +200,20 @@ function renderUpdatedEvent(update) {
             ${Object.hasOwn(replace, 'date') ? renderValueRow('교체 · 날짜', replace.date) : ''}
             ${Object.hasOwn(replace, 'location') ? renderValueRow('교체 · 장소', replace.location) : ''}
             ${Object.hasOwn(replace, 'summary') ? renderValueRow('교체 · 사건', replace.summary) : ''}
-            ${Object.hasOwn(replace, 'importance') ? renderValueRow('교체 · 중요도', replace.importance) : ''}
+            ${Object.hasOwn(replace, 'importance') ? renderValueRow('교체 · 중요도', formatEventImportance(replace.importance)) : ''}
             ${Object.hasOwn(replace, 'shift') || Object.hasOwn(replace, 'shifts')
                 ? renderValueRow('교체 · SHIFT', replace.shift ?? replace.shifts?.[0])
                 : ''}
         </article>
     `;
+}
+
+function isMajorEvent(value) {
+    return value === 'major' || value === 'turning_point';
+}
+
+function formatEventImportance(value) {
+    return isMajorEvent(value) ? 'Major' : 'Minor';
 }
 
 function formatParticipants(participants) {

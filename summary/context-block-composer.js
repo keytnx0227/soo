@@ -81,7 +81,7 @@ function renderTemplate(template, values) {
 
 function renderEventValues(event) {
     const metadata = [event.date, event.location].filter(Boolean).join('; ');
-    const shift = event.importance === 'turning_point' ? event.shift : null;
+    const shift = event.importance === 'major' ? event.shift : null;
     return {
         sumiEventId: event.id,
         sumiEventTitle: event.title,

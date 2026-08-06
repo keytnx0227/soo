@@ -14,7 +14,7 @@ export const PROMPT_TYPES = Object.freeze({
     REVISION: 'revision',
 });
 
-const PROMPT_SCHEMA_VERSION = 14;
+const PROMPT_SCHEMA_VERSION = 15;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -314,6 +314,12 @@ Maintain a sparse chronology of events worth recalling separately from the chunk
 const V12_DEFAULT_QUOTES_RULE = '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve wording under the language rule and keep context to one short phrase.';
 const V12_DEFAULT_COMMITMENTS_RULE = V11_DEFAULT_SUMMARY_EXTRACTION_RULES.commitments;
 const V13_DEFAULT_EVENTS_RULE = V11_DEFAULT_SUMMARY_EXTRACTION_RULES.events;
+const V14_DEFAULT_EVENTS_RULE = V13_DEFAULT_EVENTS_RULE.replace(
+    '- shift is null unless one turning_point caused a single essential lasting change. If used, write one short sentence without retelling the event.',
+    '- shift is null unless one turning_point caused a single essential lasting change. If used, state only the resulting durable state in one short clause. Exclude the cause, process, actions, emotional reactions, explanation, and event recap. If the lasting change cannot be expressed that briefly, use null.',
+);
+const V14_EVENT_MEMORY_TEMPLATE = '<Current Major Event Memory>\n{{sumiEventMemory}}\n</Current Major Event Memory>';
+const DEFAULT_EVENT_MEMORY_TEMPLATE = '<Current Event Memory>\n{{sumiEventMemory}}\n</Current Event Memory>';
 
 const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V11_DEFAULT_SUMMARY_EXTRACTION_RULES,
@@ -331,10 +337,18 @@ Do not flatten the emotional analysis. Address the emotions with depth and nuanc
 Infer emotion from dialogue, behavior, subtext, and embodied cues while remaining grounded in the target. Give each state one short causal phrase, not a plot retelling. Usually keep 1-3 distinct states per character; use toward only for a clear target.`,
     quotes: '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve only the spoken words under the language rule. Do not add narration, action, explanation, or parenthetical context.',
     commitments: V12_DEFAULT_COMMITMENTS_RULE.replace('Never guess IDs, duplicate, delete, or reactivate fulfilled/obsolete entries.', 'Never guess IDs, duplicate, or delete.'),
-    events: V13_DEFAULT_EVENTS_RULE.replace(
-        '- shift is null unless one turning_point caused a single essential lasting change. If used, write one short sentence without retelling the event.',
-        '- shift is null unless one turning_point caused a single essential lasting change. If used, state only the resulting durable state in one short clause. Exclude the cause, process, actions, emotional reactions, explanation, and event recap. If the lasting change cannot be expressed that briefly, use null.',
-    ),
+    events: `# Event Index Updates
+
+Maintain a sparse index of milestone-worthy events that deserve independent recall beyond the chunk summary.
+
+- Most Summary Targets should produce no event proposal. Empty created and updated arrays are the expected default. Never add an event to fill a quota.
+- First decide whether a development belongs in long-term event memory at all. Include only a confession, revelation, vow, irreversible choice, death, major acquisition or loss, identity reveal, or similarly durable change in a relationship, goal, conflict, status, power balance, or world state.
+- Omit routine actions, ordinary conversation, minor conflict, repeated emotional beats, reactions, gestures, atmosphere, scene texture, and facts already preserved adequately by the chunk summary. Detailed plot coverage does not make something an indexed event. When in doubt, omit.
+- Only after an event passes that threshold, assign importance. major is a true turning point that substantially redirects the story. minor is still a durable, independently memorable milestone, but not a story-redirecting turning point. minor never means routine, incidental, merely emotional, or slightly notable.
+- Use a short title and exactly one brief summary sentence containing only the essential trigger and decisive outcome. Do not repeat the title, intermediate actions, or incidental detail.
+- shift is null unless one major event caused a single essential lasting change. If used, state only the resulting durable state in one short clause. Exclude the cause, process, actions, emotional reactions, explanation, and event recap. If the lasting change cannot be expressed that briefly, use null.
+- Keep date and location brief and chronologically consistent.
+- The Summary Target alone can establish an event or change; other context only resolves identity. Create no duplicate. Update only an exact targetId and only fields changed by this target. Never invent IDs or delete events.`,
     people: `# People Memory Updates
 
 Maintain compact current profiles, never plot or action history.
@@ -986,7 +1000,7 @@ function createStructuredSummaryBlocks() {
         createPromptBlock({
             id: 'event-memory',
             name: '현재 주요 사건',
-            content: '<Current Major Event Memory>\n{{sumiEventMemory}}\n</Current Major Event Memory>',
+            content: DEFAULT_EVENT_MEMORY_TEMPLATE,
             locked: true,
             kind: BLOCK_KINDS.EVENT_MEMORY,
         }),
@@ -1464,6 +1478,31 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 : {};
             const current = String(sourceRules.events || V13_DEFAULT_EVENTS_RULE);
             if (current.trim() !== V13_DEFAULT_EVENTS_RULE.trim()) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: {
+                        ...sourceRules,
+                        events: DEFAULT_SUMMARY_EXTRACTION_RULES.events,
+                    },
+                },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 15) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind === BLOCK_KINDS.EVENT_MEMORY
+                && String(block.content || '').trim() === V14_EVENT_MEMORY_TEMPLATE.trim()) {
+                return { ...block, content: DEFAULT_EVENT_MEMORY_TEMPLATE };
+            }
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const current = String(sourceRules.events || V14_DEFAULT_EVENTS_RULE);
+            if (current.trim() !== V14_DEFAULT_EVENTS_RULE.trim()) return block;
             return {
                 ...block,
                 config: {

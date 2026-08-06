@@ -95,7 +95,7 @@ export async function showAtlasEditor(category, entityId) {
         }
         const normalizedValue = category === 'events'
             && definition.path === 'shift'
-            && form.querySelector('[data-atlas-field="importance"] select').value === 'ordinary'
+            && form.querySelector('[data-atlas-field="importance"] select').value === 'minor'
             ? null
             : value;
         preserveOrCreateCorrection({
@@ -210,8 +210,8 @@ function renderFieldInput(definition, value) {
     }
     if (definition.type === 'importance') {
         return `<select class="text_pole">
-            <option value="ordinary" ${value === 'ordinary' ? 'selected' : ''}>일반</option>
-            <option value="turning_point" ${value === 'turning_point' ? 'selected' : ''}>변곡점</option>
+            <option value="minor" ${value === 'minor' ? 'selected' : ''}>Minor</option>
+            <option value="major" ${value === 'major' ? 'selected' : ''}>Major</option>
         </select>`;
     }
     if (definition.type === 'boolean') {

@@ -44,14 +44,14 @@ export function renderEventMemory(root) {
 function renderEvent(event, cachedTranslation) {
     const translation = getValidAtlasTranslation('events', event, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(event.manualCorrections || {}).length);
-    const turningPoint = event.importance === 'turning_point';
+    const major = event.importance === 'major';
     return `
-        <article class="stsm-event-card${turningPoint ? ' stsm-event-card-turning-point' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
+        <article class="stsm-event-card${major ? ' stsm-event-card-turning-point' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
             <header>
                 <div>
                     <span class="stsm-event-title-line">
                         <strong>${escapeHtml(event.title)}</strong>
-                        <span class="stsm-event-importance ${turningPoint ? 'is-turning-point' : ''}">${turningPoint ? '<i class="fa-solid fa-bolt" aria-hidden="true"></i> 변곡점' : '일반'}</span>
+                        <span class="stsm-event-importance ${major ? 'is-turning-point' : ''}">${major ? '<i class="fa-solid fa-bolt" aria-hidden="true"></i> Major' : 'Minor'}</span>
                     </span>
                     ${renderCorrectionState(event.manualCorrections)}
                 </div>
@@ -73,7 +73,7 @@ function renderEvent(event, cachedTranslation) {
                 ${renderField('날짜', event.date ? [event.date] : [])}
                 ${renderField('장소', event.location ? [event.location] : [])}
                 ${renderTextField('사건', event.summary)}
-                ${turningPoint && event.shift ? renderTextField('SHIFT', event.shift, true) : ''}
+                ${major && event.shift ? renderTextField('SHIFT', event.shift, true) : ''}
             </div>
             ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
         </article>

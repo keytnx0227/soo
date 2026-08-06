@@ -1,4 +1,4 @@
-export const SUMMARY_FORMAT_VERSION = 3;
+export const SUMMARY_FORMAT_VERSION = 4;
 
 export const SUMMARY_LANGUAGE_MODES = Object.freeze({
     ENGLISH: 'english',
@@ -278,17 +278,17 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
                 date: 'Established date or Day N',
                 location: 'Established location or location transition',
                 summary: 'One brief sentence: essential trigger and decisive outcome',
-                importance: 'ordinary or turning_point',
-                shift: 'One short clause stating only the resulting durable state, otherwise null',
+                importance: 'minor or major',
+                shift: 'One short clause stating only the resulting durable state of a major event, otherwise null',
             }],
             updated: [{
-                targetId: 'ID copied exactly from Current Major Event Memory',
+                targetId: 'ID copied exactly from Current Event Memory',
                 replace: {
                     title: 'Complete revised title',
                     date: 'Complete revised date',
                     location: 'Complete revised location',
                     summary: 'Complete revised event summary',
-                    importance: 'ordinary or turning_point',
+                    importance: 'minor or major',
                     shift: 'One short clause stating only the revised resulting durable state, or null',
                 },
             }],
@@ -309,8 +309,9 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
             'Commitment status must be exactly pending, fulfilled, or obsolete.',
         ] : []),
         ...(memorySections.events ? [
-            'Event importance must be exactly ordinary or turning_point.',
-            'Event shift must be null for ordinary events and null or one short clause for turning points.',
+            'Most chunks should return empty event created and updated arrays. Never create an event merely to fill the example structure.',
+            'Event importance must be exactly minor or major.',
+            'Event shift must be null for minor events and null or one short clause for major events.',
             'A shift states only the resulting durable state. Never include its cause, process, actions, emotional reactions, explanation, or an event recap.',
         ] : []),
         '',
@@ -395,16 +396,17 @@ function normalizeUpdatedEvent(value) {
         const importance = normalizedReplace.importance || null;
         normalizedReplace.shift = normalizeEventShift(replace.shift ?? replace.shifts, importance);
     }
-    if (normalizedReplace.importance === 'ordinary') normalizedReplace.shift = null;
+    if (normalizedReplace.importance === 'minor') normalizedReplace.shift = null;
     return { targetId, replace: normalizedReplace };
 }
 
 function normalizeEventImportance(value) {
-    return value === 'turning_point' ? 'turning_point' : 'ordinary';
+    if (value === 'major' || value === 'turning_point') return 'major';
+    return 'minor';
 }
 
 function normalizeEventShift(value, importance) {
-    if (importance === 'ordinary') return null;
+    if (importance === 'minor') return null;
     if (Array.isArray(value)) return normalizeNullableString(value[0]);
     return normalizeNullableString(value);
 }

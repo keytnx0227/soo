@@ -70,7 +70,7 @@ function createEventEntry(id, proposal, range, sourceRecordId) {
         location: proposal.location || null,
         summary: String(proposal.summary),
         importance,
-        shift: importance === 'turning_point' ? normalizeShift(proposal.shift ?? proposal.shifts) : null,
+        shift: importance === 'major' ? normalizeShift(proposal.shift ?? proposal.shifts) : null,
         firstSeenRange: { ...range },
         lastUpdatedRange: { ...range },
         sourceRecordIds: [String(sourceRecordId)],
@@ -92,7 +92,7 @@ function applyEventUpdate(event, update, range, sourceRecordId) {
         event._sources[field] = { ...range };
         changed = true;
     }
-    if (event.importance === 'ordinary' && event.shift) {
+    if (event.importance === 'minor' && event.shift) {
         event.shift = null;
         event._sources.shift = { ...range };
         changed = true;
@@ -111,7 +111,8 @@ function normalizeReplaceValue(field, value) {
 }
 
 function normalizeImportance(value) {
-    return value === 'turning_point' ? 'turning_point' : 'ordinary';
+    if (value === 'major' || value === 'turning_point') return 'major';
+    return 'minor';
 }
 
 function canReplace(event, field, range) {
