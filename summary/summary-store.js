@@ -96,7 +96,9 @@ export async function updateSummaryRecordContent(recordId, content, { prompt, so
             sourceFingerprint: sourceFingerprint === undefined
                 ? record.sourceFingerprint
                 : normalizeSourceFingerprint(sourceFingerprint),
-            structuredSummary: normalizeStructuredSummary(structuredSummary),
+            structuredSummary: structuredSummary === undefined
+                ? record.structuredSummary
+                : normalizeStructuredSummary(structuredSummary),
             prompt: prompt === undefined ? record.prompt : String(prompt),
             translation: contentHash === record.contentHash ? record.translation : null,
             updatedAt: new Date().toISOString(),

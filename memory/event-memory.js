@@ -22,9 +22,9 @@ export function buildEventMemoryPromptContext(events) {
 export function deriveEventAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.events)
-        .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
-            || left.startId - right.startId
-            || left.endId - right.endId);
+        .sort((left, right) => left.startId - right.startId
+            || left.endId - right.endId
+            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
     const eventsById = new Map();
     const skippedUpdates = [];
 

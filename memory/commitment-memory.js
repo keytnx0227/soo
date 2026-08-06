@@ -7,8 +7,6 @@ const REPLACE_FIELDS = Object.freeze([
     'status',
     'statusReason',
 ]);
-const TERMINAL_STATUSES = new Set(['fulfilled', 'obsolete']);
-
 export function buildCommitmentMemoryPromptContext(commitments) {
     return JSON.stringify(commitments.map(commitment => ({
         id: commitment.id,
@@ -26,9 +24,9 @@ export function buildCommitmentMemoryPromptContext(commitments) {
 export function deriveCommitmentAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.commitments)
-        .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
-            || left.startId - right.startId
-            || left.endId - right.endId);
+        .sort((left, right) => left.startId - right.startId
+            || left.endId - right.endId
+            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
     const commitmentsById = new Map();
     const skippedUpdates = [];
 
@@ -107,13 +105,8 @@ function applyCommitmentUpdate(commitment, update, range, sourceRecordId) {
             range: { ...range },
         });
     }
-    const blockedTerminalChange = proposedStatus
-        && TERMINAL_STATUSES.has(commitment.status)
-        && proposedStatus !== commitment.status;
-
     for (const field of REPLACE_FIELDS) {
         if (!Object.hasOwn(replace, field) || !canReplace(commitment, field, range)) continue;
-        if (blockedTerminalChange && ['status', 'statusReason'].includes(field)) continue;
         let value = normalizeReplaceValue(field, replace[field]);
         commitment[field] = value;
         commitment._sources[field] = { ...range };

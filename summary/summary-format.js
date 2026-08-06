@@ -135,7 +135,6 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         example.quotes = [{
             speaker: 'Speaker name',
             text: 'Important dialogue',
-            context: 'Why or when the line was spoken',
         }];
     }
     if (sections.tags) {
@@ -280,7 +279,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
                 location: 'Established location or location transition',
                 summary: 'One brief sentence: essential trigger and decisive outcome',
                 importance: 'ordinary or turning_point',
-                shift: 'One lasting change for a turning point, otherwise null',
+                shift: 'One short clause stating only the resulting durable state, otherwise null',
             }],
             updated: [{
                 targetId: 'ID copied exactly from Current Major Event Memory',
@@ -290,7 +289,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
                     location: 'Complete revised location',
                     summary: 'Complete revised event summary',
                     importance: 'ordinary or turning_point',
-                    shift: 'Complete revised lasting change or null',
+                    shift: 'One short clause stating only the revised resulting durable state, or null',
                 },
             }],
         };
@@ -311,7 +310,8 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         ] : []),
         ...(memorySections.events ? [
             'Event importance must be exactly ordinary or turning_point.',
-            'Event shift must be null for ordinary events and null or one short sentence for turning points.',
+            'Event shift must be null for ordinary events and null or one short clause for turning points.',
+            'A shift states only the resulting durable state. Never include its cause, process, actions, emotional reactions, explanation, or an event recap.',
         ] : []),
         '',
         JSON.stringify(example, null, 2),
@@ -655,8 +655,7 @@ export function renderStructuredSummary(summary, { startId, endId, sections }) {
     if (summary.quotes.length) {
         lines.push('- key dialogue:');
         for (const quote of summary.quotes) {
-            const context = quote.context ? ` (${quote.context})` : '';
-            lines.push(`  - ${quote.speaker}: "${quote.text}"${context}`);
+            lines.push(`  - ${quote.speaker}: "${quote.text}"`);
         }
     }
 
@@ -701,7 +700,7 @@ function normalizeQuotes(value) {
         const speaker = normalizeNullableString(item.speaker);
         const text = normalizeNullableString(item.text);
         if (!speaker || !text) return null;
-        return { speaker, text, context: normalizeNullableString(item.context) };
+        return { speaker, text };
     }).filter(Boolean);
 }
 

@@ -15,9 +15,9 @@ export function buildItemMemoryPromptContext(items) {
 export function deriveItemAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.items)
-        .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
-            || left.startId - right.startId
-            || left.endId - right.endId);
+        .sort((left, right) => left.startId - right.startId
+            || left.endId - right.endId
+            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
     const itemsById = new Map();
     const skippedUpdates = [];
 

@@ -64,8 +64,14 @@ export function buildRenderedBlocks(blockSettings, records, atlas) {
 }
 
 function renderTemplate(template, values) {
-    let result = String(template || '');
-    for (const [key, value] of Object.entries(values)) {
+    const normalizedValues = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value ?? '')]));
+    let result = String(template || '').split('\n').filter(line => {
+        const names = [...line.matchAll(/{{([^{}]+)}}/g)]
+            .map(match => match[1])
+            .filter(name => Object.hasOwn(normalizedValues, name));
+        return !names.length || names.some(name => normalizedValues[name].trim());
+    }).join('\n');
+    for (const [key, value] of Object.entries(normalizedValues)) {
         result = result.replaceAll(`{{${key}}}`, String(value ?? ''));
     }
     return result.split('\n').map(line => line.trimEnd()).filter((line, index, lines) => (
@@ -85,6 +91,7 @@ function renderEventValues(event) {
         sumiEventImportance: event.importance,
         sumiEventMetadata: metadata ? `(${metadata})` : '',
         sumiEventShift: shift ? `- SHIFT: ${shift}` : '',
+        sumiEventShiftValue: shift || '',
         // Legacy macro for custom templates created before the singular shift field.
         sumiEventShifts: shift ? `- shifts: ${shift}` : '',
     };
@@ -117,6 +124,18 @@ function renderPersonValues(person) {
         sumiPersonVoice: scalarBlock('voice', person.voice),
         sumiPersonState: state ? `- last known state: ${state}` : '',
         sumiPersonRelationships: listBlock('relationships', relationships),
+        sumiPersonProvisionalValue: person.provisional ? 'true' : '',
+        sumiPersonAliasesValue: joinValues(person.aliases),
+        sumiPersonRoleValue: person.role || '',
+        sumiPersonAgeValue: person.age || '',
+        sumiPersonOccupationValue: person.occupation || '',
+        sumiPersonAppearanceValue: person.appearance || '',
+        sumiPersonAffiliationsValue: joinValues(person.affiliations),
+        sumiPersonTraitsValue: joinValues(person.traits),
+        sumiPersonVoiceValue: person.voice || '',
+        sumiPersonLastLocationValue: person.lastKnownState?.location || '',
+        sumiPersonPhysicalConditionValue: person.lastKnownState?.physicalCondition || '',
+        sumiPersonRelationshipsValue: joinValues(relationships),
         // Legacy macros keep custom pre-v10 templates readable without restoring facts.
         sumiPersonFacts: '',
         sumiPersonRoles: scalarBlock('role', person.role),
@@ -140,6 +159,14 @@ function renderItemValues(item) {
         sumiItemFacts: listBlock('facts', item.facts),
         sumiItemFunctions: listBlock('functions', item.functions),
         sumiItemState: state ? `- last known state: ${state}` : '',
+        sumiItemAliasesValue: joinValues(item.aliases),
+        sumiItemFactsValue: joinValues(item.facts),
+        sumiItemFunctionsValue: joinValues(item.functions),
+        sumiItemOwnerValue: item.lastKnownState?.owner || '',
+        sumiItemHolderValue: item.lastKnownState?.holder || '',
+        sumiItemLocationValue: item.lastKnownState?.location || '',
+        sumiItemConditionValue: item.lastKnownState?.condition || '',
+        sumiItemStatusValue: item.lastKnownState?.status || '',
     };
 }
 
@@ -158,6 +185,11 @@ function renderCommitmentValues(commitment) {
         sumiCommitmentDeadline: commitment.deadline ? `- deadline: ${commitment.deadline}` : '',
         sumiCommitmentFacts: listBlock('facts', commitment.facts),
         sumiCommitmentStatusReason: commitment.statusReason ? `- status reason: ${commitment.statusReason}` : '',
+        sumiCommitmentParticipantsValue: joinValues(participants),
+        sumiCommitmentConditionsValue: joinValues(commitment.conditions),
+        sumiCommitmentDeadlineValue: commitment.deadline || '',
+        sumiCommitmentFactsValue: joinValues(commitment.facts),
+        sumiCommitmentStatusReasonValue: commitment.statusReason || '',
     };
 }
 
@@ -167,6 +199,10 @@ function listBlock(label, values) {
 
 function scalarBlock(label, value) {
     return value ? `- ${label}: ${value}` : '';
+}
+
+function joinValues(values) {
+    return Array.isArray(values) ? values.filter(Boolean).join('; ') : '';
 }
 
 function compactPairs(values) {

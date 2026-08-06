@@ -14,7 +14,7 @@ export const PROMPT_TYPES = Object.freeze({
     REVISION: 'revision',
 });
 
-const PROMPT_SCHEMA_VERSION = 12;
+const PROMPT_SCHEMA_VERSION = 14;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -311,6 +311,10 @@ Maintain a sparse chronology of events worth recalling separately from the chunk
 - Create no duplicate. Update only an exact targetId and only fields changed by this target. Never invent IDs or delete events. Return no proposal when nothing qualifies.`,
 });
 
+const V12_DEFAULT_QUOTES_RULE = '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve wording under the language rule and keep context to one short phrase.';
+const V12_DEFAULT_COMMITMENTS_RULE = V11_DEFAULT_SUMMARY_EXTRACTION_RULES.commitments;
+const V13_DEFAULT_EVENTS_RULE = V11_DEFAULT_SUMMARY_EXTRACTION_RULES.events;
+
 const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V11_DEFAULT_SUMMARY_EXTRACTION_RULES,
     plot: `# Plot
@@ -325,7 +329,12 @@ Record the emotions each relevant character experiences through the target, incl
 Do not flatten the emotional analysis. Address the emotions with depth and nuance. Do not simply reproduce superficial rationalizations.
 
 Infer emotion from dialogue, behavior, subtext, and embodied cues while remaining grounded in the target. Give each state one short causal phrase, not a plot retelling. Usually keep 1-3 distinct states per character; use toward only for a clear target.`,
-    quotes: '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve wording under the language rule and keep context to one short phrase.',
+    quotes: '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve only the spoken words under the language rule. Do not add narration, action, explanation, or parenthetical context.',
+    commitments: V12_DEFAULT_COMMITMENTS_RULE.replace('Never guess IDs, duplicate, delete, or reactivate fulfilled/obsolete entries.', 'Never guess IDs, duplicate, or delete.'),
+    events: V13_DEFAULT_EVENTS_RULE.replace(
+        '- shift is null unless one turning_point caused a single essential lasting change. If used, write one short sentence without retelling the event.',
+        '- shift is null unless one turning_point caused a single essential lasting change. If used, state only the resulting durable state in one short clause. Exclude the cause, process, actions, emotional reactions, explanation, and event recap. If the lasting change cannot be expressed that briefly, use null.',
+    ),
     people: `# People Memory Updates
 
 Maintain compact current profiles, never plot or action history.
@@ -395,7 +404,7 @@ const LEGACY_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
 {{sumiPersonState}}
 {{sumiPersonRelationships}}`;
 
-const DEFAULT_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
+const V12_DEFAULT_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
 {{sumiPersonProvisional}}
 {{sumiPersonAliases}}
 {{sumiPersonRole}}
@@ -408,14 +417,67 @@ const DEFAULT_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
 {{sumiPersonState}}
 {{sumiPersonRelationships}}`;
 
+const DEFAULT_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
+- provisional: {{sumiPersonProvisionalValue}}
+- aliases: {{sumiPersonAliasesValue}}
+- role: {{sumiPersonRoleValue}}
+- age: {{sumiPersonAgeValue}}
+- occupation: {{sumiPersonOccupationValue}}
+- appearance: {{sumiPersonAppearanceValue}}
+- affiliations: {{sumiPersonAffiliationsValue}}
+- traits: {{sumiPersonTraitsValue}}
+- voice: {{sumiPersonVoiceValue}}
+- last location: {{sumiPersonLastLocationValue}}
+- physical condition: {{sumiPersonPhysicalConditionValue}}
+- relationships: {{sumiPersonRelationshipsValue}}`;
+
 const LEGACY_EVENT_CONTEXT_TEMPLATE = `## {{sumiEventTitle}}
 - date: {{sumiEventDate}}
 - location: {{sumiEventLocation}}
 - event: {{sumiEventSummary}}
 {{sumiEventShifts}}`;
 
-const DEFAULT_EVENT_CONTEXT_TEMPLATE = `[{{sumiEventImportance}}: {{sumiEventTitle}} - {{sumiEventSummary}}] {{sumiEventMetadata}}
+const V12_DEFAULT_EVENT_CONTEXT_TEMPLATE = `[{{sumiEventImportance}}: {{sumiEventTitle}} - {{sumiEventSummary}}] {{sumiEventMetadata}}
 {{sumiEventShift}}`;
+
+const DEFAULT_EVENT_CONTEXT_TEMPLATE = `[{{sumiEventImportance}}: {{sumiEventTitle}} - {{sumiEventSummary}}]
+- date: {{sumiEventDate}}
+- location: {{sumiEventLocation}}
+- SHIFT: {{sumiEventShiftValue}}`;
+
+const V12_DEFAULT_ITEM_CONTEXT_TEMPLATE = `## {{sumiItemName}}
+{{sumiItemAliases}}
+{{sumiItemFacts}}
+{{sumiItemFunctions}}
+{{sumiItemState}}`;
+
+const DEFAULT_ITEM_CONTEXT_TEMPLATE = `## {{sumiItemName}}
+- aliases: {{sumiItemAliasesValue}}
+- facts: {{sumiItemFactsValue}}
+- functions: {{sumiItemFunctionsValue}}
+- owner: {{sumiItemOwnerValue}}
+- holder: {{sumiItemHolderValue}}
+- location: {{sumiItemLocationValue}}
+- condition: {{sumiItemConditionValue}}
+- status: {{sumiItemStatusValue}}`;
+
+const V12_DEFAULT_COMMITMENT_CONTEXT_TEMPLATE = `## {{sumiCommitmentTitle}}
+- status: {{sumiCommitmentStatus}}
+- terms: {{sumiCommitmentTerms}}
+{{sumiCommitmentParticipants}}
+{{sumiCommitmentConditions}}
+{{sumiCommitmentDeadline}}
+{{sumiCommitmentFacts}}
+{{sumiCommitmentStatusReason}}`;
+
+const DEFAULT_COMMITMENT_CONTEXT_TEMPLATE = `## {{sumiCommitmentTitle}}
+- status: {{sumiCommitmentStatus}}
+- terms: {{sumiCommitmentTerms}}
+- participants: {{sumiCommitmentParticipantsValue}}
+- conditions: {{sumiCommitmentConditionsValue}}
+- deadline: {{sumiCommitmentDeadlineValue}}
+- facts: {{sumiCommitmentFactsValue}}
+- status reason: {{sumiCommitmentStatusReasonValue}}`;
 
 export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
     RECORDS: 'records',
@@ -451,25 +513,14 @@ const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
         kind: SUMMARY_CONTEXT_BLOCK_KINDS.ITEMS,
         name: '현재 아이템 도감',
         prefixTemplate: '# Current Items',
-        entryTemplate: `## {{sumiItemName}}
-{{sumiItemAliases}}
-{{sumiItemFacts}}
-{{sumiItemFunctions}}
-{{sumiItemState}}`,
+        entryTemplate: DEFAULT_ITEM_CONTEXT_TEMPLATE,
         suffixTemplate: '',
     },
     {
         kind: SUMMARY_CONTEXT_BLOCK_KINDS.COMMITMENTS,
         name: '서약 장부',
         prefixTemplate: '# Commitment Ledger',
-        entryTemplate: `## {{sumiCommitmentTitle}}
-- status: {{sumiCommitmentStatus}}
-- terms: {{sumiCommitmentTerms}}
-{{sumiCommitmentParticipants}}
-{{sumiCommitmentConditions}}
-{{sumiCommitmentDeadline}}
-{{sumiCommitmentFacts}}
-{{sumiCommitmentStatusReason}}`,
+        entryTemplate: DEFAULT_COMMITMENT_CONTEXT_TEMPLATE,
         suffixTemplate: '',
     },
 ]);
@@ -1106,7 +1157,11 @@ function normalizeSummaryContextBlocks(value, legacyRecordTemplate) {
 function shouldMigrateContextEntryTemplate(kind, template) {
     const value = String(template ?? '');
     return (kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE && value === LEGACY_PERSON_CONTEXT_TEMPLATE)
-        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS && value === LEGACY_EVENT_CONTEXT_TEMPLATE);
+        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE && value === V12_DEFAULT_PERSON_CONTEXT_TEMPLATE)
+        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS && value === LEGACY_EVENT_CONTEXT_TEMPLATE)
+        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS && value === V12_DEFAULT_EVENT_CONTEXT_TEMPLATE)
+        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.ITEMS && value === V12_DEFAULT_ITEM_CONTEXT_TEMPLATE)
+        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.COMMITMENTS && value === V12_DEFAULT_COMMITMENT_CONTEXT_TEMPLATE);
 }
 
 function normalizeTranslationSettings(translation) {
@@ -1369,6 +1424,56 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 return [key, next];
             }));
             return { ...block, config: { ...block.config, rules } };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 13) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const current = String(sourceRules.quotes || V12_DEFAULT_QUOTES_RULE);
+            const currentCommitments = String(sourceRules.commitments || V12_DEFAULT_COMMITMENTS_RULE);
+            const updates = {};
+            if (current.trim() === V12_DEFAULT_QUOTES_RULE.trim()) {
+                updates.quotes = DEFAULT_SUMMARY_EXTRACTION_RULES.quotes;
+            }
+            if (currentCommitments.trim() === V12_DEFAULT_COMMITMENTS_RULE.trim()) {
+                updates.commitments = DEFAULT_SUMMARY_EXTRACTION_RULES.commitments;
+            }
+            if (!Object.keys(updates).length) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: {
+                        ...sourceRules,
+                        ...updates,
+                    },
+                },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 14) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const current = String(sourceRules.events || V13_DEFAULT_EVENTS_RULE);
+            if (current.trim() !== V13_DEFAULT_EVENTS_RULE.trim()) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: {
+                        ...sourceRules,
+                        events: DEFAULT_SUMMARY_EXTRACTION_RULES.events,
+                    },
+                },
+            };
         });
     }
 

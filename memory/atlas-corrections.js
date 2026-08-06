@@ -113,7 +113,6 @@ function applyCommitmentStatusCorrection(commitment, fields) {
         .sort((left, right) => Number(left.range?.endId) - Number(right.range?.endId));
 
     for (const event of futureEvents) {
-        if (['fulfilled', 'obsolete'].includes(status) && event.status !== status) continue;
         status = event.status;
         if (event.statusReason !== null && event.statusReason !== undefined) reason = event.statusReason;
         latestAcceptedRange = Number(event.range?.endId) || latestAcceptedRange;
