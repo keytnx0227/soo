@@ -3,7 +3,14 @@ import { beginOperation, endOperation } from '../core/extension-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
-import { resetAtlasEntity, setAtlasFieldValues, showAtlasEditor } from './atlas-editor.js';
+import {
+    excludeAtlasEntity,
+    resetAtlasEntity,
+    restoreAtlasEntity,
+    setAtlasFieldValues,
+    showAtlasEditor,
+} from './atlas-editor.js';
+import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getCommitmentAtlas } from './commitment-memory-service.js';
 
@@ -15,28 +22,36 @@ const STATUS_LABELS = Object.freeze({
 
 export function bindCommitmentMemoryView(root) {
     const list = root.querySelector('#stsm-commitment-memory-list');
+    const excluded = root.querySelector('#stsm-commitment-memory-excluded');
     if (list && !list.dataset.bound) {
         list.dataset.bound = 'true';
         list.addEventListener('click', event => handleAtlasAction(event, 'commitments'));
         list.addEventListener('change', event => handleStatusChange(event));
+    }
+    if (excluded && !excluded.dataset.bound) {
+        excluded.dataset.bound = 'true';
+        excluded.addEventListener('click', event => handleAtlasAction(event, 'commitments'));
     }
     renderCommitmentMemory(root);
 }
 
 export function renderCommitmentMemory(root) {
     const list = root.querySelector('#stsm-commitment-memory-list');
+    const excludedHost = root.querySelector('#stsm-commitment-memory-excluded');
     const count = root.querySelector('#stsm-commitment-memory-count');
     const skipped = root.querySelector('#stsm-commitment-memory-skipped');
-    if (!list || !count || !skipped) return;
+    if (!list || !excludedHost || !count || !skipped) return;
 
     const atlas = getCommitmentAtlas();
     const translations = getAtlasTranslations('commitments');
+    const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.commitments.length.toLocaleString()}개`;
     skipped.innerHTML = renderWarnings(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.commitments.length
         ? atlas.commitments.map(commitment => renderCommitment(commitment, translations[commitment.id])).join('')
         : '<div class="stsm-empty">아직 추출된 서약이 없습니다.</div>';
+    excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
 function renderCommitment(commitment, cachedTranslation) {
@@ -55,6 +70,7 @@ function renderCommitment(commitment, cachedTranslation) {
                         ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
+                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(commitment.id)}</code>
@@ -86,7 +102,19 @@ async function handleAtlasAction(event, category) {
     if (!button || !card) return;
     const list = card.parentElement;
     const entityId = card.dataset.entityId;
-    const commitment = getCommitmentAtlas().commitments.find(entity => entity.id === entityId);
+    const atlas = getCommitmentAtlas();
+    if (button.dataset.atlasAction === 'restore') {
+        const excluded = atlas.excluded.find(entity => entity.id === entityId);
+        if (!excluded) return;
+        try {
+            await restoreAtlasEntity(category, entityId);
+            toastr.success(`${excluded.title}을(를) 장부에 복원했습니다.`);
+        } catch (error) {
+            handleError(error, entityId);
+        }
+        return;
+    }
+    const commitment = atlas.commitments.find(entity => entity.id === entityId);
     if (!commitment) return;
     try {
         if (button.dataset.atlasAction === 'edit') {
@@ -95,6 +123,8 @@ async function handleAtlasAction(event, category) {
             await resetAtlasEntity(category, entityId, commitment.title);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
+        } else if (button.dataset.atlasAction === 'exclude') {
+            if (await excludeAtlasEntity(category, entityId, commitment.title)) toastr.success('서약을 장부에서 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation(category, commitment);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;

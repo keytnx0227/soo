@@ -20,7 +20,9 @@ const MACROS = Object.freeze({
         ['sumiEventLocation', '사건 장소'],
         ['sumiEventSummary', '사건 요약'],
         ['sumiEventImportance', 'ordinary 또는 turning_point'],
-        ['sumiEventShifts', '변곡점의 변화 목록'],
+        ['sumiEventMetadata', '날짜와 장소를 합친 메타데이터 줄'],
+        ['sumiEventShift', '변곡점의 단일 SHIFT 줄'],
+        ['sumiEventShifts', '이전 템플릿 호환용 SHIFT 줄'],
     ],
     people: [
         ['sumiPersonId', '인물 ID'],

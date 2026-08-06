@@ -2,7 +2,8 @@ import { escapeHtml } from '../core/utils.js';
 import { Popup } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
-import { resetAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getItemAtlas } from './item-memory-service.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
@@ -17,27 +18,35 @@ const STATE_LABELS = Object.freeze({
 
 export function bindItemMemoryView(root) {
     const list = root.querySelector('#stsm-item-memory-list');
+    const excluded = root.querySelector('#stsm-item-memory-excluded');
     if (list && !list.dataset.bound) {
         list.dataset.bound = 'true';
         list.addEventListener('click', event => handleAtlasAction(event, 'items'));
+    }
+    if (excluded && !excluded.dataset.bound) {
+        excluded.dataset.bound = 'true';
+        excluded.addEventListener('click', event => handleAtlasAction(event, 'items'));
     }
     renderItemMemory(root);
 }
 
 export function renderItemMemory(root) {
     const list = root.querySelector('#stsm-item-memory-list');
+    const excludedHost = root.querySelector('#stsm-item-memory-excluded');
     const count = root.querySelector('#stsm-item-memory-count');
     const skipped = root.querySelector('#stsm-item-memory-skipped');
-    if (!list || !count || !skipped) return;
+    if (!list || !excludedHost || !count || !skipped) return;
 
     const atlas = getItemAtlas();
     const translations = getAtlasTranslations('items');
+    const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.items.length.toLocaleString()}개`;
     skipped.innerHTML = renderSkippedUpdates(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.items.length
         ? atlas.items.map(item => renderItem(item, translations[item.id])).join('')
         : '<div class="stsm-empty">아직 추출된 아이템 도감이 없습니다.</div>';
+    excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
 function renderItem(item, cachedTranslation) {
@@ -57,6 +66,7 @@ function renderItem(item, cachedTranslation) {
                         ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
+                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(item.id)}</code>
@@ -81,6 +91,17 @@ async function handleAtlasAction(event, category) {
     const list = card.parentElement;
     const entityId = card.dataset.entityId;
     const atlas = getItemAtlas();
+    if (button.dataset.atlasAction === 'restore') {
+        const excluded = atlas.excluded.find(entity => entity.id === entityId);
+        if (!excluded) return;
+        try {
+            await restoreAtlasEntity(category, entityId);
+            toastr.success(`${excluded.name}을(를) 도감에 복원했습니다.`);
+        } catch (error) {
+            handleError(error, entityId, button);
+        }
+        return;
+    }
     const item = atlas.items.find(entity => entity.id === entityId);
     if (!item) return;
     try {
@@ -90,6 +111,8 @@ async function handleAtlasAction(event, category) {
             await resetAtlasEntity(category, entityId, item.name);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
+        } else if (button.dataset.atlasAction === 'exclude') {
+            if (await excludeAtlasEntity(category, entityId, item.name)) toastr.success('아이템을 도감에서 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation(category, item);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;
@@ -104,16 +127,20 @@ async function handleAtlasAction(event, category) {
             }
         }
     } catch (error) {
-        console.error('[Chat Summarizer] Item atlas action failed:', error);
-        addExtensionErrorLog(error, {
-            operation: 'atlas',
-            title: '아이템 도감 작업 실패',
-            message: error.message,
-            context: { entityId },
-        });
-        toastr.error(error.message);
-        button.disabled = false;
+        handleError(error, entityId, button);
     }
+}
+
+function handleError(error, entityId, button) {
+    console.error('[Chat Summarizer] Item atlas action failed:', error);
+    addExtensionErrorLog(error, {
+        operation: 'atlas',
+        title: '아이템 도감 작업 실패',
+        message: error.message,
+        context: { entityId },
+    });
+    toastr.error(error.message);
+    button.disabled = false;
 }
 
 function toggleTranslation(card, button) {

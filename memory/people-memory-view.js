@@ -2,7 +2,8 @@ import { escapeHtml } from '../core/utils.js';
 import { Popup } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
-import { resetAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getPeopleAtlas } from './people-memory-service.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
@@ -19,27 +20,35 @@ const FIELD_DEFINITIONS = Object.freeze([
 
 export function bindPeopleMemoryView(root) {
     const list = root.querySelector('#stsm-people-memory-list');
+    const excluded = root.querySelector('#stsm-people-memory-excluded');
     if (list && !list.dataset.bound) {
         list.dataset.bound = 'true';
         list.addEventListener('click', event => handleAtlasAction(event, 'people'));
+    }
+    if (excluded && !excluded.dataset.bound) {
+        excluded.dataset.bound = 'true';
+        excluded.addEventListener('click', event => handleAtlasAction(event, 'people'));
     }
     renderPeopleMemory(root);
 }
 
 export function renderPeopleMemory(root) {
     const list = root.querySelector('#stsm-people-memory-list');
+    const excludedHost = root.querySelector('#stsm-people-memory-excluded');
     const count = root.querySelector('#stsm-people-memory-count');
     const skipped = root.querySelector('#stsm-people-memory-skipped');
-    if (!list || !count || !skipped) return;
+    if (!list || !excludedHost || !count || !skipped) return;
 
     const atlas = getPeopleAtlas();
     const translations = getAtlasTranslations('people');
+    const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.people.length.toLocaleString()}명`;
     skipped.innerHTML = renderSkippedUpdates(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.people.length
         ? atlas.people.map(person => renderPerson(person, translations[person.id])).join('')
         : '<div class="stsm-empty">아직 추출된 인물 도감이 없습니다.</div>';
+    excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
 function renderPerson(person, cachedTranslation) {
@@ -60,6 +69,7 @@ function renderPerson(person, cachedTranslation) {
                         ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
+                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(person.id)}</code>
@@ -86,6 +96,17 @@ async function handleAtlasAction(event, category) {
     const list = card.parentElement;
     const entityId = card.dataset.entityId;
     const atlas = getPeopleAtlas();
+    if (button.dataset.atlasAction === 'restore') {
+        const excluded = atlas.excluded.find(entity => entity.id === entityId);
+        if (!excluded) return;
+        try {
+            await restoreAtlasEntity(category, entityId);
+            toastr.success(`${excluded.name}을(를) 도감에 복원했습니다.`);
+        } catch (error) {
+            handleError(error, entityId, button);
+        }
+        return;
+    }
     const person = atlas.people.find(entity => entity.id === entityId);
     if (!person) return;
     try {
@@ -95,6 +116,8 @@ async function handleAtlasAction(event, category) {
             await resetAtlasEntity(category, entityId, person.name);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
+        } else if (button.dataset.atlasAction === 'exclude') {
+            if (await excludeAtlasEntity(category, entityId, person.name)) toastr.success('인물을 도감에서 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation(category, person);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;
@@ -109,16 +132,20 @@ async function handleAtlasAction(event, category) {
             }
         }
     } catch (error) {
-        console.error('[Chat Summarizer] People atlas action failed:', error);
-        addExtensionErrorLog(error, {
-            operation: 'atlas',
-            title: '인물 도감 작업 실패',
-            message: error.message,
-            context: { entityId },
-        });
-        toastr.error(error.message);
-        button.disabled = false;
+        handleError(error, entityId, button);
     }
+}
+
+function handleError(error, entityId, button) {
+    console.error('[Chat Summarizer] People atlas action failed:', error);
+    addExtensionErrorLog(error, {
+        operation: 'atlas',
+        title: '인물 도감 작업 실패',
+        message: error.message,
+        context: { entityId },
+    });
+    toastr.error(error.message);
+    button.disabled = false;
 }
 
 function toggleTranslation(card, button) {

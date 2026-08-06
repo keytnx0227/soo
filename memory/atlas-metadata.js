@@ -16,11 +16,27 @@ export async function saveAtlasEntityCorrection(category, entityId, fields) {
     const store = getAtlasStore();
     const previous = structuredClone(store.corrections[category]);
     const normalizedFields = normalizeCorrectionFields(fields, category);
-    if (Object.keys(normalizedFields).length) {
-        store.corrections[category][String(entityId)] = { fields: normalizedFields };
-    } else {
-        delete store.corrections[category][String(entityId)];
+    const excluded = Boolean(store.corrections[category][String(entityId)]?.excluded);
+    setCorrectionEntry(store, category, entityId, { fields: normalizedFields, excluded });
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.corrections[category] = previous;
+        throw error;
     }
+    notifyAtlasChanged();
+    return getAtlasEntityCorrection(category, entityId);
+}
+
+export async function setAtlasEntityExcluded(category, entityId, excluded) {
+    assertCategory(category);
+    const store = getAtlasStore();
+    const previous = structuredClone(store.corrections[category]);
+    const current = store.corrections[category][String(entityId)];
+    setCorrectionEntry(store, category, entityId, {
+        fields: current?.fields || {},
+        excluded: Boolean(excluded),
+    });
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
@@ -92,7 +108,20 @@ function normalizeEntityMap(value, normalizer) {
 function normalizeCorrection(value, category) {
     if (!value || typeof value !== 'object') return null;
     const fields = normalizeCorrectionFields(value.fields, category);
-    return Object.keys(fields).length ? { fields } : null;
+    const excluded = Boolean(value.excluded);
+    return Object.keys(fields).length || excluded ? { fields, excluded } : null;
+}
+
+function setCorrectionEntry(store, category, entityId, correction) {
+    const id = String(entityId);
+    if (Object.keys(correction.fields).length || correction.excluded) {
+        store.corrections[category][id] = {
+            fields: structuredClone(correction.fields),
+            excluded: Boolean(correction.excluded),
+        };
+    } else {
+        delete store.corrections[category][id];
+    }
 }
 
 function normalizeCorrectionFields(value, category = null) {

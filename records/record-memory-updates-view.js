@@ -186,7 +186,7 @@ function renderCreatedEvent(event) {
             ${renderValueRow('날짜', event.date)}
             ${renderValueRow('장소', event.location)}
             ${renderValueRow('사건', event.summary)}
-            ${renderValueRow('SHIFT', event.shifts)}
+            ${renderValueRow('SHIFT', event.shift ?? event.shifts?.[0])}
         </article>
     `;
 }
@@ -201,7 +201,9 @@ function renderUpdatedEvent(update) {
             ${Object.hasOwn(replace, 'location') ? renderValueRow('교체 · 장소', replace.location) : ''}
             ${Object.hasOwn(replace, 'summary') ? renderValueRow('교체 · 사건', replace.summary) : ''}
             ${Object.hasOwn(replace, 'importance') ? renderValueRow('교체 · 중요도', replace.importance) : ''}
-            ${Object.hasOwn(replace, 'shifts') ? renderValueRow('교체 · SHIFT', replace.shifts) : ''}
+            ${Object.hasOwn(replace, 'shift') || Object.hasOwn(replace, 'shifts')
+                ? renderValueRow('교체 · SHIFT', replace.shift ?? replace.shifts?.[0])
+                : ''}
         </article>
     `;
 }

@@ -92,7 +92,7 @@ export function serializeAtlasEntity(category, entity) {
         if (entity.location) lines.push(`- location: ${entity.location}`);
         lines.push(`- summary: ${entity.summary}`);
         lines.push(`- importance: ${entity.importance}`);
-        appendList(lines, 'shifts', entity.shifts);
+        appendScalar(lines, 'shift', entity.shift);
     }
     return lines.join('\n');
 }

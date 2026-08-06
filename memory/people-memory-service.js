@@ -5,6 +5,7 @@ export function getPeopleAtlas() {
     const atlas = getAtlasProjection();
     return {
         people: atlas.people,
+        excluded: atlas.excluded.people,
         skippedUpdates: atlas.skippedUpdates.people,
         orphanCorrections: atlas.orphanCorrections.people,
     };

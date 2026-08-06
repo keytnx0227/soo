@@ -150,6 +150,7 @@ export function buildPopup() {
                     </div>
                     <div id="stsm-people-memory-skipped" class="stsm-people-memory-warning" hidden></div>
                     <div id="stsm-people-memory-list" class="stsm-people-memory-list"></div>
+                    <div id="stsm-people-memory-excluded" class="stsm-atlas-excluded-host"></div>
                 </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
@@ -158,6 +159,7 @@ export function buildPopup() {
                     </div>
                     <div id="stsm-item-memory-skipped" class="stsm-item-memory-warning" hidden></div>
                     <div id="stsm-item-memory-list" class="stsm-item-memory-list"></div>
+                    <div id="stsm-item-memory-excluded" class="stsm-atlas-excluded-host"></div>
                 </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
@@ -166,6 +168,7 @@ export function buildPopup() {
                     </div>
                     <div id="stsm-commitment-memory-skipped" class="stsm-commitment-memory-warning" hidden></div>
                     <div id="stsm-commitment-memory-list" class="stsm-commitment-memory-list"></div>
+                    <div id="stsm-commitment-memory-excluded" class="stsm-atlas-excluded-host"></div>
                 </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
@@ -174,6 +177,7 @@ export function buildPopup() {
                     </div>
                     <div id="stsm-event-memory-skipped" class="stsm-event-memory-warning" hidden></div>
                     <div id="stsm-event-memory-list" class="stsm-event-memory-list"></div>
+                    <div id="stsm-event-memory-excluded" class="stsm-atlas-excluded-host"></div>
                 </section>
             </div>
         </section>
@@ -235,7 +239,7 @@ export function buildPopup() {
                     ${renderSummarySectionToggle('time', '시간')}
                     ${renderSummarySectionToggle('location', '장소')}
                     ${renderSummarySectionToggle('continuity', '연속성 변화')}
-                    ${renderSummarySectionToggle('emotions', '감정 변화')}
+                    ${renderSummarySectionToggle('emotions', '감정')}
                     ${renderSummarySectionToggle('quotes', '주요 대사')}
                     ${renderSummarySectionToggle('tags', '검색 태그')}
                 </div>

@@ -14,7 +14,7 @@ export const PROMPT_TYPES = Object.freeze({
     REVISION: 'revision',
 });
 
-const PROMPT_SCHEMA_VERSION = 10;
+const PROMPT_SCHEMA_VERSION = 12;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -56,7 +56,7 @@ export const SUMMARY_EXTRACTION_RULE_DEFINITIONS = Object.freeze([
     { key: 'location', label: '장소', kind: SUMMARY_SECTION_KINDS.LOCATION },
     { key: 'plot', label: '플롯', kind: SUMMARY_SECTION_KINDS.PLOT },
     { key: 'continuity', label: '연속성 변화', kind: SUMMARY_SECTION_KINDS.CONTINUITY },
-    { key: 'emotions', label: '감정 변화', kind: SUMMARY_SECTION_KINDS.EMOTIONS },
+    { key: 'emotions', label: '감정', kind: SUMMARY_SECTION_KINDS.EMOTIONS },
     { key: 'quotes', label: '주요 대사', kind: SUMMARY_SECTION_KINDS.QUOTES },
     { key: 'tags', label: '검색 태그', kind: SUMMARY_SECTION_KINDS.TAGS },
     { key: 'people', label: '인물 도감', kind: null, category: 'memory' },
@@ -65,7 +65,7 @@ export const SUMMARY_EXTRACTION_RULE_DEFINITIONS = Object.freeze([
     { key: 'events', label: '주요 사건', kind: null, category: 'memory' },
 ]);
 
-const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+const PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     title: '# Title\n\nCreate one concise title that identifies the central scene or event of this chunk.',
     date: `# Date
 
@@ -254,6 +254,91 @@ Extract a selective chronology of durable narrative events from the Summary Targ
 - If no major event was created or changed, return empty created and updated arrays.`,
 });
 
+const V11_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+    title: '# Title\n\nName the chunk with one short, specific title.',
+    date: `# Date
+
+Use an explicit story date when available; otherwise continue the latest reliable Day N, starting at Day 1 when none exists. Advance it only when the target supports elapsed days. Never use "unknown" or invent a calendar date. Use contextFlow for changes and relativeDate only when supported.`,
+    time: '# Time\n\nRecord only explicit or reliably inferred story time. Use contextFlow for meaningful changes; never invent precise clock times.',
+    location: '# Location\n\nRecord established locations and meaningful movement in order. Prefer specific known names; omit incidental positioning.',
+    plot: `# Plot
+
+Use the fewest chronological beats needed to preserve the causal story. Combine related actions; keep decisive choices and consequences. Omit gestures, atmosphere, routine movement, repeated reactions, and details without future value. Do not repeat information better owned by another enabled field. Plot requires at least one grounded beat.`,
+    continuity: '# Continuity Changes\n\nRecord only lasting non-emotional changes needed later: knowledge, relationship status, goals, physical state, possessions, roles, affiliations, or access. Use short statements; omit unchanged facts and plot repetition.',
+    emotions: '# Emotional Changes\n\nRecord only meaningful emotional transitions, not momentary reactions. Keep each state and source-grounded reason brief; use toward only for a clear target. Return none when no meaningful change occurred.',
+    quotes: '# Key Dialogue\n\nKeep at most 2 lines whose exact wording matters for characterization, a promise, reveal, relationship change, or callback. Preserve wording under the language rule; omit merely representative dialogue.',
+    tags: '# Retrieval Tags\n\nReturn 3-6 specific retrieval concepts for the chunk. Favor names, places, objects, distinctive events, relationship milestones, and promises; reject generic tags. canonical uses the output language and matchTerms uses concise source-language recall terms.',
+    people: `# People Memory Updates
+
+Maintain compact current profiles, never plot or action history.
+
+- The Summary Target alone can create or change data; other context only resolves identity.
+- Create the two leads on first clear characterization and other named people only when durably relevant. Ignore throwaway figures. A pivotal unnamed person may use one stable provisional handle; replace it with the real name later and append the handle to aliases.
+- Create only unmatched people. Update only an exact targetId. Never guess IDs, duplicate, or delete. Append only new aliases; replace only changed current snapshots, using complete concise arrays. Return no proposal for unchanged or uncertain data.
+- role, age, occupation, appearance, affiliations, traits, and voice contain only stable profile facts. voice is a speech pattern, never sample dialogue. Exclude actions, chronology, evidence, temporary moods, clothing, expressions, and injuries unless durable.
+- lastKnownState is only the latest observed location and physical condition. relationships and feelings are directional current snapshots, not scene emotions.
+- Keep scalars to a short phrase or one compact sentence, lists to a few useful entries, and never repeat information across fields.`,
+    items: `# Item Memory Updates
+
+Maintain compact current references for durable, narratively relevant objects, not a general inventory or event history.
+
+- The Summary Target alone can create or change data; other context only resolves identity.
+- Create only unmatched unique, named, plot-critical, emotionally significant, unusually capable, or continuity-sensitive items. Omit ordinary, decorative, disposable, or briefly handled objects.
+- Update only an exact targetId. Never guess IDs, duplicate, or delete. Append only new aliases and durable facts; replace only changed snapshots, using the complete concise functions list. Return no proposal for unchanged or uncertain data.
+- facts holds stable objective properties, origin, appearance, restrictions, inscriptions, or significance. functions holds established capabilities or purposes. Never infer hidden properties.
+- lastKnownState distinguishes owner, holder, location, physical condition, and narrative status. Record only the latest supported state; destroyed or lost items remain with an updated state.
+- Keep every value brief and avoid repeating plot, evidence, or scene actions.`,
+    commitments: `# Commitment Memory Updates
+
+Track durable promises, vows, agreements, obligations, and secrets with an explicit future duty. Exclude goals, wishes, threats, ordinary secrets, rhetoric, and vague plot hooks.
+
+- The Summary Target alone can create or change data; other context only resolves identity.
+- Create only a new, still-relevant commitment not already represented. Usually omit one created and resolved inside the same target. Use a short title and self-contained terms.
+- Update only an exact targetId. Never guess IDs, duplicate, delete, or reactivate fulfilled/obsolete entries. Append only new supporting facts; replace only changed current fields, using complete participants and conditions arrays.
+- participants are directly responsible, owed, protected, benefiting, or witnessing; copy known personId exactly. conditions are concrete requirements; deadline needs explicit or reliable relative support.
+- status is pending, fulfilled, or obsolete. Fulfilled requires actual completion; obsolete means unresolved but no longer meaningful. Give one brief evidence-based statusReason.
+- Keep all values concise and return no proposal for unchanged, uncertain, trivial, or redundant data.`,
+    events: `# Event Index Updates
+
+Maintain a sparse chronology of events worth recalling separately from the chunk summary.
+
+- The Summary Target alone can establish an event or change; other context only resolves identity.
+- Return at most 2 event proposals total. Keep only events with clear lasting plot, relationship, knowledge, commitment, status, or world consequences. Omit routine actions, ordinary conversation, minor conflict, repeated emotional beats, reactions, gestures, atmosphere, and scene texture. Do not extract an event merely because it appears in plot. When in doubt, omit.
+- Use a short title and exactly one brief summary sentence containing only the essential trigger and decisive outcome. Do not repeat the title, intermediate actions, or details already preserved by the chunk summary.
+- ordinary is notable but does not redirect the story. turning_point substantially redirects a relationship, goal, conflict, identity, power balance, or persistent world state.
+- shift is null unless one turning_point caused a single essential lasting change. If used, write one short sentence without retelling the event.
+- Keep date and location brief and chronologically consistent.
+- Create no duplicate. Update only an exact targetId and only fields changed by this target. Never invent IDs or delete events. Return no proposal when nothing qualifies.`,
+});
+
+const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+    ...V11_DEFAULT_SUMMARY_EXTRACTION_RULES,
+    plot: `# Plot
+
+Use the fewest chronological beats needed to preserve the causal story. Combine related actions; keep decisive choices and consequences. Omit atmosphere, routine movement, repeated reactions, and details without future value. Do not repeat information better owned by another enabled field. Plot requires at least one grounded beat.
+
+**Remember: Do not overlook even seemingly minor actions or lines of dialogue that may hint at changes in character relationships, reveal a character’s emotions, or become pivotal moments shaping future events. This includes subtle external signs of inner tension, hidden emotion, or emotional contradiction—such as pauses, silences, gestures, posture shifts, eye contact, clenched hands, averted eyes, stiffened shoulders, or other embodied visual details—especially when a character’s words conflict with what their body reveals.** Make sure to include these elements.`,
+    emotions: `# Emotion
+
+Record the emotions each relevant character experiences through the target, including an important sustained emotion even when it does not change. Keep states chronological and merge near-duplicates.
+
+Do not flatten the emotional analysis. Address the emotions with depth and nuance. Do not simply reproduce superficial rationalizations.
+
+Infer emotion from dialogue, behavior, subtext, and embodied cues while remaining grounded in the target. Give each state one short causal phrase, not a plot retelling. Usually keep 1-3 distinct states per character; use toward only for a clear target.`,
+    quotes: '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve wording under the language rule and keep context to one short phrase.',
+    people: `# People Memory Updates
+
+Maintain compact current profiles, never plot or action history.
+
+- The Summary Target alone can create or change data; other context only resolves identity.
+- Create a compact card for any named or distinctly characterized person, even after one appearance. A pivotal unnamed person may use one stable provisional handle; replace it with the real name later and append the handle to aliases. Ignore only indistinguishable background figures with no stable identity.
+- For a minor or one-scene person, record only the few established fields needed to recognize them later, often just name and role. Leave unsupported fields empty.
+- Create only unmatched people. Update only an exact targetId. Never guess IDs, duplicate, or delete. Append only new aliases; replace only changed current snapshots, using complete concise arrays. Return no proposal for unchanged or uncertain data.
+- role, age, occupation, appearance, affiliations, traits, and voice contain only stable profile facts. voice is a speech pattern, never sample dialogue. Exclude actions, chronology, evidence, temporary moods, clothing, expressions, and injuries unless durable.
+- lastKnownState is only the latest observed location and physical condition. relationships and feelings are directional current snapshots, not scene emotions.
+- Keep scalars to a short phrase or one compact sentence, lists to a few useful entries, and never repeat information across fields.`,
+});
+
 const LEGACY_SUMMARY_EXTRACTION_IDS = Object.freeze({
     'summary-title': 'title',
     'summary-date': 'date',
@@ -282,9 +367,13 @@ const LEGACY_DEFAULT_SUMMARY_MAIN_PROMPT = `# Summary Task
 
 You are a professional conversation summarizer. Summarize the provided conversation segment while preserving concrete events, decisions, relationships, emotional changes, important details, and unresolved information. Do not invent facts that are not present in the conversation.`;
 
-const DEFAULT_SUMMARY_MAIN_PROMPT = `# Summary Task
+const PREVIOUS_DEFAULT_SUMMARY_MAIN_PROMPT = `# Summary Task
 
 You are a professional long-term memory writer for an ongoing fictional roleplay conversation. Analyze only the messages inside <Summary Target> and produce a compact but self-contained memory of that range. Preserve chronology, causal relationships, names, concrete actions, and details that may affect later behavior. Use character profiles, World Info, and recent summaries only to resolve context; do not report them as events unless they occur in the target messages. Do not invent unsupported facts.`;
+
+const DEFAULT_SUMMARY_MAIN_PROMPT = `# Summary Task
+
+Write the smallest self-contained long-term memory that preserves the Summary Target's future-relevant continuity. Use only the target as evidence; other context may resolve identity and chronology. Prefer omission over repetition, scene texture, or speculative detail. Follow the enabled extraction rules and JSON contract exactly. Never invent facts.`;
 
 const DEFAULT_REVISION_MAIN_PROMPT = `# Summary Revision
 
@@ -319,6 +408,15 @@ const DEFAULT_PERSON_CONTEXT_TEMPLATE = `## {{sumiPersonName}}
 {{sumiPersonState}}
 {{sumiPersonRelationships}}`;
 
+const LEGACY_EVENT_CONTEXT_TEMPLATE = `## {{sumiEventTitle}}
+- date: {{sumiEventDate}}
+- location: {{sumiEventLocation}}
+- event: {{sumiEventSummary}}
+{{sumiEventShifts}}`;
+
+const DEFAULT_EVENT_CONTEXT_TEMPLATE = `[{{sumiEventImportance}}: {{sumiEventTitle}} - {{sumiEventSummary}}] {{sumiEventMetadata}}
+{{sumiEventShift}}`;
+
 export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
     RECORDS: 'records',
     EVENTS: 'events',
@@ -339,11 +437,7 @@ const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
         kind: SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS,
         name: '주요 사건',
         prefixTemplate: '# Major Events',
-        entryTemplate: `## {{sumiEventTitle}}
-- date: {{sumiEventDate}}
-- location: {{sumiEventLocation}}
-- event: {{sumiEventSummary}}
-{{sumiEventShifts}}`,
+        entryTemplate: DEFAULT_EVENT_CONTEXT_TEMPLATE,
         suffixTemplate: '',
     },
     {
@@ -967,8 +1061,7 @@ function normalizeSummaryContextBlocks(value, legacyRecordTemplate) {
             name: fallback.name,
             enabled: candidate.enabled === undefined ? fallback.enabled : Boolean(candidate.enabled),
             prefixTemplate: String(candidate.prefixTemplate ?? fallback.prefixTemplate),
-            entryTemplate: fallback.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE
-                && String(candidate.entryTemplate ?? '') === LEGACY_PERSON_CONTEXT_TEMPLATE
+            entryTemplate: shouldMigrateContextEntryTemplate(fallback.kind, candidate.entryTemplate)
                 ? fallback.entryTemplate
                 : String(candidate.entryTemplate ?? fallback.entryTemplate),
             suffixTemplate: String(candidate.suffixTemplate ?? fallback.suffixTemplate),
@@ -984,6 +1077,12 @@ function normalizeSummaryContextBlocks(value, legacyRecordTemplate) {
         });
     }
     return normalized;
+}
+
+function shouldMigrateContextEntryTemplate(kind, template) {
+    const value = String(template ?? '');
+    return (kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE && value === LEGACY_PERSON_CONTEXT_TEMPLATE)
+        || (kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS && value === LEGACY_EVENT_CONTEXT_TEMPLATE);
 }
 
 function normalizeTranslationSettings(translation) {
@@ -1208,6 +1307,44 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                     },
                 },
             };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 11) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.id === 'summary-main'
+                && String(block.content || '').trim() === PREVIOUS_DEFAULT_SUMMARY_MAIN_PROMPT.trim()) {
+                return { ...block, content: DEFAULT_SUMMARY_MAIN_PROMPT };
+            }
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const rules = Object.fromEntries(SUMMARY_EXTRACTION_RULE_DEFINITIONS.map(({ key }) => {
+                const current = String(sourceRules[key] || PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES[key]);
+                const next = current.trim() === PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES[key].trim()
+                    ? DEFAULT_SUMMARY_EXTRACTION_RULES[key]
+                    : current;
+                return [key, next];
+            }));
+            return { ...block, config: { ...block.config, rules } };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 12) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const rules = Object.fromEntries(SUMMARY_EXTRACTION_RULE_DEFINITIONS.map(({ key }) => {
+                const current = String(sourceRules[key] || V11_DEFAULT_SUMMARY_EXTRACTION_RULES[key]);
+                const next = current.trim() === V11_DEFAULT_SUMMARY_EXTRACTION_RULES[key].trim()
+                    ? DEFAULT_SUMMARY_EXTRACTION_RULES[key]
+                    : current;
+                return [key, next];
+            }));
+            return { ...block, config: { ...block.config, rules } };
         });
     }
 

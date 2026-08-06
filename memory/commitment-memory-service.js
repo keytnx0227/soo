@@ -5,6 +5,7 @@ export function getCommitmentAtlas() {
     const atlas = getAtlasProjection();
     return {
         commitments: atlas.commitments,
+        excluded: atlas.excluded.commitments,
         skippedUpdates: atlas.skippedUpdates.commitments,
         orphanCorrections: atlas.orphanCorrections.commitments,
     };

@@ -3,33 +3,42 @@ import { beginOperation, endOperation } from '../core/extension-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
-import { resetAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getEventAtlas } from './event-memory-service.js';
 
 export function bindEventMemoryView(root) {
     const list = root.querySelector('#stsm-event-memory-list');
+    const excluded = root.querySelector('#stsm-event-memory-excluded');
     if (list && !list.dataset.bound) {
         list.dataset.bound = 'true';
         list.addEventListener('click', handleAtlasAction);
+    }
+    if (excluded && !excluded.dataset.bound) {
+        excluded.dataset.bound = 'true';
+        excluded.addEventListener('click', handleAtlasAction);
     }
     renderEventMemory(root);
 }
 
 export function renderEventMemory(root) {
     const list = root.querySelector('#stsm-event-memory-list');
+    const excludedHost = root.querySelector('#stsm-event-memory-excluded');
     const count = root.querySelector('#stsm-event-memory-count');
     const skipped = root.querySelector('#stsm-event-memory-skipped');
-    if (!list || !count || !skipped) return;
+    if (!list || !excludedHost || !count || !skipped) return;
 
     const atlas = getEventAtlas();
     const translations = getAtlasTranslations('events');
+    const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.events.length.toLocaleString()}개`;
     skipped.innerHTML = renderWarnings(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.events.length
         ? atlas.events.map(event => renderEvent(event, translations[event.id])).join('')
         : '<div class="stsm-empty">아직 추출된 주요 사건이 없습니다.</div>';
+    excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
 function renderEvent(event, cachedTranslation) {
@@ -52,6 +61,7 @@ function renderEvent(event, cachedTranslation) {
                         ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
+                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(event.id)}</code>
@@ -63,7 +73,7 @@ function renderEvent(event, cachedTranslation) {
                 ${renderField('날짜', event.date ? [event.date] : [])}
                 ${renderField('장소', event.location ? [event.location] : [])}
                 ${renderTextField('사건', event.summary)}
-                ${turningPoint ? renderField('SHIFT', event.shifts, true) : ''}
+                ${turningPoint && event.shift ? renderTextField('SHIFT', event.shift, true) : ''}
             </div>
             ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
         </article>
@@ -76,7 +86,19 @@ async function handleAtlasAction(event) {
     if (!button || !card) return;
     const list = card.parentElement;
     const entityId = card.dataset.entityId;
-    const entry = getEventAtlas().events.find(item => item.id === entityId);
+    const atlas = getEventAtlas();
+    if (button.dataset.atlasAction === 'restore') {
+        const excluded = atlas.excluded.find(entity => entity.id === entityId);
+        if (!excluded) return;
+        try {
+            await restoreAtlasEntity('events', entityId);
+            toastr.success(`${excluded.title}을(를) 주요 사건에 복원했습니다.`);
+        } catch (error) {
+            handleError(error, entityId);
+        }
+        return;
+    }
+    const entry = atlas.events.find(item => item.id === entityId);
     if (!entry) return;
     try {
         if (button.dataset.atlasAction === 'edit') {
@@ -85,6 +107,8 @@ async function handleAtlasAction(event) {
             await resetAtlasEntity('events', entityId, entry.title);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
+        } else if (button.dataset.atlasAction === 'exclude') {
+            if (await excludeAtlasEntity('events', entityId, entry.title)) toastr.success('사건을 도감에서 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation('events', entry);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;
@@ -132,8 +156,8 @@ function showTranslatedCard(list, entityId) {
     if (refreshedCard && toggle) toggleTranslation(refreshedCard, toggle);
 }
 
-function renderTextField(label, value) {
-    return value ? `<div class="stsm-event-field"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value)}</p></div>` : '';
+function renderTextField(label, value, emphasized = false) {
+    return value ? `<div class="stsm-event-field${emphasized ? ' stsm-event-shifts' : ''}"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value)}</p></div>` : '';
 }
 
 function renderField(label, values, emphasized = false) {

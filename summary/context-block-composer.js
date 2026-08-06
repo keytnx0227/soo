@@ -74,6 +74,8 @@ function renderTemplate(template, values) {
 }
 
 function renderEventValues(event) {
+    const metadata = [event.date, event.location].filter(Boolean).join('; ');
+    const shift = event.importance === 'turning_point' ? event.shift : null;
     return {
         sumiEventId: event.id,
         sumiEventTitle: event.title,
@@ -81,7 +83,10 @@ function renderEventValues(event) {
         sumiEventLocation: event.location || '',
         sumiEventSummary: event.summary,
         sumiEventImportance: event.importance,
-        sumiEventShifts: event.importance === 'turning_point' ? listBlock('shifts', event.shifts) : '',
+        sumiEventMetadata: metadata ? `(${metadata})` : '',
+        sumiEventShift: shift ? `- SHIFT: ${shift}` : '',
+        // Legacy macro for custom templates created before the singular shift field.
+        sumiEventShifts: shift ? `- shifts: ${shift}` : '',
     };
 }
 

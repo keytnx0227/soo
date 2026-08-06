@@ -23,13 +23,23 @@ const PEOPLE_FIELDS = new Set([
 
 export function applyAtlasCorrections(raw, corrections) {
     const orphanCorrections = { people: [], items: [], commitments: [], events: [] };
+    const people = applyCategoryCorrections('people', raw.people, corrections.people, orphanCorrections.people);
+    const items = applyCategoryCorrections('items', raw.items, corrections.items, orphanCorrections.items);
+    const commitments = applyCategoryCorrections('commitments', raw.commitments, corrections.commitments, orphanCorrections.commitments);
+    const events = applyCategoryCorrections('events', raw.events, corrections.events, orphanCorrections.events)
+        .map(event => event.importance === 'ordinary' ? { ...event, shift: null } : event);
     return {
         ...raw,
-        people: applyCategoryCorrections('people', raw.people, corrections.people, orphanCorrections.people),
-        items: applyCategoryCorrections('items', raw.items, corrections.items, orphanCorrections.items),
-        commitments: applyCategoryCorrections('commitments', raw.commitments, corrections.commitments, orphanCorrections.commitments),
-        events: applyCategoryCorrections('events', raw.events, corrections.events, orphanCorrections.events)
-            .map(event => event.importance === 'ordinary' ? { ...event, shifts: [] } : event),
+        people: people.filter(entity => !entity.excluded),
+        items: items.filter(entity => !entity.excluded),
+        commitments: commitments.filter(entity => !entity.excluded),
+        events: events.filter(entity => !entity.excluded),
+        excluded: {
+            people: people.filter(entity => entity.excluded),
+            items: items.filter(entity => entity.excluded),
+            commitments: commitments.filter(entity => entity.excluded),
+            events: events.filter(entity => entity.excluded),
+        },
         orphanCorrections,
     };
 }
@@ -41,10 +51,15 @@ function applyCategoryCorrections(category, entities, correctionMap, orphanCorre
     }
     return entities.map(entity => {
         const sourceFields = correctionMap?.[entity.id]?.fields || {};
-        const fields = category === 'people' ? normalizePeopleCorrectionFields(sourceFields) : sourceFields;
-        if (!Object.keys(fields).length) return entity;
+        const fields = category === 'people'
+            ? normalizePeopleCorrectionFields(sourceFields)
+            : category === 'events'
+                ? normalizeEventCorrectionFields(sourceFields)
+                : sourceFields;
         const corrected = structuredClone(entity);
         corrected.manualCorrections = structuredClone(fields);
+        corrected.excluded = Boolean(correctionMap?.[entity.id]?.excluded);
+        if (!Object.keys(fields).length) return corrected;
         const handledFields = category === 'commitments'
             ? applyCommitmentStatusCorrection(corrected, fields)
             : new Set();
@@ -54,6 +69,19 @@ function applyCategoryCorrections(category, entities, correctionMap, orphanCorre
         }
         return corrected;
     });
+}
+
+function normalizeEventCorrectionFields(fields) {
+    const normalized = { ...fields };
+    if (!Object.hasOwn(normalized, 'shift') && Object.hasOwn(normalized, 'shifts')) {
+        const correction = normalized.shifts;
+        normalized.shift = {
+            ...correction,
+            value: Array.isArray(correction.value) ? correction.value[0] || null : correction.value || null,
+        };
+    }
+    delete normalized.shifts;
+    return normalized;
 }
 
 function normalizePeopleCorrectionFields(fields) {

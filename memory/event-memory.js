@@ -4,7 +4,7 @@ const REPLACE_FIELDS = Object.freeze([
     'location',
     'summary',
     'importance',
-    'shifts',
+    'shift',
 ]);
 
 export function buildEventMemoryPromptContext(events) {
@@ -15,7 +15,7 @@ export function buildEventMemoryPromptContext(events) {
         location: event.location,
         summary: event.summary,
         importance: event.importance,
-        shifts: event.shifts,
+        shift: event.shift,
     })), null, 2);
 }
 
@@ -70,7 +70,7 @@ function createEventEntry(id, proposal, range, sourceRecordId) {
         location: proposal.location || null,
         summary: String(proposal.summary),
         importance,
-        shifts: importance === 'turning_point' ? dedupeStrings(proposal.shifts) : [],
+        shift: importance === 'turning_point' ? normalizeShift(proposal.shift ?? proposal.shifts) : null,
         firstSeenRange: { ...range },
         lastUpdatedRange: { ...range },
         sourceRecordIds: [String(sourceRecordId)],
@@ -81,7 +81,10 @@ function createEventEntry(id, proposal, range, sourceRecordId) {
 }
 
 function applyEventUpdate(event, update, range, sourceRecordId) {
-    const replace = update.replace || {};
+    const sourceReplace = update.replace || {};
+    const replace = Object.hasOwn(sourceReplace, 'shift') || !Object.hasOwn(sourceReplace, 'shifts')
+        ? sourceReplace
+        : { ...sourceReplace, shift: sourceReplace.shifts };
     let changed = false;
     for (const field of REPLACE_FIELDS) {
         if (!Object.hasOwn(replace, field) || !canReplace(event, field, range)) continue;
@@ -89,9 +92,9 @@ function applyEventUpdate(event, update, range, sourceRecordId) {
         event._sources[field] = { ...range };
         changed = true;
     }
-    if (event.importance === 'ordinary' && event.shifts.length) {
-        event.shifts = [];
-        event._sources.shifts = { ...range };
+    if (event.importance === 'ordinary' && event.shift) {
+        event.shift = null;
+        event._sources.shift = { ...range };
         changed = true;
     }
     if (changed) {
@@ -102,7 +105,7 @@ function applyEventUpdate(event, update, range, sourceRecordId) {
 
 function normalizeReplaceValue(field, value) {
     if (field === 'importance') return normalizeImportance(value);
-    if (field === 'shifts') return dedupeStrings(value);
+    if (field === 'shift') return normalizeShift(value);
     if (['date', 'location'].includes(field)) return value || null;
     return String(value || '').trim();
 }
@@ -126,10 +129,9 @@ function appendUnique(target, values) {
     }
 }
 
-function dedupeStrings(values) {
-    const result = [];
-    appendUnique(result, Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : []);
-    return result;
+function normalizeShift(value) {
+    const candidate = Array.isArray(value) ? value[0] : value;
+    return String(candidate || '').trim() || null;
 }
 
 function normalizeKey(value) {

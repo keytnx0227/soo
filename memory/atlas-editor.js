@@ -4,6 +4,7 @@ import {
     clearAtlasEntityCorrection,
     getAtlasEntityCorrection,
     saveAtlasEntityCorrection,
+    setAtlasEntityExcluded,
 } from './atlas-metadata.js';
 import { getAtlasProjection } from './atlas-projection-service.js';
 
@@ -50,7 +51,7 @@ const EVENT_FIELDS = Object.freeze([
     { path: 'location', label: '장소', type: 'scalar' },
     { path: 'summary', label: '사건 요약', type: 'long' },
     { path: 'importance', label: '중요도', type: 'importance' },
-    { path: 'shifts', label: '변화', type: 'list' },
+    { path: 'shift', label: 'SHIFT', type: 'long' },
 ]);
 
 export async function showAtlasEditor(category, entityId) {
@@ -93,9 +94,9 @@ export async function showAtlasEditor(category, entityId) {
             throw new Error('도감 항목의 이름, 제목과 내용은 비워둘 수 없습니다.');
         }
         const normalizedValue = category === 'events'
-            && definition.path === 'shifts'
+            && definition.path === 'shift'
             && form.querySelector('[data-atlas-field="importance"] select').value === 'ordinary'
-            ? []
+            ? null
             : value;
         preserveOrCreateCorrection({
             fields,
@@ -165,6 +166,20 @@ export async function setAtlasFieldValues(category, entityId, values) {
 export async function resetAtlasEntity(category, entityId, name) {
     if (!await Popup.show.confirm('이 항목의 사용자 수정과 잠금을 모두 제거할까요?', name)) return false;
     await clearAtlasEntityCorrection(category, entityId);
+    return true;
+}
+
+export async function excludeAtlasEntity(category, entityId, name) {
+    if (!await Popup.show.confirm(
+        '도감에서 삭제하시겠습니까?',
+        `${name}\n원본 요약 기록은 유지되며 삭제된 항목에서 복원할 수 있습니다.`,
+    )) return false;
+    await setAtlasEntityExcluded(category, entityId, true);
+    return true;
+}
+
+export async function restoreAtlasEntity(category, entityId) {
+    await setAtlasEntityExcluded(category, entityId, false);
     return true;
 }
 

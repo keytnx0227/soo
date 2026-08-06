@@ -1,4 +1,4 @@
-export const SUMMARY_FORMAT_VERSION = 2;
+export const SUMMARY_FORMAT_VERSION = 3;
 
 export const SUMMARY_LANGUAGE_MODES = Object.freeze({
     ENGLISH: 'english',
@@ -44,8 +44,8 @@ export const SUMMARY_SECTION_DESCRIPTIONS = Object.freeze({
     time: '작중 시간이나 시간대를 기록하고, 청크 안에서 시간이 변하면 흐름에 따라 나눕니다.',
     location: '사건이 일어난 장소와 청크 안에서 발생한 장소 이동을 시간 순서대로 기록합니다.',
     continuity: '새로 알게 된 사실, 관계 상태, 목표, 신체 상태, 소지품처럼 이후 장면에 영향을 줄 비감정적 변화를 기록합니다.',
-    emotions: '인물별 감정이 어떻게 변했는지와 그 이유를 시간 순서대로 기록합니다.',
-    quotes: '표현 자체가 중요한 대사나 약속, 폭로, 관계 변화와 향후 회상에 유용한 대사를 보존합니다.',
+    emotions: '청크에서 인물들이 느낀 감정의 흐름과 그 이유를 깊이와 뉘앙스를 유지해 기록합니다.',
+    quotes: '인물과 장면을 대표하거나 서사적으로 중요한 대사를 2~3개까지 보존합니다.',
     tags: '청크를 나중에 다시 찾기 위한 검색용 메타데이터를 생성합니다. 태그는 요약 본문이나 {{sumiSummary}}에 출력되지 않습니다.',
     people: '요약 대상에서 확인된 인물의 장기 정보와 기존 인물에 대한 변경안을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
     items: '요약 대상에서 확인된 중요한 아이템의 장기 정보와 기존 아이템에 대한 변경안을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
@@ -278,9 +278,9 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
                 title: 'Concise event title',
                 date: 'Established date or Day N',
                 location: 'Established location or location transition',
-                summary: 'Concise cause, event, and durable result',
+                summary: 'One brief sentence: essential trigger and decisive outcome',
                 importance: 'ordinary or turning_point',
-                shifts: ['Durable change caused by a turning point; empty for ordinary'],
+                shift: 'One lasting change for a turning point, otherwise null',
             }],
             updated: [{
                 targetId: 'ID copied exactly from Current Major Event Memory',
@@ -290,7 +290,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
                     location: 'Complete revised location',
                     summary: 'Complete revised event summary',
                     importance: 'ordinary or turning_point',
-                    shifts: ['Complete revised shift list'],
+                    shift: 'Complete revised lasting change or null',
                 },
             }],
         };
@@ -303,24 +303,15 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         'Do not wrap the JSON in Markdown code fences. Do not add a preface, explanation, or commentary.',
         'Use null for an unavailable scalar value and [] when an enabled list has no supported entries.',
         'Do not add properties that are not present in this contract.',
-        ...(memorySections.people ? [
-            'For people.updated entries, omit optional replace properties that did not change; the example shows the available property shapes, not a requirement to repeat them all.',
-            'When there are no supported people-memory proposals, return empty created and updated arrays.',
-        ] : []),
-        ...(memorySections.items ? [
-            'For items.updated entries, omit optional replace properties that did not change; the example shows the available property shapes, not a requirement to repeat them all.',
-            'When there are no supported item-memory proposals, return empty created and updated arrays.',
+        ...(memorySections.people || memorySections.items || memorySections.commitments || memorySections.events ? [
+            'For every memory category, omit unchanged optional update fields and use empty created/updated arrays when no proposal is supported.',
         ] : []),
         ...(memorySections.commitments ? [
-            'For commitments.updated entries, omit optional replace properties that did not change; the example shows available property shapes.',
             'Commitment status must be exactly pending, fulfilled, or obsolete.',
-            'When there are no supported commitment-memory proposals, return empty created and updated arrays.',
         ] : []),
         ...(memorySections.events ? [
-            'For events.updated entries, omit optional replace properties that did not change; the example shows available property shapes.',
             'Event importance must be exactly ordinary or turning_point.',
-            'For ordinary events, shifts must be an empty array. For turning_point events, shifts must contain at least one durable change.',
-            'When there are no supported major-event proposals, return empty created and updated arrays.',
+            'Event shift must be null for ordinary events and null or one short sentence for turning points.',
         ] : []),
         '',
         JSON.stringify(example, null, 2),
@@ -378,14 +369,14 @@ function normalizeCreatedEvent(value) {
     const summary = normalizeNullableString(value.summary);
     if (!title || !summary) return null;
     const importance = normalizeEventImportance(value.importance);
-    const shifts = normalizeEventShifts(value.shifts, importance);
+    const shift = normalizeEventShift(value.shift ?? value.shifts, importance);
     return {
         title,
         date: normalizeNullableString(value.date),
         location: normalizeNullableString(value.location),
         summary,
         importance,
-        shifts,
+        shift,
     };
 }
 
@@ -400,11 +391,11 @@ function normalizeUpdatedEvent(value) {
     if (Object.hasOwn(replace, 'location')) normalizedReplace.location = normalizeNullableString(replace.location);
     if (Object.hasOwn(replace, 'summary')) normalizedReplace.summary = normalizeNullableString(replace.summary);
     if (Object.hasOwn(replace, 'importance')) normalizedReplace.importance = normalizeEventImportance(replace.importance);
-    if (Object.hasOwn(replace, 'shifts')) {
+    if (Object.hasOwn(replace, 'shift') || Object.hasOwn(replace, 'shifts')) {
         const importance = normalizedReplace.importance || null;
-        normalizedReplace.shifts = normalizeEventShifts(replace.shifts, importance);
+        normalizedReplace.shift = normalizeEventShift(replace.shift ?? replace.shifts, importance);
     }
-    if (normalizedReplace.importance === 'ordinary') normalizedReplace.shifts = [];
+    if (normalizedReplace.importance === 'ordinary') normalizedReplace.shift = null;
     return { targetId, replace: normalizedReplace };
 }
 
@@ -412,8 +403,10 @@ function normalizeEventImportance(value) {
     return value === 'turning_point' ? 'turning_point' : 'ordinary';
 }
 
-function normalizeEventShifts(value, importance) {
-    return importance === 'ordinary' ? [] : normalizeStringList(value);
+function normalizeEventShift(value, importance) {
+    if (importance === 'ordinary') return null;
+    if (Array.isArray(value)) return normalizeNullableString(value[0]);
+    return normalizeNullableString(value);
 }
 
 function normalizeCommitmentUpdates(value) {
