@@ -25,6 +25,11 @@ const IDLE_CONTROL_SELECTOR = [
     '.stsm-record-chat',
     '.stsm-record-delete',
     '#stsm-adjust-record-ranges',
+    '#stsm-export-chat-data',
+    '#stsm-import-chat-data',
+    '#stsm-reset-chat-data',
+    '#stsm-export-global-settings',
+    '#stsm-import-global-settings',
 ].join(', ');
 
 export function bindExtensionStatus(root, onEnabledChanged) {

@@ -24,8 +24,8 @@ export function setExtensionEnabled(enabled) {
     return getExtensionState();
 }
 
-export function beginOperation(type, label) {
-    assertExtensionEnabled();
+export function beginOperation(type, label, { requiresEnabled = true } = {}) {
+    if (requiresEnabled) assertExtensionEnabled();
     const normalizedType = String(type || 'working');
     const activeOperations = [...operations.values()];
     const canRunConcurrently = normalizedType === 'translating'

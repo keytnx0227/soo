@@ -267,7 +267,44 @@ export function buildPopup() {
                 ${renderPromptInspector('revision', '요약 수정 대화 프롬프트')}
             </div>
 
-            <div class="stsm-settings-footer"></div>
+            <div class="stsm-settings-section stsm-data-management">
+                <div class="stsm-section-title">데이터 가져오기·내보내기</div>
+                <div class="stsm-data-management-group">
+                    <div class="stsm-data-management-copy">
+                        <strong>현재 채팅 요약 데이터</strong>
+                        <span>요약 레코드, 번역, 도감 상태와 최근 수정 대화를 관리합니다.</span>
+                    </div>
+                    <div class="stsm-data-management-actions">
+                        <button id="stsm-export-chat-data" class="menu_button interactable" type="button">
+                            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                            <span>내보내기</span>
+                        </button>
+                        <button id="stsm-import-chat-data" class="menu_button interactable" type="button">
+                            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                            <span>가져오기</span>
+                        </button>
+                    </div>
+                    <button id="stsm-reset-chat-data" class="menu_button interactable stsm-danger-text-button" type="button">현재 채팅 요약 데이터 전체 초기화</button>
+                    <input id="stsm-import-chat-data-file" type="file" accept="application/json,.json" hidden />
+                </div>
+                <div class="stsm-data-management-group">
+                    <div class="stsm-data-management-copy">
+                        <strong>확장 전역 설정</strong>
+                        <span>프롬프트, 연결, 요약, 주입과 번역 설정을 관리합니다. 채팅별 요약 데이터는 포함하지 않습니다.</span>
+                    </div>
+                    <div class="stsm-data-management-actions">
+                        <button id="stsm-export-global-settings" class="menu_button interactable" type="button">
+                            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                            <span>내보내기</span>
+                        </button>
+                        <button id="stsm-import-global-settings" class="menu_button interactable" type="button">
+                            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                            <span>가져오기</span>
+                        </button>
+                    </div>
+                    <input id="stsm-import-global-settings-file" type="file" accept="application/json,.json" hidden />
+                </div>
+            </div>
         </section>
     `;
     return root;

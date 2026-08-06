@@ -1,6 +1,6 @@
 import { Popup, POPUP_TYPE } from '../../../../scripts/popup.js';
 import { copyText } from '../../../../scripts/utils.js';
-import { bindConnectionSettings } from './connection/connection-settings-view.js';
+import { bindConnectionSettings, renderConnectionSettings } from './connection/connection-settings-view.js';
 import { bindCoverageMap } from './records/coverage-map-view.js';
 import {
     beginOperation,
@@ -9,6 +9,7 @@ import {
     updateOperation,
 } from './core/extension-state.js';
 import { bindExtensionStatus } from './ui/extension-status-view.js';
+import { bindDataTransfer } from './ui/data-transfer-view.js';
 import { buildPopup } from './ui/popup-template.js';
 import { bindSectionTooltips } from './ui/section-tooltip.js';
 import { bindPeopleMemoryView, renderPeopleMemory } from './memory/people-memory-view.js';
@@ -45,7 +46,7 @@ import {
     setTranslationSettings,
 } from './core/settings.js';
 import { initializeSummaryContext, refreshSummaryInjection } from './summary/summary-context.js';
-import { bindContextBlockSettings } from './summary/context-block-settings-view.js';
+import { bindContextBlockSettings, renderContextBlockSettings } from './summary/context-block-settings-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
@@ -162,6 +163,13 @@ function bindEvents(root) {
     bindPromptSettings(root);
     bindPromptInspector(root);
     bindRecordsView(root, bindRecordEvents);
+    bindDataTransfer(root, {
+        onChatDataChanged: () => {
+            clearRevisionSession();
+            renderSummaryRecords(root, bindRecordEvents);
+        },
+        onGlobalSettingsChanged: () => applyImportedGlobalSettings(root),
+    });
     bindPeopleMemoryView(root);
     bindItemMemoryView(root);
     bindCommitmentMemoryView(root);
@@ -184,7 +192,6 @@ function bindEvents(root) {
 }
 
 function bindSummarizationSettings(root) {
-    const settings = getSettings().summarization;
     const maxTokens = root.querySelector('#stsm-injection-max-tokens');
     const outputLanguage = root.querySelector('#stsm-summary-output-language');
     const mode = root.querySelector('#stsm-injection-mode');
@@ -195,15 +202,8 @@ function bindSummarizationSettings(root) {
     const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
     const memorySectionToggles = root.querySelectorAll('[data-memory-section]');
 
-    maxTokens.value = settings.injectionMaxTokens;
-    outputLanguage.value = settings.outputLanguage;
-    mode.value = settings.injection.mode;
-    depth.value = settings.injection.depth;
-    role.value = settings.injection.role;
-    position.value = settings.injection.position;
-    autoHide.checked = settings.autoHideSummarizedMessages;
+    renderSummarizationSettings(root);
     summarySectionToggles.forEach(toggle => {
-        toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
         toggle.addEventListener('change', event => {
             setSummarySectionEnabled(event.target.dataset.summarySection, event.target.checked);
             renderPromptEditor(root, 'summary');
@@ -211,7 +211,6 @@ function bindSummarizationSettings(root) {
         });
     });
     memorySectionToggles.forEach(toggle => {
-        toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
         toggle.addEventListener('change', event => {
             setMemorySectionEnabled(event.target.dataset.memorySection, event.target.checked);
             renderPromptEditor(root, 'summary');
@@ -250,7 +249,50 @@ function bindSummarizationSettings(root) {
     });
     root.querySelector('#stsm-hide-all-summarized').addEventListener('click', () => hideSummarizedMessages());
     root.querySelector('#stsm-unhide-all-summarized').addEventListener('click', () => unhideSummarizedMessages());
+}
+
+function renderSummarizationSettings(root) {
+    const settings = getSettings().summarization;
+    root.querySelector('#stsm-injection-max-tokens').value = settings.injectionMaxTokens;
+    root.querySelector('#stsm-summary-output-language').value = settings.outputLanguage;
+    root.querySelector('#stsm-injection-mode').value = settings.injection.mode;
+    root.querySelector('#stsm-injection-depth').value = settings.injection.depth;
+    root.querySelector('#stsm-injection-role').value = settings.injection.role;
+    root.querySelector('#stsm-injection-position').value = settings.injection.position;
+    root.querySelector('#stsm-auto-hide-summarized').checked = settings.autoHideSummarizedMessages;
+    root.querySelectorAll('[data-summary-section]').forEach(toggle => {
+        toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
+    });
+    root.querySelectorAll('[data-memory-section]').forEach(toggle => {
+        toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
+    });
     renderInjectionFields(root);
+}
+
+async function applyImportedGlobalSettings(root) {
+    root.querySelector('#stsm-chunk-size').value = getSettings().summarization.chunkSize;
+    renderSummarizationSettings(root);
+    renderConnectionSettings(root);
+    renderTranslationSettings(root);
+    renderPromptEditor(root, 'summary');
+    renderPromptEditor(root, 'revision');
+    renderContextBlockSettings(root);
+    renderChunkRangeActions(root);
+    renderRangeActions(root);
+    root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+    refreshSummaryInjection();
+
+    try {
+        await syncSummarizedMessageVisibility();
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to synchronize message visibility after settings import:', error);
+        addExtensionErrorLog(error, {
+            operation: 'settings-import',
+            title: '전역 설정 가져오기 후 자동 숨김 동기화 실패',
+            message: '전역 설정은 가져왔지만 요약 메시지 자동 숨김 상태를 동기화하지 못했습니다.',
+        });
+        toastr.warning('전역 설정은 가져왔지만 자동 숨김 상태를 동기화하지 못했습니다.');
+    }
 }
 
 async function hideSummarizedMessages() {
@@ -537,21 +579,25 @@ async function copyRecordContent(record) {
 }
 
 function bindTranslationSettings(root) {
-    const settings = getSettings().translation;
     const method = root.querySelector('#stsm-translation-method');
     const provider = root.querySelector('#stsm-translation-provider');
     const targetLanguage = root.querySelector('#stsm-translation-language');
     const autoTranslate = root.querySelector('#stsm-auto-translation');
 
-    method.value = settings.method;
-    provider.value = settings.provider;
-    targetLanguage.value = settings.targetLanguage;
-    autoTranslate.checked = settings.autoTranslate;
+    renderTranslationSettings(root);
 
     method.addEventListener('change', event => setTranslationSettings({ method: event.target.value }));
     provider.addEventListener('change', event => setTranslationSettings({ provider: event.target.value }));
     targetLanguage.addEventListener('change', event => setTranslationSettings({ targetLanguage: event.target.value }));
     autoTranslate.addEventListener('change', event => setTranslationSettings({ autoTranslate: event.target.checked }));
+}
+
+function renderTranslationSettings(root) {
+    const settings = getSettings().translation;
+    root.querySelector('#stsm-translation-method').value = settings.method;
+    root.querySelector('#stsm-translation-provider').value = settings.provider;
+    root.querySelector('#stsm-translation-language').value = settings.targetLanguage;
+    root.querySelector('#stsm-auto-translation').checked = settings.autoTranslate;
 }
 
 function toggleRecordTranslation(recordElement) {

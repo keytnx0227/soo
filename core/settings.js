@@ -567,6 +567,30 @@ export async function saveSettingsNow() {
     await saveSillyTavernSettings();
 }
 
+export function getSettingsSnapshot() {
+    return structuredClone(getSettings());
+}
+
+export async function replaceSettingsFromBackup(snapshot, { preserveEnabled = true } = {}) {
+    if (!isPlainObject(snapshot)) throw new Error('가져올 확장 전역 설정 형식이 올바르지 않습니다.');
+
+    const extensionSettings = SillyTavern.getContext().extensionSettings;
+    const current = getSettings();
+    const previous = structuredClone(current);
+    const enabled = current.enabled;
+    extensionSettings[MODULE_NAME] = structuredClone(snapshot);
+
+    try {
+        const imported = getSettings();
+        if (preserveEnabled) imported.enabled = enabled;
+        await saveSettingsNow();
+        return structuredClone(imported);
+    } catch (error) {
+        extensionSettings[MODULE_NAME] = previous;
+        throw error;
+    }
+}
+
 export function setChunkSize(value) {
     const settings = getSettings();
     settings.summarization.chunkSize = clampInteger(value, 1, 1000, defaultSettings.summarization.chunkSize);
