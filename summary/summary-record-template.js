@@ -1,4 +1,17 @@
-export const DEFAULT_SUMMARY_CONTENT_TEMPLATE = `{{#sumiSummaryTitle}}### #{{sumiSummaryStartId}} ~ #{{sumiSummaryEndId}} - {{value}}{{/sumiSummaryTitle}}{{^sumiSummaryTitle}}### #{{sumiSummaryStartId}} ~ #{{sumiSummaryEndId}}{{/sumiSummaryTitle}}
+export const COMPACT_SUMMARY_CONTENT_TEMPLATE = `[#{{sumiSummaryStartId}}-{{sumiSummaryEndId}}{{#sumiSummaryDateFlow}} | {{value}}{{/sumiSummaryDateFlow}}{{#sumiSummaryRelativeDateFlow}} | {{value}}{{/sumiSummaryRelativeDateFlow}}{{#sumiSummaryTimeFlow}} | {{value}}{{/sumiSummaryTimeFlow}}{{#sumiSummaryLocationFlow}} | {{value}}{{/sumiSummaryLocationFlow}}]{{#sumiSummaryTitle}} {{value}}{{/sumiSummaryTitle}}
+{{#sumiSummaryPlot}}- {{value}}
+{{/sumiSummaryPlot}}
+{{#sumiSummaryContinuityChanges}}{{#first}}Continuity:
+{{/first}}- {{value}}
+{{/sumiSummaryContinuityChanges}}
+{{#sumiSummaryEmotions}}{{#first}}Emotion:
+{{/first}}- {{subject}}{{#toward}} -> {{value}}{{/toward}}: {{#states}}{{emotion}}{{#reason}} (because {{value}}){{/reason}}{{^last}} -> {{/last}}{{/states}}
+{{/sumiSummaryEmotions}}
+{{#sumiSummaryQuotes}}{{#first}}Quotes:
+{{/first}}- {{speaker}}: "{{text}}"
+{{/sumiSummaryQuotes}}`;
+
+export const DETAILED_SUMMARY_CONTENT_TEMPLATE = `{{#sumiSummaryTitle}}### #{{sumiSummaryStartId}} ~ #{{sumiSummaryEndId}} - {{value}}{{/sumiSummaryTitle}}{{^sumiSummaryTitle}}### #{{sumiSummaryStartId}} ~ #{{sumiSummaryEndId}}{{/sumiSummaryTitle}}
 {{#sumiSummaryDateFlow}}
 - date: {{value}}
 {{/sumiSummaryDateFlow}}
@@ -27,6 +40,19 @@ export const DEFAULT_SUMMARY_CONTENT_TEMPLATE = `{{#sumiSummaryTitle}}### #{{sum
 {{#first}}- key dialogue:
 {{/first}}  - {{speaker}}: "{{text}}"
 {{/sumiSummaryQuotes}}`;
+
+export const DEFAULT_SUMMARY_CONTENT_TEMPLATE = COMPACT_SUMMARY_CONTENT_TEMPLATE;
+
+export const SUMMARY_CONTENT_TEMPLATE_PRESETS = Object.freeze({
+    compact: Object.freeze({ label: '간략 버전', template: COMPACT_SUMMARY_CONTENT_TEMPLATE }),
+    detailed: Object.freeze({ label: '구분 강화 버전', template: DETAILED_SUMMARY_CONTENT_TEMPLATE }),
+});
+
+export function getSummaryContentTemplatePresetId(template) {
+    const normalized = String(template || '').trim();
+    return Object.entries(SUMMARY_CONTENT_TEMPLATE_PRESETS)
+        .find(([, preset]) => preset.template.trim() === normalized)?.[0] || 'custom';
+}
 
 export const SUMMARY_CONTENT_TEMPLATE_MACROS = Object.freeze([
     ['sumiSummaryStartId', '요약 시작 메시지 ID'],
@@ -76,12 +102,12 @@ function createFlow(contextFlow, key) {
 
 function parseTemplate(template) {
     const normalizedTemplate = template.replace(
-        /^[\t ]*({{\s*[#^\/][A-Za-z0-9_.]+\s*}})[\t ]*(?:\r?\n|$)/gm,
+        /^[\t ]*({{\s*[#^/][A-Za-z0-9_.]+\s*}})[\t ]*(?:\r?\n|$)/gm,
         '$1',
     );
     const root = [];
     const stack = [{ name: null, children: root }];
-    const pattern = /{{\s*([#^\/]?)([A-Za-z0-9_.]+)\s*}}/g;
+    const pattern = /{{\s*([#^/]?)([A-Za-z0-9_.]+)\s*}}/g;
     let cursor = 0;
     let match;
     while ((match = pattern.exec(normalizedTemplate))) {

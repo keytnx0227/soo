@@ -6,9 +6,15 @@ import {
     SUMMARY_LANGUAGE_MODES,
     SUMMARY_SECTION_KINDS,
 } from '../summary/summary-format.js';
-import { DEFAULT_SUMMARY_CONTENT_TEMPLATE } from '../summary/summary-record-template.js';
 import {
+    DEFAULT_SUMMARY_CONTENT_TEMPLATE,
+    getSummaryContentTemplatePresetId,
+    SUMMARY_CONTENT_TEMPLATE_PRESETS,
+} from '../summary/summary-record-template.js';
+import {
+    COMPRESSION_CONTENT_TEMPLATE_PRESETS,
     DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
+    getCompressionContentTemplatePresetId,
     LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS,
 } from '../summary/compression-format.js';
 
@@ -618,8 +624,10 @@ export const defaultSettings = Object.freeze({
         injectionMaxTokens: 24000,
         autoHideSummarizedMessages: false,
         summaryContentTemplate: DEFAULT_SUMMARY_CONTENT_TEMPLATE,
+        summaryContentTemplatePreset: 'compact',
         compressionGroupSize: 3,
         compressionContentTemplate: DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
+        compressionContentTemplatePreset: 'compact',
         recordTemplate: DEFAULT_SUMMARY_RECORD_TEMPLATE,
         contextBlocks: getDefaultSummaryContextBlocks(),
         injection: {
@@ -651,7 +659,9 @@ export function getSettings() {
 
     const migrateLegacyContextBlocks = !Array.isArray(extensionSettings[MODULE_NAME]?.summarization?.contextBlocks);
     mergeDefaults(extensionSettings[MODULE_NAME], defaultSettings);
-    normalizeSettings(extensionSettings[MODULE_NAME], { migrateLegacyContextBlocks });
+    normalizeSettings(extensionSettings[MODULE_NAME], {
+        migrateLegacyContextBlocks,
+    });
     return extensionSettings[MODULE_NAME];
 }
 
@@ -729,11 +739,26 @@ export function getSummaryContentTemplate() {
     return getSettings().summarization.summaryContentTemplate;
 }
 
+export function getSummaryContentTemplatePreset() {
+    return getSettings().summarization.summaryContentTemplatePreset;
+}
+
+export function setSummaryContentTemplatePreset(presetId) {
+    const preset = SUMMARY_CONTENT_TEMPLATE_PRESETS[presetId];
+    if (!preset) throw new Error('선택한 요약 레코드 형식 프리셋을 찾지 못했습니다.');
+    const settings = getSettings();
+    settings.summarization.summaryContentTemplate = preset.template;
+    settings.summarization.summaryContentTemplatePreset = presetId;
+    saveSettings();
+    return preset.template;
+}
+
 export function setSummaryContentTemplate(template) {
     const value = String(template || '');
     if (!value.trim()) throw new Error('요약 레코드 내용 템플릿은 비워둘 수 없습니다.');
     const settings = getSettings();
     settings.summarization.summaryContentTemplate = value;
+    settings.summarization.summaryContentTemplatePreset = getSummaryContentTemplatePresetId(value);
     saveSettings();
     return value;
 }
@@ -741,6 +766,7 @@ export function setSummaryContentTemplate(template) {
 export function resetSummaryContentTemplate() {
     const settings = getSettings();
     settings.summarization.summaryContentTemplate = DEFAULT_SUMMARY_CONTENT_TEMPLATE;
+    settings.summarization.summaryContentTemplatePreset = 'compact';
     saveSettings();
     return settings.summarization.summaryContentTemplate;
 }
@@ -756,11 +782,26 @@ export function getCompressionContentTemplate() {
     return getSettings().summarization.compressionContentTemplate;
 }
 
+export function getCompressionContentTemplatePreset() {
+    return getSettings().summarization.compressionContentTemplatePreset;
+}
+
+export function setCompressionContentTemplatePreset(presetId) {
+    const preset = COMPRESSION_CONTENT_TEMPLATE_PRESETS[presetId];
+    if (!preset) throw new Error('선택한 압축 레코드 형식 프리셋을 찾지 못했습니다.');
+    const settings = getSettings();
+    settings.summarization.compressionContentTemplate = preset.template;
+    settings.summarization.compressionContentTemplatePreset = presetId;
+    saveSettings();
+    return preset.template;
+}
+
 export function setCompressionContentTemplate(template) {
     const value = String(template || '');
     if (!value.trim()) throw new Error('압축 요약 레코드 템플릿은 비워둘 수 없습니다.');
     const settings = getSettings();
     settings.summarization.compressionContentTemplate = value;
+    settings.summarization.compressionContentTemplatePreset = getCompressionContentTemplatePresetId(value);
     saveSettings();
     return value;
 }
@@ -768,6 +809,7 @@ export function setCompressionContentTemplate(template) {
 export function resetCompressionContentTemplate() {
     const settings = getSettings();
     settings.summarization.compressionContentTemplate = DEFAULT_COMPRESSION_CONTENT_TEMPLATE;
+    settings.summarization.compressionContentTemplatePreset = 'compact';
     saveSettings();
     return settings.summarization.compressionContentTemplate;
 }
@@ -1218,7 +1260,9 @@ function replaceActivePreset(type, nextPreset) {
     ));
 }
 
-function normalizeSettings(settings, { migrateLegacyContextBlocks = false } = {}) {
+function normalizeSettings(settings, {
+    migrateLegacyContextBlocks = false,
+} = {}) {
     settings.enabled = Boolean(settings.enabled);
     settings.connectionMode = ['profile', 'custom'].includes(settings.connectionMode) ? settings.connectionMode : 'profile';
     settings.connection.profile = normalizeConnection(settings.connection.profile, defaultSettings.connection.profile);
@@ -1232,8 +1276,12 @@ function normalizeSettings(settings, { migrateLegacyContextBlocks = false } = {}
     delete settings.summarization.autoStartFromLastSummary;
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
     settings.summarization.autoHideSummarizedMessages = Boolean(settings.summarization.autoHideSummarizedMessages);
-    settings.summarization.summaryContentTemplate = String(
+    const summaryContentTemplate = String(
         settings.summarization.summaryContentTemplate || defaultSettings.summarization.summaryContentTemplate,
+    );
+    settings.summarization.summaryContentTemplate = summaryContentTemplate;
+    settings.summarization.summaryContentTemplatePreset = getSummaryContentTemplatePresetId(
+        settings.summarization.summaryContentTemplate,
     );
     settings.summarization.compressionGroupSize = clampInteger(
         settings.summarization.compressionGroupSize,
@@ -1248,6 +1296,9 @@ function normalizeSettings(settings, { migrateLegacyContextBlocks = false } = {}
         === LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS.trim()
         ? DEFAULT_COMPRESSION_CONTENT_TEMPLATE
         : compressionContentTemplate;
+    settings.summarization.compressionContentTemplatePreset = getCompressionContentTemplatePresetId(
+        settings.summarization.compressionContentTemplate,
+    );
     settings.summarization.recordTemplate = String(settings.summarization.recordTemplate ?? defaultSettings.summarization.recordTemplate);
     settings.summarization.contextBlocks = normalizeSummaryContextBlocks(
         migrateLegacyContextBlocks ? [] : settings.summarization.contextBlocks,

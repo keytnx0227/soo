@@ -244,7 +244,10 @@ async function applyLatestRevision(onApplied) {
 
     try {
         await persistActiveSession();
-        const updatedRecord = await updateSummaryRecordContent(activeSession.recordId, latest.text, { prompt: latest.prompt });
+        const updatedRecord = await updateSummaryRecordContent(activeSession.recordId, latest.text, {
+            prompt: latest.prompt,
+            contentEdited: true,
+        });
         if (!updatedRecord) throw new Error('수정안을 적용할 요약 기록을 찾지 못했습니다.');
         activeSession = null;
         onApplied?.(updatedRecord);

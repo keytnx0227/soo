@@ -1978,8 +1978,44 @@
 }
 
 .stsm-context-block.stsm-summary-content-template-block {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     cursor: default;
+}
+
+.stsm-summary-template-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stsm-summary-template-actions .menu_button {
+    width: fit-content;
+}
+
+.stsm-summary-template-apply-options,
+.stsm-summary-template-apply-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stsm-summary-template-apply-option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.stsm-summary-template-apply-option span {
+    gap: 3px;
+}
+
+.stsm-summary-template-apply-option small {
+    opacity: 0.72;
 }
 
 .stsm-context-block-grip {
@@ -2005,6 +2041,10 @@
 .stsm-context-block-main span {
     font-size: 0.84em;
     opacity: 0.66;
+}
+
+.stsm-summary-template-preset {
+    width: min(220px, 100%);
 }
 
 .stsm-context-template-editor {
@@ -2472,7 +2512,11 @@
     }
 
     .stsm-context-block.stsm-summary-content-template-block {
-        grid-template-columns: minmax(0, 1fr) 34px 34px;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .stsm-summary-template-actions {
+        justify-content: flex-end;
     }
 
     .stsm-context-block .menu_button {

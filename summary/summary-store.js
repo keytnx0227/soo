@@ -1,6 +1,8 @@
 import { createId } from '../core/utils.js';
 import { getStringHash } from '../../../../../scripts/utils.js';
 import { normalizeSourceFingerprint } from './source-tracking.js';
+import { renderStructuredSummary } from './summary-format.js';
+import { renderCompressionSummary } from './compression-format.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 
@@ -47,6 +49,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
         endId: Number(endId),
         content: String(content || '').trim(),
         contentHash: createContentHash(content),
+        contentEdited: false,
         sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
         structuredSummary: normalizeStructuredSummary(structuredSummary),
         searchTags: null,
@@ -89,6 +92,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, pro
         endId: sortedSources.at(-1).endId,
         content: normalizedContent,
         contentHash: createContentHash(normalizedContent),
+        contentEdited: false,
         sourceFingerprint: null,
         structuredSummary: null,
         searchTags: null,
@@ -151,6 +155,7 @@ export async function updateSummaryRecordContent(recordId, content, {
     sourceFingerprint,
     structuredSummary,
     compressionData,
+    contentEdited,
 } = {}) {
     const normalizedId = String(recordId);
     const normalizedContent = String(content || '').trim();
@@ -168,6 +173,7 @@ export async function updateSummaryRecordContent(recordId, content, {
             ...record,
             content: normalizedContent,
             contentHash,
+            contentEdited: contentEdited === undefined ? record.contentEdited : Boolean(contentEdited),
             sourceFingerprint: sourceFingerprint === undefined
                 ? record.sourceFingerprint
                 : normalizeSourceFingerprint(sourceFingerprint),
@@ -197,6 +203,77 @@ export async function updateSummaryRecordContent(recordId, content, {
     }
     notifyRecordsChanged();
     return updatedRecord;
+}
+
+export async function applySummaryContentTemplateToRecords(template, { includeEdited = false } = {}) {
+    return applyContentTemplateToRecords({
+        template,
+        includeEdited,
+        emptyTemplateMessage: '적용할 요약 레코드 내용 템플릿이 비어 있습니다.',
+        matches: record => record.type === 'summary' && Boolean(record.structuredSummary?.data),
+        render: record => renderStructuredSummary(record.structuredSummary.data, {
+            startId: record.startId,
+            endId: record.endId,
+            template,
+        }),
+    });
+}
+
+export async function applyCompressionContentTemplateToRecords(template, { includeEdited = false } = {}) {
+    return applyContentTemplateToRecords({
+        template,
+        includeEdited,
+        emptyTemplateMessage: '적용할 압축 레코드 내용 템플릿이 비어 있습니다.',
+        matches: record => record.type === 'compressed' && Boolean(record.compression?.data),
+        render: record => renderCompressionSummary(record.compression.data, {
+            startId: record.startId,
+            endId: record.endId,
+            template,
+        }),
+    });
+}
+
+async function applyContentTemplateToRecords({ template, includeEdited, emptyTemplateMessage, matches, render }) {
+    const normalizedTemplate = String(template || '');
+    if (!normalizedTemplate.trim()) throw new Error(emptyTemplateMessage);
+
+    const store = getStore();
+    const previousRecords = store.records;
+    let appliedCount = 0;
+    let skippedEditedCount = 0;
+
+    const nextRecords = store.records.map(record => {
+        if (!matches(record)) return record;
+        if (record.contentEdited && !includeEdited) {
+            skippedEditedCount += 1;
+            return record;
+        }
+
+        const content = render(record);
+        if (!content.trim()) throw new Error(`#${record.startId} ~ #${record.endId} 레코드의 적용 결과가 비어 있습니다.`);
+        const contentHash = createContentHash(content);
+        appliedCount += 1;
+        return {
+            ...record,
+            content,
+            contentHash,
+            contentEdited: false,
+            translation: contentHash === record.contentHash ? record.translation : null,
+            updatedAt: new Date().toISOString(),
+        };
+    });
+
+    if (!appliedCount) return { appliedCount, skippedEditedCount };
+    store.records = nextRecords;
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return { appliedCount, skippedEditedCount };
 }
 
 export async function updateSummaryRecordTags(recordId, tags) {
@@ -357,6 +434,7 @@ function normalizeRecords(records) {
                 endId: Math.max(0, Number(record.endId) || 0),
                 content,
                 contentHash,
+                contentEdited: Boolean(record.contentEdited),
                 sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
                 structuredSummary: normalizeStructuredSummary(record.structuredSummary),
                 searchTags: Array.isArray(record.searchTags) ? normalizeRecordTags(record.searchTags) : null,

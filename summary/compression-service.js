@@ -81,6 +81,7 @@ export async function regenerateCompressedSummary(recordId) {
     });
     const updated = await updateSummaryRecordContent(record.id, content, {
         prompt,
+        contentEdited: false,
         compressionData: { formatVersion: COMPRESSION_FORMAT_VERSION, ...data },
     });
     if (!updated) throw new Error('압축 재생성 결과를 저장할 기록을 찾지 못했습니다.');

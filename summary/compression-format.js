@@ -25,6 +25,19 @@ export const DEFAULT_COMPRESSION_CONTENT_TEMPLATE = `[#{{sumiCompressionStartId}
 {{/first}}- {{speaker}}: "{{text}}"
 {{/sumiCompressionQuotes}}`;
 
+export const COMPRESSION_CONTENT_TEMPLATE_PRESETS = Object.freeze({
+    compact: Object.freeze({
+        label: '간략 버전',
+        template: DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
+    }),
+});
+
+export function getCompressionContentTemplatePresetId(template) {
+    const normalized = String(template || '').trim();
+    return Object.entries(COMPRESSION_CONTENT_TEMPLATE_PRESETS)
+        .find(([, preset]) => preset.template.trim() === normalized)?.[0] || 'custom';
+}
+
 export const COMPRESSION_CONTENT_TEMPLATE_MACROS = Object.freeze([
     ['sumiCompressionStartId', '압축 범위 시작 메시지 ID'],
     ['sumiCompressionEndId', '압축 범위 종료 메시지 ID'],

@@ -201,6 +201,7 @@ export async function regenerateSummaryRecord(recordId) {
 
     const updatedRecord = await updateSummaryRecordContent(record.id, content, {
         prompt,
+        contentEdited: false,
         sourceFingerprint: createSourceFingerprint(chunk.messages),
         structuredSummary: {
             version: SUMMARY_FORMAT_VERSION,

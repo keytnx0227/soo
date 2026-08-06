@@ -717,7 +717,9 @@ async function saveRecordEdit(record) {
 
     try {
         setRecordBusy(record, true);
-        const updatedRecord = await updateSummaryRecordContent(record.dataset.recordId, editor.value);
+        const updatedRecord = await updateSummaryRecordContent(record.dataset.recordId, editor.value, {
+            contentEdited: true,
+        });
         if (!updatedRecord) throw new Error('수정할 요약 기록을 찾지 못했습니다.');
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
         toastr.success('요약을 수정했습니다.');
@@ -959,6 +961,9 @@ function initialize() {
         renderEventMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
+    });
+    window.addEventListener('stsm:record-content-template-applied', () => {
+        if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
     });
     window.addEventListener('stsm:atlas-changed', () => {
         invalidateAtlasProjection();
