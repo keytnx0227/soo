@@ -95,7 +95,6 @@ function validateTemplate(template) {
         contextFlow: [{ date: 'Day 1', time: 'afternoon', location: 'garden' }],
         plot: ['Preview plot'],
         emotions: [{ subject: 'char', trajectory: ['wary', 'trust'], reason: 'shared experience' }],
-        relationships: [{ participants: ['char', 'user'], trajectory: ['strangers', 'allies'] }],
         quotes: [{ speaker: 'char', text: 'Preview dialogue' }],
     }, { startId: 0, endId: 9, template });
 }

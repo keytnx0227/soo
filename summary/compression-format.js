@@ -1,8 +1,8 @@
 import { renderTemplateData } from './summary-record-template.js';
 
-export const COMPRESSION_FORMAT_VERSION = 1;
+export const COMPRESSION_FORMAT_VERSION = 2;
 
-export const DEFAULT_COMPRESSION_CONTENT_TEMPLATE = `[#{{sumiCompressionStartId}}-{{sumiCompressionEndId}}{{#sumiCompressionContext}} | {{value}}{{/sumiCompressionContext}}]
+export const LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS = `[#{{sumiCompressionStartId}}-{{sumiCompressionEndId}}{{#sumiCompressionContext}} | {{value}}{{/sumiCompressionContext}}]
 {{#sumiCompressionPlot}}- {{value}}
 {{/sumiCompressionPlot}}
 {{#sumiCompressionEmotions}}{{#first}}Emotion:
@@ -15,6 +15,16 @@ export const DEFAULT_COMPRESSION_CONTENT_TEMPLATE = `[#{{sumiCompressionStartId}
 {{/first}}- {{speaker}}: "{{text}}"
 {{/sumiCompressionQuotes}}`;
 
+export const DEFAULT_COMPRESSION_CONTENT_TEMPLATE = `[#{{sumiCompressionStartId}}-{{sumiCompressionEndId}}{{#sumiCompressionContext}} | {{value}}{{/sumiCompressionContext}}]
+{{#sumiCompressionPlot}}- {{value}}
+{{/sumiCompressionPlot}}
+{{#sumiCompressionEmotions}}{{#first}}Emotion:
+{{/first}}- {{subject}}: {{#trajectory}}{{value}}{{^last}} -> {{/last}}{{/trajectory}}{{#reason}} ({{value}}){{/reason}}
+{{/sumiCompressionEmotions}}
+{{#sumiCompressionQuotes}}{{#first}}Quotes:
+{{/first}}- {{speaker}}: "{{text}}"
+{{/sumiCompressionQuotes}}`;
+
 export const COMPRESSION_CONTENT_TEMPLATE_MACROS = Object.freeze([
     ['sumiCompressionStartId', '압축 범위 시작 메시지 ID'],
     ['sumiCompressionEndId', '압축 범위 종료 메시지 ID'],
@@ -22,8 +32,7 @@ export const COMPRESSION_CONTENT_TEMPLATE_MACROS = Object.freeze([
     ['sumiCompressionContextFlow', '날짜·시간·장소 배열. date, time, location 사용'],
     ['sumiCompressionPlot', '압축된 핵심 사건 배열. value, index, first, last 사용'],
     ['sumiCompressionEmotions', '감정 궤적 배열. subject, trajectory, reason 사용'],
-    ['sumiCompressionRelationships', '관계 궤적 배열. participants, trajectory 사용'],
-    ['trajectory', '감정·관계 내부의 시간순 상태 배열. value, index, first, last 사용'],
+    ['trajectory', '감정 내부의 시간순 상태 배열. value, index, first, last 사용'],
     ['sumiCompressionQuotes', '대표 대사 배열. speaker, text 사용'],
 ]);
 
@@ -45,10 +54,6 @@ export function buildCompressionJsonContract() {
                 subject: 'Character name',
                 trajectory: ['Representative emotion from each source summary'],
                 reason: 'One compact causal clause for the whole arc',
-            }],
-            relationships: [{
-                participants: ['Character A', 'Character B'],
-                trajectory: ['Relationship snapshot from each source summary'],
             }],
             quotes: [{
                 speaker: 'Speaker name',
@@ -72,7 +77,6 @@ export function parseCompressionResponse(response) {
         contextFlow: normalizeContextFlow(parsed.contextFlow),
         plot: normalizeStringList(parsed.plot),
         emotions: normalizeEmotions(parsed.emotions),
-        relationships: normalizeRelationships(parsed.relationships),
         quotes: normalizeQuotes(parsed.quotes),
     };
     if (!result.plot.length) throw new Error('압축 요약에는 하나 이상의 plot 항목이 필요합니다.');
@@ -87,10 +91,6 @@ export function renderCompressionSummary(summary, { startId, endId, template = D
         sumiCompressionContextFlow: summary.contextFlow,
         sumiCompressionPlot: summary.plot,
         sumiCompressionEmotions: summary.emotions,
-        sumiCompressionRelationships: summary.relationships.map(item => ({
-            ...item,
-            participants: item.participants.join(' <-> '),
-        })),
         sumiCompressionQuotes: summary.quotes,
     });
 }
@@ -124,17 +124,6 @@ function normalizeEmotions(value) {
             reason: normalizeNullableString(item.reason),
         };
     }).filter(Boolean);
-}
-
-function normalizeRelationships(value) {
-    if (!Array.isArray(value)) return [];
-    return value.map(item => {
-        if (!isPlainObject(item)) return null;
-        const participants = normalizeStringList(item.participants).slice(0, 3);
-        const trajectory = dedupeAdjacent(normalizeStringList(item.trajectory));
-        if (participants.length < 2 || !trajectory.length) return null;
-        return { participants, trajectory };
-    }).filter(Boolean).slice(0, 3);
 }
 
 function normalizeQuotes(value) {

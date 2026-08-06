@@ -386,12 +386,14 @@ function normalizeRecords(records) {
 
 function normalizeCompression(value) {
     if (!value || typeof value !== 'object' || !Array.isArray(value.sourceRecordIds)) return null;
+    const data = value.data && typeof value.data === 'object' ? structuredClone(value.data) : {};
+    delete data.relationships;
     return {
         version: Math.max(1, Number(value.version) || 1),
         level: Math.max(1, Number(value.level) || 1),
         sourceRecordIds: [...new Set(value.sourceRecordIds.map(String).filter(Boolean))],
         languageMode: String(value.languageMode || 'english'),
-        data: value.data && typeof value.data === 'object' ? structuredClone(value.data) : {},
+        data,
     };
 }
 

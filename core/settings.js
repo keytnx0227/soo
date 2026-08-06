@@ -7,7 +7,10 @@ import {
     SUMMARY_SECTION_KINDS,
 } from '../summary/summary-format.js';
 import { DEFAULT_SUMMARY_CONTENT_TEMPLATE } from '../summary/summary-record-template.js';
-import { DEFAULT_COMPRESSION_CONTENT_TEMPLATE } from '../summary/compression-format.js';
+import {
+    DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
+    LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS,
+} from '../summary/compression-format.js';
 
 export const MODULE_NAME = 'sumi_chat_summarizer';
 
@@ -17,7 +20,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 15;
+const PROMPT_SCHEMA_VERSION = 16;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -409,7 +412,7 @@ You are revising an existing conversation summary. Apply the user's feedback acc
 
 const DEFAULT_REVISION_TEMPLATE = 'Return only the revised summary without a preface, explanation, or commentary.';
 
-const DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
+const V15_DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
 
 Compress the supplied summary records into one dense long-term memory. Preserve chronological causality and durable facts, but remove repetition, scene texture, gestures, pauses, transient reactions, and details already represented by current memory atlases.
 
@@ -418,6 +421,18 @@ Plot: write one concise bullet-worthy sentence per meaningful causal event. Merg
 Emotion: for each relevant character, reduce each source record to one representative emotion, then join the chronological snapshots into one trajectory. Merge repeated or near-identical states. Omit emotion targets. Give the entire arc one compact causal phrase in parentheses: keep the decisive cause, never retell the event sequence or explain every intermediate state.
 
 Relationship: for each relevant pair, reduce each source record to a one- or two-word relationship snapshot and join the snapshots chronologically. Merge repeated states. Preserve a single snapshot even when the relationship did not change. Example: strangers -> cautious acquaintances -> trusted companions.
+
+Quotes: preserve 1-3 exact source lines whose wording has the highest future recall value. Prefer vows, confessions, revelations, relationship-defining words, and irreversible decisions. Never invent dialogue; return an empty array only when no source quote exists.
+
+Context: merge date, time, and location chronologically. Keep only meaningful transitions. Use only supplied records as evidence, never invent facts, and follow the JSON contract exactly.`;
+
+const DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
+
+Compress the supplied summary records into one dense long-term memory. Preserve chronological causality and durable facts, but remove repetition, scene texture, gestures, pauses, transient reactions, and details already represented by current memory atlases.
+
+Plot: write one concise bullet-worthy sentence per meaningful causal event. Merge adjacent events when meaning remains intact. Do not write a prose paragraph. Preserve a relationship development only when it is a concrete event with lasting narrative consequences; express it as an action or outcome in plot, never as a separate relationship analysis.
+
+Emotion: for each relevant character, reduce each source record to one representative emotion, then join the chronological snapshots into one trajectory. Merge repeated or near-identical states. Omit emotion targets. Give the entire arc one compact causal phrase in parentheses: keep the decisive cause, never retell the event sequence or explain every intermediate state.
 
 Quotes: preserve 1-3 exact source lines whose wording has the highest future recall value. Prefer vows, confessions, revelations, relationship-defining words, and irreversible decisions. Never invent dialogue; return an empty array only when no source quote exists.
 
@@ -1226,9 +1241,13 @@ function normalizeSettings(settings, { migrateLegacyContextBlocks = false } = {}
         100,
         defaultSettings.summarization.compressionGroupSize,
     );
-    settings.summarization.compressionContentTemplate = String(
+    const compressionContentTemplate = String(
         settings.summarization.compressionContentTemplate || defaultSettings.summarization.compressionContentTemplate,
     );
+    settings.summarization.compressionContentTemplate = compressionContentTemplate.trim()
+        === LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS.trim()
+        ? DEFAULT_COMPRESSION_CONTENT_TEMPLATE
+        : compressionContentTemplate;
     settings.summarization.recordTemplate = String(settings.summarization.recordTemplate ?? defaultSettings.summarization.recordTemplate);
     settings.summarization.contextBlocks = normalizeSummaryContextBlocks(
         migrateLegacyContextBlocks ? [] : settings.summarization.contextBlocks,
@@ -1629,6 +1648,15 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 },
             };
         });
+    }
+
+    if (type === PROMPT_TYPES.COMPRESSION && sourceSchemaVersion < 16) {
+        migratedBlocks = migratedBlocks.map(block => (
+            block.id === 'compression-main'
+                && String(block.content || '').trim() === V15_DEFAULT_COMPRESSION_MAIN_PROMPT.trim()
+                ? { ...block, content: DEFAULT_COMPRESSION_MAIN_PROMPT }
+                : block
+        ));
     }
 
     return {
