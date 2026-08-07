@@ -26,7 +26,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 18;
+const PROMPT_SCHEMA_VERSION = 21;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -336,6 +336,34 @@ const V14_DEFAULT_EVENTS_RULE = V13_DEFAULT_EVENTS_RULE.replace(
     '- shift is null unless one turning_point caused a single essential lasting change. If used, write one short sentence without retelling the event.',
     '- shift is null unless one turning_point caused a single essential lasting change. If used, state only the resulting durable state in one short clause. Exclude the cause, process, actions, emotional reactions, explanation, and event recap. If the lasting change cannot be expressed that briefly, use null.',
 );
+const V18_DEFAULT_TAGS_RULE = V11_DEFAULT_SUMMARY_EXTRACTION_RULES.tags;
+const V19_DEFAULT_TAGS_RULE = `# Retrieval Tags
+
+Create 4-8 retrieval concepts that can cause this specific memory to be recalled from future chat. These are associative memory cues, not article tags, titles, event labels, or miniature plot summaries.
+
+- Decompose the target into concrete recallable elements: distinctive people, places, objects, actions, evidence, promises, rituals, symbols, sensory details, and relationship milestones.
+- canonical is one short concept label in the configured output language.
+- matchTerms contains 2-6 atomic source-language cues likely to appear in later dialogue. Use names, nouns, base verbs, or very short noun phrases; no sentences, explanations, or plot clauses.
+- Group synonyms and closely related lexical cues under one canonical instead of creating duplicate concepts.
+- Preserve small but distinctive details when they could trigger the whole scene later. Do not reduce a scene to broad labels alone.
+- Avoid context-free generic cues such as "conversation", "emotion", or "event". A broad cue may be included only when it names a real story concept, such as a particular case under investigation.
+- Use only concepts grounded in the Summary Target.
+
+Example: for a scene where someone investigates a case, finds suspicious evidence, visits a park, and sees a person holding roses while praying for another's safety, useful groups include case investigation [사건, 조사, 수사], suspicious evidence [증거, 단서], park [공원, 벤치], rose bouquet [장미, 꽃다발], and prayer for well-being [기도, 기원, 안녕, 무사]. Do not return only summary-like labels such as "suspicious evidence discovery" or "park visit".`;
+const V20_DEFAULT_TAGS_RULE = `# Retrieval Tags
+
+Create associative cues that can recall this specific memory from future roleplay. Matching is lexical, not semantic: every matchTerm must be a source-language string likely to reappear in dialogue or narration.
+
+- Return usually 4-8 distinct concepts; return fewer for a sparse target and never pad the list.
+- canonical is one short, specific concept label in the configured output language.
+- matchTerms contains 2-6 complementary source-language cues for that concept. Prefer names, places, objects, symbols, sensory details, action stems, nouns, and very short phrases.
+- Cover separate recall paths instead of reducing the scene to its broad topic: who, where, distinctive objects, decisive actions, promises, rituals, embodied details, and relationship milestones.
+- Group synonyms, inflections, and closely related lexical cues under one canonical. Include forms likely to occur later; for an inflected word, add a useful stem or base cue when it improves matching.
+- If exact wording is itself memorable, preserve the shortest distinctive quote fragment as one matchTerm and accompany it with normalized lexical cues. Do this only for a recurring phrase, nickname, code, promise, confession, or emotionally defining line. Never copy mundane dialogue or full sentences merely because they appear in the target.
+- Never use article-style tags, titles, event summaries, explanations, or plot clauses as matchTerms. Avoid context-free labels such as "conversation", "emotion", or "event" unless they name a concrete story concept.
+- Use only concepts grounded in the Summary Target. Do not invent unrelated synonyms or future facts.
+
+Example: an investigation scene may yield case investigation [사건, 조사, 수사], suspicious evidence [증거, 단서], park [공원, 벤치], rose bouquet [장미, 꽃다발], and prayer for well-being [기도, 기원, 안녕, 무사], not only summary labels such as "suspicious evidence discovery" or "park visit". If the line "A씨는 참, 예쁘네요" is emotionally defining, use appearance compliment [예쁘네요, 예쁘, 외모, 칭찬]; if it is ordinary small talk, omit it.`;
 const V14_EVENT_MEMORY_TEMPLATE = '<Current Major Event Memory>\n{{sumiEventMemory}}\n</Current Major Event Memory>';
 const DEFAULT_EVENT_MEMORY_TEMPLATE = '<Current Event Memory>\n{{sumiEventMemory}}\n</Current Event Memory>';
 
@@ -354,6 +382,22 @@ Do not flatten the emotional analysis. Address the emotions with depth and nuanc
 
 Infer emotion from dialogue, behavior, subtext, and embodied cues while remaining grounded in the target. Give each state one short causal phrase, not a plot retelling. Usually keep 1-3 distinct states per character; use toward only for a clear target.`,
     quotes: '# Key Dialogue\n\nKeep 2-3 representative or important lines whose exact wording captures character voice, emotion, relationship dynamics, a reveal, promise, or memorable moment. Preserve only the spoken words under the language rule. Do not add narration, action, explanation, or parenthetical context.',
+    tags: `# Retrieval Tags
+
+Create associative cues that can recall this specific memory from future roleplay. Matching is lexical, not semantic: every matchTerm must be a source-language string likely to reappear in dialogue or narration.
+
+- Return usually 4-8 distinct concepts; return fewer for a sparse target and never pad the list.
+- canonical is one short, specific concept label in the configured output language.
+- matchTerms contains 2-6 complementary source-language cues for that concept. Prefer names, places, objects, symbols, sensory details, action stems, nouns, and very short phrases.
+- Cover separate recall paths instead of reducing the scene to its broad topic: who, where, distinctive objects, decisive actions, promises, rituals, embodied details, and relationship milestones.
+- Group synonyms, inflections, and closely related lexical cues under one canonical. Include forms likely to occur later; for an inflected word, add a useful stem or base cue when it improves matching.
+- If exact wording is itself memorable, preserve the shortest distinctive quote fragment as one matchTerm and accompany it with normalized lexical cues. Do this only for a recurring phrase, nickname, code, promise, confession, or emotionally defining line. Never copy mundane dialogue or full sentences merely because they appear in the target.
+- Never use article-style tags, titles, event summaries, explanations, or plot clauses as matchTerms. Avoid context-free labels such as "conversation", "emotion", or "event" unless they name a concrete story concept.
+- Use only concepts grounded in the Summary Target. Do not invent unrelated synonyms or future facts.
+
+Example: an investigation scene may yield case investigation [사건, 조사, 수사], suspicious evidence [증거, 단서], park [공원, 벤치], rose bouquet [장미, 꽃다발], and prayer for well-being [기도, 기원, 안녕, 무사], not only summary labels such as "suspicious evidence discovery" or "park visit".
+
+Preserve exact wording only when the wording itself is a durable recall cue. For "When the blue rose blooms, meet me here again," useful groups include blue rose signal [blue rose, rose blooms] and reunion promise [meet me here again, meet again, reunion]. Do not preserve an ordinary line such as "You look pretty" unless its wording or circumstances establish a lasting relationship milestone.`,
     commitments: V12_DEFAULT_COMMITMENTS_RULE.replace('Never guess IDs, duplicate, delete, or reactivate fulfilled/obsolete entries.', 'Never guess IDs, duplicate, or delete.'),
     events: `# Event Index Updates
 
@@ -1861,6 +1905,75 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 ...migratedBlocks.slice(insertIndex),
             ];
         }
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 19) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const current = typeof sourceRules.tags === 'string'
+                ? sourceRules.tags
+                : V18_DEFAULT_TAGS_RULE;
+            if (current.trim() !== V18_DEFAULT_TAGS_RULE.trim()) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: {
+                        ...sourceRules,
+                        tags: DEFAULT_SUMMARY_EXTRACTION_RULES.tags,
+                    },
+                },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 20) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const current = typeof sourceRules.tags === 'string'
+                ? sourceRules.tags
+                : V19_DEFAULT_TAGS_RULE;
+            if (current.trim() !== V19_DEFAULT_TAGS_RULE.trim()) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: {
+                        ...sourceRules,
+                        tags: DEFAULT_SUMMARY_EXTRACTION_RULES.tags,
+                    },
+                },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 21) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const sourceRules = block.config?.rules && typeof block.config.rules === 'object'
+                ? block.config.rules
+                : {};
+            const current = typeof sourceRules.tags === 'string'
+                ? sourceRules.tags
+                : V20_DEFAULT_TAGS_RULE;
+            if (current.trim() !== V20_DEFAULT_TAGS_RULE.trim()) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: {
+                        ...sourceRules,
+                        tags: DEFAULT_SUMMARY_EXTRACTION_RULES.tags,
+                    },
+                },
+            };
+        });
     }
 
     return {

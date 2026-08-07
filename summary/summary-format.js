@@ -145,7 +145,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
     if (sections.tags) {
         example.tags = [{
             canonical: 'Specific retrieval concept',
-            matchTerms: ['Relevant source-language term'],
+            matchTerms: ['Distinctive source-language cue', 'Normalized lexical cue'],
         }];
     }
     if (memorySections.people || memorySections.items || memorySections.commitments || memorySections.events) {
