@@ -16,6 +16,7 @@ export function retrieveLongTermRecords({ records, messages, settings, countToke
         mode: normalizedSettings.mode,
         contextMessageCount: contextMessages.length,
         longTermRecordCount: longTermRecords.length,
+        pinnedRecordCount: longTermRecords.filter(record => record.pinned).length,
         candidates: [],
         excludedByThreshold: [],
         excludedByRecordLimit: [],
@@ -24,33 +25,37 @@ export function retrieveLongTermRecords({ records, messages, settings, countToke
         injected: [],
         omittedByInjectionBudget: [],
     };
-    if (!normalizedSettings.enabled || !longTermRecords.length || !contextMessages.length) return base;
+    if (!normalizedSettings.enabled || !longTermRecords.length) return base;
 
     const normalizedMessages = contextMessages.map((message, index) => ({
         text: normalizeSearchText(message.mes),
         recency: contextMessages.length === 1 ? 1 : 0.75 + (index / (contextMessages.length - 1)) * 0.25,
     })).filter(message => message.text);
-    if (!normalizedMessages.length) return base;
+    if (!normalizedMessages.length && !base.pinnedRecordCount) return base;
 
     const documentFrequencies = buildDocumentFrequencies(longTermRecords);
-    const candidates = longTermRecords.map(record => matchRecord(
+    const evaluated = longTermRecords.map(record => matchRecord(
         record,
         normalizedMessages,
         documentFrequencies,
         longTermRecords.length,
         countTokens,
-    )).filter(result => result.matchedConcepts.length);
+    ));
+    const pinnedCandidates = evaluated.filter(result => result.pinned);
+    const matchedCandidates = evaluated.filter(result => !result.pinned && result.matchedConcepts.length);
+    const candidates = [...pinnedCandidates, ...matchedCandidates];
     const threshold = RELEVANCE_THRESHOLDS[normalizedSettings.relevance] ?? RELEVANCE_THRESHOLDS.balanced;
     const eligible = normalizedSettings.mode === 'relevance'
-        ? candidates.filter(result => result.score >= threshold)
+        ? candidates.filter(result => result.pinned || result.score >= threshold)
         : candidates;
     const excludedByThreshold = normalizedSettings.mode === 'relevance'
-        ? candidates.filter(result => result.score < threshold)
+        ? candidates.filter(result => !result.pinned && result.score < threshold)
         : [];
     const ranked = [...eligible].sort((left, right) => (
-        normalizedSettings.mode === 'relevance'
+        Number(right.pinned) - Number(left.pinned)
+        || (normalizedSettings.mode === 'relevance'
             ? right.score - left.score || right.record.endId - left.record.endId
-            : right.record.endId - left.record.endId || right.record.startId - left.record.startId
+            : right.record.endId - left.record.endId || right.record.startId - left.record.startId)
     ));
     const limited = normalizedSettings.mode === 'relevance' && normalizedSettings.relevanceLimitMode === 'top'
         ? ranked.slice(0, normalizedSettings.relevanceMaxRecords)
@@ -120,6 +125,7 @@ function matchRecord(record, messages, documentFrequencies, recordCount, countTo
     const conceptBonus = Math.max(0, matchedConcepts.length - 1) * 1.25;
     return {
         record,
+        pinned: Boolean(record.pinned),
         matchedConcepts,
         matchedTerms: [...new Set(matchedConcepts.flatMap(concept => concept.terms))],
         score: matchedConcepts.reduce((sum, concept) => sum + concept.weight, 0) + conceptBonus,

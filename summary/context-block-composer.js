@@ -7,19 +7,24 @@ import { composeAtomicContext } from './context-block-trimmer.js';
 export function buildContextBlockComposition(budget = Infinity, {
     records = getActiveSummaryRecords(),
     retrievedRecordIds = [],
+    pinnedRecordIds = [],
 } = {}) {
     const settings = getSettings().summarization;
     const sourceBlocks = buildRenderedBlocks(
         settings.contextBlocks,
         records,
         getAtlasProjection(),
-        { retrievedRecordIds },
+        { retrievedRecordIds, pinnedRecordIds },
     );
     return composeAtomicContext(sourceBlocks, budget, getTokenCount);
 }
 
-export function buildRenderedBlocks(blockSettings, records, atlas, { retrievedRecordIds = [] } = {}) {
+export function buildRenderedBlocks(blockSettings, records, atlas, {
+    retrievedRecordIds = [],
+    pinnedRecordIds = [],
+} = {}) {
     const retrievedIds = new Set(retrievedRecordIds.map(String));
+    const pinnedIds = new Set(pinnedRecordIds.map(String));
     const sources = {
         [SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS]: [...(records || [])]
             .sort((left, right) => left.startId - right.startId || left.endId - right.endId)
@@ -27,6 +32,7 @@ export function buildRenderedBlocks(blockSettings, records, atlas, { retrievedRe
                 id: String(record.id),
                 label: `#${record.startId} ~ #${record.endId}`,
                 retrieved: retrievedIds.has(String(record.id)),
+                pinned: pinnedIds.has(String(record.id)),
                 values: {
                     sumiRecordStartId: record.startId,
                     sumiRecordEndId: record.endId,
@@ -65,6 +71,7 @@ export function buildRenderedBlocks(blockSettings, records, atlas, { retrievedRe
             id: unit.id,
             label: unit.label,
             retrieved: Boolean(unit.retrieved),
+            pinned: Boolean(unit.pinned),
             content: renderTemplate(block.entryTemplate, unit.values),
         })).filter(unit => unit.content),
     }));

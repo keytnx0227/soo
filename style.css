@@ -983,6 +983,12 @@
     opacity: 1;
 }
 
+.stsm-record-pin[aria-pressed="true"] {
+    border-color: var(--SmartThemeQuoteColor);
+    background-color: color-mix(in srgb, transparent, var(--SmartThemeQuoteColor) 18%);
+    color: var(--SmartThemeQuoteColor);
+}
+
 .stsm-record-compression {
     border-color: color-mix(in srgb, var(--SmartThemeQuoteColor), var(--SmartThemeBorderColor) 55%);
 }

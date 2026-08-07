@@ -3,7 +3,7 @@ import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { openSummaryRecordDetail } from './record-detail-view.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
 import { getSummaryRecordSourceStatuses, SOURCE_STATES } from '../summary/source-tracking.js';
-import { getSummaryRecords } from '../summary/summary-store.js';
+import { getSummaryRecords, updateSummaryRecordPinned } from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { getRecordTags } from './record-tags.js';
@@ -86,6 +86,23 @@ function renderRecordList(list, direction, memoryView, searchState, bindRecordEv
                         range: getElementRecordRange(recordElement),
                     });
                 });
+        });
+        recordElement.querySelector('.stsm-record-pin')?.addEventListener('click', async event => {
+            const button = event.currentTarget;
+            const record = getSummaryRecords().find(item => item.id === recordElement.dataset.recordId);
+            if (!record || button.disabled) return;
+            button.disabled = true;
+            try {
+                const updated = await updateSummaryRecordPinned(record.id, !record.pinned);
+                if (!updated) throw new Error('고정 상태를 변경할 장기기억 레코드를 찾지 못했습니다.');
+                toastr.success(updated.pinned ? '장기기억을 고정했습니다.' : '장기기억 고정을 해제했습니다.');
+                renderRecordList(list, direction, memoryView, searchState, bindRecordEvents);
+            } catch (error) {
+                logRecordViewError(error, '장기기억 고정 변경 실패', '장기기억 고정 상태를 변경하지 못했습니다.', {
+                    range: getElementRecordRange(recordElement),
+                });
+                button.disabled = false;
+            }
         });
         bindRecordEvents(recordElement);
     });
@@ -353,7 +370,7 @@ function renderSummaryRecord(summary, sourceStatus) {
     const compressedChild = Boolean(summary.compressedBy);
     const compressionLevel = Number(summary.compression?.level) || 0;
     return `
-        <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
+        <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${summary.pinned ? ' stsm-record-pinned' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
             <header class="stsm-record-header">
                 <div class="stsm-record-range">
                     <strong>#${summary.startId} ~ #${summary.endId}</strong>
@@ -365,6 +382,7 @@ function renderSummaryRecord(summary, sourceStatus) {
                 </div>
                 <div class="stsm-record-actions">
                     ${renderIconButton('detail', 'fa-magnifying-glass', '자세히 보기')}
+                    ${compressedChild ? renderIconButton('pin', 'fa-thumbtack', summary.pinned ? '장기기억 고정 해제' : '장기기억 고정', Boolean(summary.pinned)) : ''}
                     ${compressedChild ? renderIconButton('tag-edit', 'fa-tags', '검색 태그 편집') : ''}
                     ${renderIconButton('copy', 'fa-copy', '복사')}
                     ${renderIconButton('edit', 'fa-pen', '수정')}

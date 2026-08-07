@@ -89,9 +89,11 @@ export function buildSummaryContextDetails() {
         countTokens: getTokenCount,
     });
     const selectedRecords = retrieval.selected.map(item => item.record);
+    const pinnedRecordIds = retrieval.selected.filter(item => item.pinned).map(item => item.record.id);
     const composition = buildContextBlockComposition(settings.injectionMaxTokens, {
         records: [...activeRecords, ...selectedRecords],
         retrievedRecordIds: selectedRecords.map(record => record.id),
+        pinnedRecordIds,
     });
     return {
         enabled: true,

@@ -44,6 +44,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
         id: createId('summary'),
         type: 'summary',
         compressedBy: null,
+        pinned: false,
         batchId: normalizeOptionalId(batchId),
         startId: Number(startId),
         endId: Number(endId),
@@ -87,6 +88,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, pro
         id: createId('compression'),
         type: 'compressed',
         compressedBy: null,
+        pinned: false,
         batchId: null,
         startId: sortedSources[0].startId,
         endId: sortedSources.at(-1).endId,
@@ -305,6 +307,37 @@ export async function updateSummaryRecordTags(recordId, tags) {
     return structuredClone(updatedRecord);
 }
 
+export async function updateSummaryRecordPinned(recordId, pinned) {
+    const normalizedId = String(recordId);
+    const store = getStore();
+    const previousRecords = store.records;
+    let updatedRecord = null;
+
+    store.records = store.records.map(record => {
+        if (record.id !== normalizedId) return record;
+        if (!record.compressedBy) {
+            throw new Error('장기기억 레코드만 고정할 수 있습니다.');
+        }
+        updatedRecord = {
+            ...record,
+            pinned: Boolean(pinned),
+            updatedAt: new Date().toISOString(),
+        };
+        return updatedRecord;
+    });
+
+    if (!updatedRecord) return null;
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return structuredClone(updatedRecord);
+}
+
 export async function updateSummaryRecordRanges(updates) {
     const normalizedUpdates = new Map((Array.isArray(updates) ? updates : []).map(update => [
         String(update.id),
@@ -429,6 +462,7 @@ function normalizeRecords(records) {
                 id: String(record.id || createId('summary')),
                 type: record.type === 'compressed' || record.compression ? 'compressed' : 'summary',
                 compressedBy: normalizeOptionalId(record.compressedBy),
+                pinned: Boolean(record.pinned),
                 batchId: normalizeOptionalId(record.batchId),
                 startId: Math.max(0, Number(record.startId) || 0),
                 endId: Math.max(0, Number(record.endId) || 0),

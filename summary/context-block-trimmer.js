@@ -9,12 +9,17 @@ export function composeAtomicContext(sourceBlocks, budget, countTokens) {
 
     if (Number.isFinite(budget)) {
         while (countTokens(renderBlocks(workingBlocks)) > budget) {
-            const retrievedBlock = workingBlocks.find(candidate => (
+            const ordinaryRetrievedBlock = workingBlocks.find(candidate => (
+                candidate.enabled && candidate.units.some(unit => unit.retrieved && !unit.pinned)
+            ));
+            const retrievedBlock = ordinaryRetrievedBlock || workingBlocks.find(candidate => (
                 candidate.enabled && candidate.units.some(unit => unit.retrieved)
             ));
             const block = retrievedBlock || workingBlocks.find(candidate => candidate.enabled && candidate.units.length);
             if (!block) break;
-            const unitIndex = retrievedBlock ? block.units.findIndex(unit => unit.retrieved) : 0;
+            const unitIndex = ordinaryRetrievedBlock
+                ? block.units.findIndex(unit => unit.retrieved && !unit.pinned)
+                : retrievedBlock ? block.units.findIndex(unit => unit.retrieved) : 0;
             const [unit] = block.units.splice(unitIndex, 1);
             omittedUnits.push({ kind: block.kind, name: block.name, ...unit });
         }

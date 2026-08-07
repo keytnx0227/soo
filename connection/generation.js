@@ -26,8 +26,12 @@ export async function generateSummary(prompt) {
         toastr.warning('현재 연결 프로필이 Chat Completion 계열이 아니어서 프로바이더/모델을 임시 변경하지 않습니다.');
     }
 
+    if (main_api === 'openai' && settings.connectionMode === 'custom') {
+        return await generateCustomChatCompletion(prompt, connection);
+    }
+
     if (main_api === 'openai') {
-        return await generateChatCompletion(prompt, connection, settings.connectionMode === 'custom');
+        return await generateProfileChatCompletion(prompt, connection);
     }
 
     return await withTemporarySamplers(connection, async () => {
@@ -39,7 +43,41 @@ export async function generateSummary(prompt) {
     });
 }
 
-async function generateChatCompletion(prompt, connection, useCustomConnection) {
+async function generateCustomChatCompletion(prompt, connection) {
+    const provider = CHAT_COMPLETION_PROVIDERS[connection.provider];
+    if (!provider) {
+        throw new Error('설정한 Chat Completion 프로바이더를 찾지 못했습니다.');
+    }
+
+    const model = connection.model.trim() || String(oai_settings[provider.modelKey] || '').trim();
+    if (!model) {
+        throw new Error('요약에 사용할 모델명을 입력해주세요.');
+    }
+
+    const sampler = normalizeSampler(connection);
+    const requestData = {
+        model,
+        messages: createRawPrompt(prompt, 'openai', false, false),
+        temperature: sampler.temperature,
+        stream: false,
+        chat_completion_source: provider.source,
+        max_tokens: Number(connection.maxTokens) || 5000,
+    };
+    if (sampler.topP < 1) requestData.top_p = sampler.topP;
+    if (sampler.topK > 0) requestData.top_k = sampler.topK;
+
+    if (provider.source === chat_completion_sources.VERTEXAI) {
+        requestData.vertexai_auth_mode = oai_settings.vertexai_auth_mode || 'express';
+        requestData.vertexai_region = oai_settings.vertexai_region || 'global';
+        if (requestData.vertexai_auth_mode === 'express' && oai_settings.vertexai_express_project_id) {
+            requestData.vertexai_express_project_id = oai_settings.vertexai_express_project_id;
+        }
+    }
+
+    return await sendChatCompletionRequest(requestData);
+}
+
+async function generateProfileChatCompletion(prompt, connection) {
     const requestSettings = structuredClone(oai_settings);
     const sampler = normalizeSampler(connection);
 
@@ -47,17 +85,6 @@ async function generateChatCompletion(prompt, connection, useCustomConnection) {
     requestSettings.top_p_openai = sampler.topP;
     requestSettings.top_k_openai = sampler.topK;
     requestSettings.openai_max_tokens = Number(connection.maxTokens) || 5000;
-
-    if (useCustomConnection) {
-        const provider = CHAT_COMPLETION_PROVIDERS[connection.provider];
-        if (!provider) {
-            throw new Error('설정한 Chat Completion 프로바이더를 찾지 못했습니다.');
-        }
-        requestSettings.chat_completion_source = provider.source;
-        if (connection.model.trim()) {
-            requestSettings[provider.modelKey] = connection.model.trim();
-        }
-    }
 
     const context = SillyTavern.getContext();
     const promptEvent = {
@@ -75,13 +102,18 @@ async function generateChatCompletion(prompt, connection, useCustomConnection) {
     );
     await context.eventSource.emit(context.eventTypes.CHAT_COMPLETION_SETTINGS_READY, generate_data);
 
+    return await sendChatCompletionRequest(generate_data);
+}
+
+async function sendChatCompletionRequest(requestData) {
+    const context = SillyTavern.getContext();
     const abortController = new AbortController();
     const abortRequest = () => abortController.abort(new Error('Cancelled by extension'));
     context.eventSource.on(context.eventTypes.GENERATION_STOPPED, abortRequest);
 
     try {
         const result = await context.ChatCompletionService.sendRequest(
-            generate_data,
+            requestData,
             true,
             abortController.signal,
         );

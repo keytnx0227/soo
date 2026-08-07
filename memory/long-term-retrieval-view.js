@@ -71,7 +71,7 @@ function renderRetrievalResult(container, retrieval) {
         output.innerHTML = '<span class="stsm-long-term-result-empty">검색할 장기기억 레코드가 아직 없어요.</span>';
         return;
     }
-    if (!retrieval.contextMessageCount) {
+    if (!retrieval.contextMessageCount && !retrieval.candidates.length) {
         output.innerHTML = '<span class="stsm-long-term-result-empty">검색에 사용할 최근 채팅 메시지가 없어요.</span>';
         return;
     }
@@ -109,14 +109,17 @@ function renderResultRow(item, injected, mode, omittedReason = '전체 주입 �
         const terms = concept.terms.join(', ');
         return `<span><strong>${escapeHtml(concept.canonical)}</strong>: ${escapeHtml(terms)}</span>`;
     }).join('');
-    const status = injected ? '주입' : omittedReason;
+    const status = `${item.pinned ? '고정 · ' : ''}${injected ? '주입' : omittedReason}`;
+    const matchDetails = matches || (item.pinned
+        ? '<span>태그 매칭 없이 고정 우선순위로 회상</span>'
+        : '<span>일치 검색어 없음</span>');
     return `
         <div class="stsm-long-term-result-item${injected ? '' : ' stsm-long-term-result-item-omitted'}">
             <div class="stsm-long-term-result-heading">
                 <strong>#${item.record.startId} ~ #${item.record.endId}</strong>
                 <span>${escapeHtml(status)}${mode === 'relevance' ? ` · ${item.score.toFixed(2)}점` : ''}</span>
             </div>
-            <div class="stsm-long-term-result-matches">${matches}</div>
+            <div class="stsm-long-term-result-matches">${matchDetails}</div>
         </div>
     `;
 }
