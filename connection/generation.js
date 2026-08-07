@@ -1,5 +1,10 @@
-import { generateRaw, main_api } from '../../../../../script.js';
-import { chat_completion_sources, oai_settings } from '../../../../../scripts/openai.js';
+import { createRawPrompt, generateRaw, main_api } from '../../../../../script.js';
+import {
+    chat_completion_sources,
+    createGenerationParameters,
+    getChatCompletionModel,
+    oai_settings,
+} from '../../../../../scripts/openai.js';
 import { textgenerationwebui_settings } from '../../../../../scripts/textgen-settings.js';
 import { assertExtensionEnabled } from '../core/extension-state.js';
 import { getSettings } from '../core/settings.js';
@@ -17,63 +22,77 @@ export async function generateSummary(prompt) {
     const settings = getSettings();
     const connection = settings.connection[settings.connectionMode] ?? settings.connection.profile;
 
-    return await withTemporaryConnection(async () => {
-        return await withTemporarySamplers(connection, async () => {
-            const result = await generateRaw({
-                prompt,
-                responseLength: Number(connection.maxTokens) || 5000,
-            });
-            return String(result || '').trim();
+    if (settings.connectionMode === 'custom' && main_api !== 'openai') {
+        toastr.warning('현재 연결 프로필이 Chat Completion 계열이 아니어서 프로바이더/모델을 임시 변경하지 않습니다.');
+    }
+
+    if (main_api === 'openai') {
+        return await generateChatCompletion(prompt, connection, settings.connectionMode === 'custom');
+    }
+
+    return await withTemporarySamplers(connection, async () => {
+        const result = await generateRaw({
+            prompt,
+            responseLength: Number(connection.maxTokens) || 5000,
         });
+        return String(result || '').trim();
     });
 }
 
-async function withTemporaryConnection(callback) {
-    const settings = getSettings();
-    if (settings.connectionMode !== 'custom') return await callback();
+async function generateChatCompletion(prompt, connection, useCustomConnection) {
+    const requestSettings = structuredClone(oai_settings);
+    const sampler = normalizeSampler(connection);
 
-    const custom = settings.connection.custom;
-    const provider = CHAT_COMPLETION_PROVIDERS[custom.provider];
-    if (main_api !== 'openai' || !provider) {
-        toastr.warning('현재 연결 프로필이 Chat Completion 계열이 아니어서 프로바이더/모델을 임시 변경하지 않습니다.');
-        return await callback();
+    requestSettings.temp_openai = sampler.temperature;
+    requestSettings.top_p_openai = sampler.topP;
+    requestSettings.top_k_openai = sampler.topK;
+    requestSettings.openai_max_tokens = Number(connection.maxTokens) || 5000;
+
+    if (useCustomConnection) {
+        const provider = CHAT_COMPLETION_PROVIDERS[connection.provider];
+        if (!provider) {
+            throw new Error('설정한 Chat Completion 프로바이더를 찾지 못했습니다.');
+        }
+        requestSettings.chat_completion_source = provider.source;
+        if (connection.model.trim()) {
+            requestSettings[provider.modelKey] = connection.model.trim();
+        }
     }
 
-    const previous = {
-        chat_completion_source: oai_settings.chat_completion_source,
-        [provider.modelKey]: oai_settings[provider.modelKey],
+    const context = SillyTavern.getContext();
+    const promptEvent = {
+        chat: createRawPrompt(prompt, 'openai', false, false),
+        dryRun: false,
     };
+    await context.eventSource.emit(context.eventTypes.CHAT_COMPLETION_PROMPT_READY, promptEvent);
+
+    const model = getChatCompletionModel(requestSettings);
+    const { generate_data } = await createGenerationParameters(
+        requestSettings,
+        model,
+        'quiet',
+        promptEvent.chat,
+    );
+    await context.eventSource.emit(context.eventTypes.CHAT_COMPLETION_SETTINGS_READY, generate_data);
+
+    const abortController = new AbortController();
+    const abortRequest = () => abortController.abort(new Error('Cancelled by extension'));
+    context.eventSource.on(context.eventTypes.GENERATION_STOPPED, abortRequest);
 
     try {
-        oai_settings.chat_completion_source = provider.source;
-        if (custom.model.trim()) {
-            oai_settings[provider.modelKey] = custom.model.trim();
-        }
-        return await callback();
+        const result = await context.ChatCompletionService.sendRequest(
+            generate_data,
+            true,
+            abortController.signal,
+        );
+        return String(result?.content || '').trim();
     } finally {
-        Object.assign(oai_settings, previous);
+        context.eventSource.removeListener(context.eventTypes.GENERATION_STOPPED, abortRequest);
     }
 }
 
 async function withTemporarySamplers(connection, callback) {
     const sampler = normalizeSampler(connection);
-
-    if (main_api === 'openai') {
-        const previous = {
-            temp_openai: oai_settings.temp_openai,
-            top_p_openai: oai_settings.top_p_openai,
-            top_k_openai: oai_settings.top_k_openai,
-        };
-
-        try {
-            oai_settings.temp_openai = sampler.temperature;
-            oai_settings.top_p_openai = sampler.topP;
-            oai_settings.top_k_openai = sampler.topK;
-            return await callback();
-        } finally {
-            Object.assign(oai_settings, previous);
-        }
-    }
 
     if (main_api === 'textgenerationwebui') {
         const previous = {
