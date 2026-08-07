@@ -7,6 +7,15 @@ export function composeAtomicContext(sourceBlocks, budget, countTokens) {
     const originalTokenCount = countTokens(full);
     const omittedUnits = [];
 
+    for (const block of workingBlocks) {
+        if (!block.enabled || !Number.isFinite(block.unitBudget)) continue;
+        while (block.units.length && countTokens(renderBlock(block)) > block.unitBudget) {
+            const unitIndex = findLowestPriorityUnitIndex(block.units);
+            const [unit] = block.units.splice(unitIndex, 1);
+            omittedUnits.push({ kind: block.kind, name: block.name, reason: 'block-budget', ...unit });
+        }
+    }
+
     if (Number.isFinite(budget)) {
         while (countTokens(renderBlocks(workingBlocks)) > budget) {
             const ordinaryRetrievedBlock = workingBlocks.find(candidate => (
@@ -19,9 +28,11 @@ export function composeAtomicContext(sourceBlocks, budget, countTokens) {
             if (!block) break;
             const unitIndex = ordinaryRetrievedBlock
                 ? block.units.findIndex(unit => unit.retrieved && !unit.pinned)
-                : retrievedBlock ? block.units.findIndex(unit => unit.retrieved) : 0;
+                : retrievedBlock
+                    ? block.units.findIndex(unit => unit.retrieved)
+                    : findLowestPriorityUnitIndex(block.units);
             const [unit] = block.units.splice(unitIndex, 1);
-            omittedUnits.push({ kind: block.kind, name: block.name, ...unit });
+            omittedUnits.push({ kind: block.kind, name: block.name, reason: 'total-budget', ...unit });
         }
     }
 
@@ -37,16 +48,33 @@ export function composeAtomicContext(sourceBlocks, budget, countTokens) {
         blocks: sourceBlocks.map(source => {
             const output = workingBlocks.find(block => block.kind === source.kind);
             const omitted = omittedUnits.filter(unit => unit.kind === source.kind);
+            const sourceContent = source.enabled && source.units.length ? renderBlock(source) : '';
+            const outputContent = output?.enabled && output.units.length ? renderBlock(output) : '';
             return {
                 kind: source.kind,
                 name: source.name,
                 enabled: source.enabled,
+                budget: source.unitBudget,
+                sourceTokenCount: countTokens(sourceContent),
+                outputTokenCount: countTokens(outputContent),
                 sourceCount: source.units.length,
                 outputCount: output?.units.length || 0,
                 omittedItems: omitted.map(unit => ({ id: unit.id, label: unit.label })),
             };
         }),
     };
+}
+
+function findLowestPriorityUnitIndex(units) {
+    let lowestIndex = 0;
+    let lowestPriority = Number(units[0]?.priority) || 0;
+    for (let index = 1; index < units.length; index++) {
+        const priority = Number(units[index]?.priority) || 0;
+        if (priority >= lowestPriority) continue;
+        lowestIndex = index;
+        lowestPriority = priority;
+    }
+    return lowestIndex;
 }
 
 function renderBlocks(blocks) {

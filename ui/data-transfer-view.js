@@ -69,7 +69,7 @@ function bindCurrentChatDataTransfer(root, onDataChanged) {
             assertAvailable();
             const confirmed = await Popup.show.confirm(
                 '현재 채팅방의 Sumi 요약 데이터를 모두 초기화할까요?',
-                '요약 기록, 도감 수정·번역·삭제 상태, 최근 수정 대화가 삭제됩니다. 확장 전역 설정은 유지됩니다.',
+                '요약 기록, 도감 수정·번역·검색 설정·삭제 상태, 최근 수정 대화가 삭제됩니다. 확장 전역 설정은 유지됩니다.',
                 { okButton: '전체 초기화', cancelButton: '취소' },
             );
             if (!confirmed) return;

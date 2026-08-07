@@ -17,6 +17,7 @@ import { bindItemMemoryView, renderItemMemory } from './memory/item-memory-view.
 import { invalidateAtlasProjection } from './memory/atlas-projection-service.js';
 import { bindCommitmentMemoryView, renderCommitmentMemory } from './memory/commitment-memory-view.js';
 import { bindEventMemoryView, renderEventMemory } from './memory/event-memory-view.js';
+import { bindAtlasFullscreenView } from './memory/atlas-fullscreen-view.js';
 import {
     bindLongTermRetrievalSettings,
     renderLongTermRetrievalSettings,
@@ -197,6 +198,7 @@ function bindEvents(root) {
     bindItemMemoryView(root);
     bindCommitmentMemoryView(root);
     bindEventMemoryView(root);
+    bindAtlasFullscreenView(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {
             synchronizeRevisionSessionRanges(updatedRecords);
@@ -217,6 +219,9 @@ function bindEvents(root) {
 
 function bindSummarizationSettings(root) {
     const maxTokens = root.querySelector('#stsm-injection-max-tokens');
+    const eventMaxTokens = root.querySelector('#stsm-event-injection-max-tokens');
+    const personMaxTokens = root.querySelector('#stsm-person-injection-max-tokens');
+    const personMessageCount = root.querySelector('#stsm-person-search-message-count');
     const outputLanguage = root.querySelector('#stsm-summary-output-language');
     const mode = root.querySelector('#stsm-injection-mode');
     const depth = root.querySelector('#stsm-injection-depth');
@@ -248,6 +253,13 @@ function bindSummarizationSettings(root) {
     });
 
     maxTokens.addEventListener('change', event => setSummarizationSettings({ injectionMaxTokens: event.target.value }));
+    eventMaxTokens.addEventListener('change', event => setSummarizationSettings({ eventInjectionMaxTokens: event.target.value }));
+    personMaxTokens.addEventListener('change', event => setSummarizationSettings({
+        personRetrieval: { ...getSettings().summarization.personRetrieval, maxTokens: event.target.value },
+    }));
+    personMessageCount.addEventListener('change', event => setSummarizationSettings({
+        personRetrieval: { ...getSettings().summarization.personRetrieval, messageCount: event.target.value },
+    }));
     outputLanguage.addEventListener('change', event => {
         setSummarizationSettings({ outputLanguage: event.target.value });
         root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
@@ -283,6 +295,9 @@ function bindSummarizationSettings(root) {
 function renderSummarizationSettings(root) {
     const settings = getSettings().summarization;
     root.querySelector('#stsm-injection-max-tokens').value = settings.injectionMaxTokens;
+    root.querySelector('#stsm-event-injection-max-tokens').value = settings.eventInjectionMaxTokens;
+    root.querySelector('#stsm-person-injection-max-tokens').value = settings.personRetrieval.maxTokens;
+    root.querySelector('#stsm-person-search-message-count').value = settings.personRetrieval.messageCount;
     root.querySelector('#stsm-summary-output-language').value = settings.outputLanguage;
     root.querySelector('#stsm-injection-mode').value = settings.injection.mode;
     root.querySelector('#stsm-injection-depth').value = settings.injection.depth;
@@ -980,6 +995,11 @@ function initialize() {
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
     });
+    window.addEventListener('stsm:injection-settings-changed', () => {
+        if (!currentRoot) return;
+        renderPeopleMemory(currentRoot);
+        renderEventMemory(currentRoot);
+    });
     [
         context.eventTypes.MESSAGE_SENT,
         context.eventTypes.MESSAGE_RECEIVED,
@@ -992,6 +1012,7 @@ function initialize() {
             if (!currentRoot) return;
             renderSummaryStatus(currentRoot);
             refreshSummaryRecordSourceStates(currentRoot);
+            renderPeopleMemory(currentRoot);
         }));
     initializeSummaryContext();
     initializeMessageVisibility();

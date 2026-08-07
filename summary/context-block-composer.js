@@ -1,6 +1,8 @@
 import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
+import { getPeopleRetrievalMetadata } from '../memory/atlas-metadata.js';
+import { evaluatePeopleRetrieval } from '../memory/people-retrieval.js';
 import { getActiveSummaryRecords } from './summary-store.js';
 import { composeAtomicContext } from './context-block-trimmer.js';
 
@@ -8,13 +10,27 @@ export function buildContextBlockComposition(budget = Infinity, {
     records = getActiveSummaryRecords(),
     retrievedRecordIds = [],
     pinnedRecordIds = [],
+    messages = SillyTavern.getContext().chat,
 } = {}) {
     const settings = getSettings().summarization;
+    const atlas = getAtlasProjection();
+    const peopleRetrieval = evaluatePeopleRetrieval({
+        people: atlas.people,
+        messages,
+        metadata: getPeopleRetrievalMetadata(),
+        messageCount: settings.personRetrieval.messageCount,
+    });
     const sourceBlocks = buildRenderedBlocks(
         settings.contextBlocks,
         records,
-        getAtlasProjection(),
-        { retrievedRecordIds, pinnedRecordIds },
+        atlas,
+        {
+            retrievedRecordIds,
+            pinnedRecordIds,
+            eventBudget: settings.eventInjectionMaxTokens,
+            personBudget: settings.personRetrieval.maxTokens,
+            peopleRetrieval,
+        },
     );
     return composeAtomicContext(sourceBlocks, budget, getTokenCount);
 }
@@ -22,9 +38,14 @@ export function buildContextBlockComposition(budget = Infinity, {
 export function buildRenderedBlocks(blockSettings, records, atlas, {
     retrievedRecordIds = [],
     pinnedRecordIds = [],
+    eventBudget = Infinity,
+    personBudget = Infinity,
+    peopleRetrieval = [],
 } = {}) {
     const retrievedIds = new Set(retrievedRecordIds.map(String));
     const pinnedIds = new Set(pinnedRecordIds.map(String));
+    const events = buildEventUnits(atlas?.events || []);
+    const peopleRetrievalById = new Map(peopleRetrieval.map(result => [String(result.person.id), result]));
     const sources = {
         [SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS]: [...(records || [])]
             .sort((left, right) => left.startId - right.startId || left.endId - right.endId)
@@ -39,16 +60,16 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
                     sumiRecordContent: record.content,
                 },
             })),
-        [SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS]: (atlas?.events || []).map(event => ({
-            id: event.id,
-            label: event.title,
-            values: renderEventValues(event),
-        })),
-        [SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE]: (atlas?.people || []).map(person => ({
-            id: person.id,
-            label: person.name,
-            values: renderPersonValues(person),
-        })),
+        [SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS]: events,
+        [SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE]: (atlas?.people || []).map(person => {
+            const retrieval = peopleRetrievalById.get(String(person.id));
+            return {
+                id: person.id,
+                label: person.name,
+                priority: retrieval?.priority || 0,
+                values: renderPersonValues(person),
+            };
+        }),
         [SUMMARY_CONTEXT_BLOCK_KINDS.ITEMS]: (atlas?.items || []).map(item => ({
             id: item.id,
             label: item.name,
@@ -67,14 +88,44 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
         enabled: block.enabled,
         prefixTemplate: block.prefixTemplate,
         suffixTemplate: block.suffixTemplate,
+        unitBudget: block.kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS
+            ? eventBudget
+            : block.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE ? personBudget : Infinity,
         units: (sources[block.kind] || []).map(unit => ({
             id: unit.id,
             label: unit.label,
             retrieved: Boolean(unit.retrieved),
             pinned: Boolean(unit.pinned),
+            priority: Number(unit.priority) || 0,
             content: renderTemplate(block.entryTemplate, unit.values),
         })).filter(unit => unit.content),
     }));
+}
+
+function buildEventUnits(events) {
+    const chronological = [...events].sort((left, right) => (
+        getEventPosition(left) - getEventPosition(right)
+        || String(left.id).localeCompare(String(right.id))
+    ));
+    const positions = chronological.map(getEventPosition);
+    const oldest = positions.length ? Math.min(...positions) : 0;
+    const newest = positions.length ? Math.max(...positions) : 0;
+    const span = newest - oldest;
+
+    return chronological.map(event => {
+        const recency = span > 0 ? (getEventPosition(event) - oldest) / span : 0;
+        return {
+            id: event.id,
+            label: event.title,
+            // The recency bonus stays below one, so a minor event never outranks a major event.
+            priority: (event.importance === 'major' ? 2 : 1) + (recency * 0.999),
+            values: renderEventValues(event),
+        };
+    });
+}
+
+function getEventPosition(event) {
+    return Number(event?.firstSeenRange?.endId ?? event?.lastUpdatedRange?.endId) || 0;
 }
 
 function renderTemplate(template, values) {

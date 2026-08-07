@@ -540,7 +540,6 @@
     flex: 1;
     flex-direction: column;
     gap: 18px;
-    overflow-y: auto;
 }
 
 .stsm-atlas-section {
@@ -565,6 +564,68 @@
 .stsm-atlas-section-heading > span {
     font-size: 0.84em;
     opacity: 0.65;
+}
+
+.stsm-atlas-section-heading .stsm-atlas-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    opacity: 1;
+}
+
+.stsm-atlas-heading-actions > span {
+    opacity: 0.65;
+}
+
+.stsm-atlas-heading-actions .menu_button {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+}
+
+.stsm-atlas-section-scroll {
+    display: flex;
+    height: clamp(260px, 48vh, 380px);
+    min-height: 0;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    padding: 8px;
+    padding-right: 0px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    scrollbar-gutter: stable;
+}
+
+.stsm-atlas-fullscreen {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.stsm-atlas-fullscreen-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.stsm-atlas-fullscreen-toolbar strong {
+    font-size: 1.05em;
+}
+
+.stsm-atlas-fullscreen .stsm-atlas-section-scroll {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+    overscroll-behavior: contain;
 }
 
 .stsm-people-memory-list,
@@ -740,6 +801,63 @@
     min-width: 30px;
     height: 30px;
     padding: 0;
+}
+
+.stsm-person-pin[aria-pressed="true"] {
+    border-color: var(--SmartThemeQuoteColor);
+    background-color: color-mix(in srgb, transparent, var(--SmartThemeQuoteColor) 18%);
+    color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-person-retrieval-state {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 0;
+    border-top: 1px solid rgb(128 128 128 / 20%);
+    border-bottom: 1px solid rgb(128 128 128 / 20%);
+    font-size: 0.78em;
+}
+
+.stsm-person-keywords {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.stsm-person-keywords > span {
+    padding: 2px 5px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+}
+
+.stsm-person-keywords small,
+.stsm-person-keyword-editor p {
+    opacity: 0.62;
+}
+
+.stsm-person-match-state {
+    flex: 0 1 auto;
+    text-align: right;
+    overflow-wrap: anywhere;
+    opacity: 0.68;
+}
+
+.stsm-person-match-state.is-pinned {
+    color: var(--SmartThemeQuoteColor);
+    opacity: 1;
+}
+
+.stsm-person-keyword-editor {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .stsm-atlas-translation {
@@ -2282,6 +2400,60 @@
     resize: vertical;
 }
 
+.stsm-token-usage {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    background-color: rgb(128 128 128 / 5%);
+}
+
+.stsm-token-usage-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.82em;
+}
+
+.stsm-token-usage-heading span {
+    text-align: right;
+    overflow-wrap: anywhere;
+    opacity: 0.7;
+}
+
+.stsm-token-usage-track {
+    width: 100%;
+    height: 8px;
+    overflow: hidden;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    background-color: rgb(128 128 128 / 16%);
+}
+
+.stsm-token-usage-track > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--SmartThemeQuoteColor);
+    transition: width 160ms ease;
+}
+
+.stsm-token-usage[data-level="warning"] .stsm-token-usage-track > span {
+    background-color: var(--warning-color, #dba457);
+}
+
+.stsm-token-usage[data-level="critical"] .stsm-token-usage-track > span {
+    background-color: #c94f55;
+}
+
+.stsm-token-usage[data-disabled="true"] {
+    opacity: 0.58;
+}
+
 .stsm-context-token-status {
     display: flex;
     align-items: center;
@@ -2890,6 +3062,24 @@
 
     .stsm-atlas-card-actions {
         justify-content: flex-start;
+    }
+
+    .stsm-person-retrieval-state {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .stsm-person-match-state {
+        text-align: left;
+    }
+
+    .stsm-token-usage-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .stsm-token-usage-heading span {
+        text-align: left;
     }
 
     .stsm-person-field,

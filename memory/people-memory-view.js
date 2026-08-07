@@ -1,12 +1,21 @@
 import { escapeHtml } from '../core/utils.js';
-import { Popup } from '../../../../../scripts/popup.js';
+import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
+import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
-import { getAtlasTranslations } from './atlas-metadata.js';
+import {
+    getAtlasTranslations,
+    getPeopleRetrievalMetadata,
+    getPersonRetrievalMetadata,
+    savePersonRetrievalMetadata,
+} from './atlas-metadata.js';
 import { getPeopleAtlas } from './people-memory-service.js';
+import { evaluatePeopleRetrieval } from './people-retrieval.js';
+import { buildSummaryContextDetails } from '../summary/summary-context.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
+import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 
 const FIELD_DEFINITIONS = Object.freeze([
     { key: 'role', label: '극중 역할' },
@@ -36,22 +45,47 @@ export function renderPeopleMemory(root) {
     const list = root.querySelector('#stsm-people-memory-list');
     const excludedHost = root.querySelector('#stsm-people-memory-excluded');
     const count = root.querySelector('#stsm-people-memory-count');
+    const tokenUsage = root.querySelector('#stsm-people-token-usage');
     const skipped = root.querySelector('#stsm-people-memory-skipped');
     if (!list || !excludedHost || !count || !skipped) return;
 
     const atlas = getPeopleAtlas();
+    const settings = getSettings().summarization;
     const translations = getAtlasTranslations('people');
+    const retrievalMetadata = getPeopleRetrievalMetadata();
+    const retrieval = evaluatePeopleRetrieval({
+        people: atlas.people,
+        messages: SillyTavern.getContext().chat,
+        metadata: retrievalMetadata,
+        messageCount: settings.personRetrieval.messageCount,
+    });
+    const retrievalById = new Map(retrieval.map(result => [String(result.person.id), result]));
     const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.people.length.toLocaleString()}명`;
+    if (tokenUsage) {
+        const details = buildSummaryContextDetails();
+        const block = details.blocks?.find(item => item.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE);
+        tokenUsage.innerHTML = renderTokenUsageBar({
+            label: '인물 도감 주입',
+            used: block?.outputTokenCount || 0,
+            max: block?.budget ?? settings.personRetrieval.maxTokens,
+            enabled: Boolean(details.enabled && block?.enabled),
+        });
+    }
     skipped.innerHTML = renderSkippedUpdates(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.people.length
-        ? atlas.people.map(person => renderPerson(person, translations[person.id])).join('')
+        ? atlas.people.map(person => renderPerson(
+            person,
+            translations[person.id],
+            retrievalMetadata[person.id] || { keywords: [], pinned: false },
+            retrievalById.get(String(person.id)),
+        )).join('')
         : '<div class="stsm-empty">아직 추출된 인물 도감이 없습니다.</div>';
     excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
-function renderPerson(person, cachedTranslation) {
+function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval) {
     const translation = getValidAtlasTranslation('people', person, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(person.manualCorrections || {}).length);
     return `
@@ -65,6 +99,11 @@ function renderPerson(person, cachedTranslation) {
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
+                        ${renderAction('pin', 'fa-thumbtack', retrievalMetadata.pinned ? '고정 해제' : '고정', {
+                            className: 'stsm-person-pin',
+                            pressed: retrievalMetadata.pinned,
+                        })}
+                        ${renderAction('keywords', 'fa-key', '검색 키워드 편집')}
                         ${renderAction('edit', 'fa-pen', '수정')}
                         ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
@@ -77,6 +116,7 @@ function renderPerson(person, cachedTranslation) {
                     </div>
                 </div>
             </header>
+            ${renderRetrievalState(retrievalMetadata, retrieval)}
             <div class="stsm-person-fields stsm-atlas-original">
                 ${FIELD_DEFINITIONS.map(field => field.list
                     ? renderField(field.label, person[field.key])
@@ -112,6 +152,12 @@ async function handleAtlasAction(event, category) {
     try {
         if (button.dataset.atlasAction === 'edit') {
             await showAtlasEditor(category, entityId);
+        } else if (button.dataset.atlasAction === 'pin') {
+            const current = getPersonRetrievalMetadata(entityId);
+            await savePersonRetrievalMetadata(entityId, { ...current, pinned: !current.pinned });
+            toastr.success(current.pinned ? '인물 고정을 해제했습니다.' : '인물을 우선 고정했습니다.');
+        } else if (button.dataset.atlasAction === 'keywords') {
+            await showPersonKeywordEditor(person);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity(category, entityId, person.name);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
@@ -165,8 +211,54 @@ function showTranslatedCard(list, entityId) {
     if (refreshedCard && toggle) toggleTranslation(refreshedCard, toggle);
 }
 
-function renderAction(action, icon, title) {
-    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"><i class="fa-solid ${icon}"></i></button>`;
+function renderAction(action, icon, title, { className = '', pressed = null } = {}) {
+    return `<button class="menu_button menu_button_icon interactable ${className}" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"${pressed === null ? '' : ` aria-pressed="${pressed}"`}><i class="fa-solid ${icon}"></i></button>`;
+}
+
+function renderRetrievalState(metadata, retrieval) {
+    const keywords = Array.isArray(metadata.keywords) ? metadata.keywords : [];
+    const status = metadata.pinned
+        ? '<i class="fa-solid fa-thumbtack" aria-hidden="true"></i> 고정 우선'
+        : retrieval?.matchedKeywords?.length
+            ? `<i class="fa-solid fa-link" aria-hidden="true"></i> ${retrieval.matchedKeywords.length}개 일치: ${retrieval.matchedKeywords.map(escapeHtml).join(', ')}`
+            : '<i class="fa-solid fa-minus" aria-hidden="true"></i> 현재 문맥 일치 없음';
+    return `
+        <div class="stsm-person-retrieval-state">
+            <div class="stsm-person-keywords">
+                <i class="fa-solid fa-key" aria-hidden="true"></i>
+                ${keywords.length
+        ? keywords.map(keyword => `<span>${escapeHtml(keyword)}</span>`).join('')
+        : '<small>사용자 검색 키워드 없음</small>'}
+            </div>
+            <span class="stsm-person-match-state${metadata.pinned ? ' is-pinned' : ''}">${status}</span>
+        </div>
+    `;
+}
+
+async function showPersonKeywordEditor(person) {
+    const current = getPersonRetrievalMetadata(person.id);
+    const form = document.createElement('div');
+    form.className = 'stsm-person-keyword-editor';
+    form.innerHTML = `
+        <div class="stsm-section-title">${escapeHtml(person.name)} 검색 키워드</div>
+        <p>최근 채팅과 비교할 키워드를 한 줄에 하나씩 입력하세요. 이름과 별칭은 자동으로 추가되지 않습니다.</p>
+        <textarea class="text_pole" rows="10" placeholder="예:&#10;로완&#10;교수&#10;greenhouse"></textarea>
+    `;
+    form.querySelector('textarea').value = current.keywords.join('\n');
+    const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
+        okButton: '저장',
+        cancelButton: '취소',
+        wide: true,
+        allowVerticalScrolling: true,
+    });
+    if (await popup.show() !== 1) return false;
+    const keywords = form.querySelector('textarea').value
+        .split(/\r?\n/)
+        .map(value => value.trim())
+        .filter(Boolean);
+    await savePersonRetrievalMetadata(person.id, { ...current, keywords });
+    toastr.success('인물 검색 키워드를 저장했습니다.');
+    return true;
 }
 
 function renderCorrectionState(corrections) {

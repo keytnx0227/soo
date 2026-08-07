@@ -1,5 +1,6 @@
 import { Popup } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
+import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
@@ -7,6 +8,8 @@ import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEdit
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getEventAtlas } from './event-memory-service.js';
+import { buildSummaryContextDetails } from '../summary/summary-context.js';
+import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 
 export function bindEventMemoryView(root) {
     const list = root.querySelector('#stsm-event-memory-list');
@@ -26,6 +29,7 @@ export function renderEventMemory(root) {
     const list = root.querySelector('#stsm-event-memory-list');
     const excludedHost = root.querySelector('#stsm-event-memory-excluded');
     const count = root.querySelector('#stsm-event-memory-count');
+    const tokenUsage = root.querySelector('#stsm-event-token-usage');
     const skipped = root.querySelector('#stsm-event-memory-skipped');
     if (!list || !excludedHost || !count || !skipped) return;
 
@@ -33,6 +37,16 @@ export function renderEventMemory(root) {
     const translations = getAtlasTranslations('events');
     const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.events.length.toLocaleString()}개`;
+    if (tokenUsage) {
+        const details = buildSummaryContextDetails();
+        const block = details.blocks?.find(item => item.kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS);
+        tokenUsage.innerHTML = renderTokenUsageBar({
+            label: '주요 사건 주입',
+            used: block?.outputTokenCount || 0,
+            max: block?.budget ?? getSettings().summarization.eventInjectionMaxTokens,
+            enabled: Boolean(details.enabled && block?.enabled),
+        });
+    }
     skipped.innerHTML = renderWarnings(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.events.length

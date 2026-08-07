@@ -94,6 +94,7 @@ export function buildSummaryContextDetails() {
         records: [...activeRecords, ...selectedRecords],
         retrievedRecordIds: selectedRecords.map(record => record.id),
         pinnedRecordIds,
+        messages: context.chat,
     });
     return {
         enabled: true,

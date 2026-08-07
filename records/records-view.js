@@ -10,6 +10,7 @@ import { getRecordTags } from './record-tags.js';
 import { openRecordTagEditor, renderRecordTagSummary } from './record-tags-view.js';
 import { renderRecordMemoryUpdateBadge } from './record-memory-updates-view.js';
 import { getExtensionState, subscribeExtensionState } from '../core/extension-state.js';
+import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 import { renderExtensionControls } from '../ui/extension-status-view.js';
 import { renderRecordSearchControls } from '../ui/popup-template.js';
 import { renderLongTermRetrievalPreview } from '../memory/long-term-retrieval-view.js';
@@ -312,7 +313,16 @@ async function showSummaryContextPreview() {
         const message = details.enabled
             ? '활성화된 블록에 전송할 요약 또는 도감 항목이 없습니다.'
             : '요약 확장이 꺼져 있어 매크로 결과가 비어 있습니다.';
-        content.innerHTML = `<div class="stsm-section-title">{{sumiSummary}} 미리보기</div><div class="stsm-empty">${message}</div>`;
+        content.innerHTML = `
+            <div class="stsm-section-title">{{sumiSummary}} 미리보기</div>
+            ${renderTokenUsageBar({
+                label: '요약 합본',
+                used: details.outputTokenCount,
+                max: details.budget,
+                enabled: details.enabled,
+            })}
+            <div class="stsm-empty">${message}</div>
+        `;
     } else {
         const preview = details.content
             ? '<textarea class="text_pole monospace" rows="24" readonly></textarea>'
@@ -320,6 +330,12 @@ async function showSummaryContextPreview() {
         content.innerHTML = `
             <label class="stsm-field">
                 <span class="stsm-section-title">{{sumiSummary}} 미리보기</span>
+                ${renderTokenUsageBar({
+                    label: '요약 합본',
+                    used: details.outputTokenCount,
+                    max: details.budget,
+                    enabled: details.enabled,
+                })}
                 ${renderContextTokenStatus(details)}
                 ${renderLongTermRetrievalPreview(details.retrieval)}
                 ${preview}
@@ -356,7 +372,7 @@ function renderContextTokenStatus(details) {
         <div class="stsm-context-token-status stsm-context-token-status-warning">
             <div class="stsm-context-token-heading">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <strong>토큰 제한으로 앞쪽 항목부터 제외했어요.</strong>
+                <strong>토큰 제한에 따라 일부 항목을 제외했어요.</strong>
             </div>
             <div>원본 ${details.originalTokenCount.toLocaleString()} tokens → 전송 ${tokenSummary}</div>
             ${omitted}

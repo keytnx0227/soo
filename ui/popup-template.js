@@ -206,38 +206,48 @@ export function buildPopup() {
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
                         <strong>인물 도감</strong>
-                        <span id="stsm-people-memory-count">0명</span>
+                        ${renderAtlasHeadingActions('people', 'stsm-people-memory-count', '0명', '인물 도감')}
                     </div>
-                    <div id="stsm-people-memory-skipped" class="stsm-people-memory-warning" hidden></div>
-                    <div id="stsm-people-memory-list" class="stsm-people-memory-list"></div>
-                    <div id="stsm-people-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    <div id="stsm-people-token-usage"></div>
+                    <div class="stsm-atlas-section-scroll">
+                        <div id="stsm-people-memory-skipped" class="stsm-people-memory-warning" hidden></div>
+                        <div id="stsm-people-memory-list" class="stsm-people-memory-list"></div>
+                        <div id="stsm-people-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    </div>
                 </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
                         <strong>아이템 도감</strong>
-                        <span id="stsm-item-memory-count">0개</span>
+                        ${renderAtlasHeadingActions('items', 'stsm-item-memory-count', '0개', '아이템 도감')}
                     </div>
-                    <div id="stsm-item-memory-skipped" class="stsm-item-memory-warning" hidden></div>
-                    <div id="stsm-item-memory-list" class="stsm-item-memory-list"></div>
-                    <div id="stsm-item-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    <div class="stsm-atlas-section-scroll">
+                        <div id="stsm-item-memory-skipped" class="stsm-item-memory-warning" hidden></div>
+                        <div id="stsm-item-memory-list" class="stsm-item-memory-list"></div>
+                        <div id="stsm-item-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    </div>
                 </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
                         <strong>서약 장부</strong>
-                        <span id="stsm-commitment-memory-count">0개</span>
+                        ${renderAtlasHeadingActions('commitments', 'stsm-commitment-memory-count', '0개', '서약 장부')}
                     </div>
-                    <div id="stsm-commitment-memory-skipped" class="stsm-commitment-memory-warning" hidden></div>
-                    <div id="stsm-commitment-memory-list" class="stsm-commitment-memory-list"></div>
-                    <div id="stsm-commitment-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    <div class="stsm-atlas-section-scroll">
+                        <div id="stsm-commitment-memory-skipped" class="stsm-commitment-memory-warning" hidden></div>
+                        <div id="stsm-commitment-memory-list" class="stsm-commitment-memory-list"></div>
+                        <div id="stsm-commitment-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    </div>
                 </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
                         <strong>주요 사건</strong>
-                        <span id="stsm-event-memory-count">0개</span>
+                        ${renderAtlasHeadingActions('events', 'stsm-event-memory-count', '0개', '주요 사건')}
                     </div>
-                    <div id="stsm-event-memory-skipped" class="stsm-event-memory-warning" hidden></div>
-                    <div id="stsm-event-memory-list" class="stsm-event-memory-list"></div>
-                    <div id="stsm-event-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    <div id="stsm-event-token-usage"></div>
+                    <div class="stsm-atlas-section-scroll">
+                        <div id="stsm-event-memory-skipped" class="stsm-event-memory-warning" hidden></div>
+                        <div id="stsm-event-memory-list" class="stsm-event-memory-list"></div>
+                        <div id="stsm-event-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    </div>
                 </section>
             </div>
         </section>
@@ -276,6 +286,18 @@ export function buildPopup() {
                 <label class="stsm-field">
                     <span>요약 주입 최대 토큰</span>
                     <input id="stsm-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
+                </label>
+                <label class="stsm-field" title="중요도와 최신성 점수가 높은 사건부터 이 예산 안에 선발합니다.">
+                    <span>주요 사건 최대 토큰</span>
+                    <input id="stsm-event-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
+                </label>
+                <label class="stsm-field" title="고정 여부와 사용자 검색 키워드 점수가 높은 인물부터 이 예산 안에 선발합니다.">
+                    <span>인물 도감 최대 토큰</span>
+                    <input id="stsm-person-injection-max-tokens" class="text_pole" type="number" min="100" max="100000" step="100" />
+                </label>
+                <label class="stsm-field" title="인물의 사용자 검색 키워드를 비교할 최근 채팅 메시지 수입니다.">
+                    <span>인물 검색 메시지 수</span>
+                    <input id="stsm-person-search-message-count" class="text_pole" type="number" min="1" max="100" step="1" />
                 </label>
                 <label class="stsm-field">
                     <span>기본 압축 레코드 수</span>
@@ -448,6 +470,17 @@ function renderMemorySectionToggle(section, label) {
 
 function renderPromptInspector(type, label) {
     return `<div class="stsm-token-meter"><span>전송 토큰 수</span><strong id="stsm-token-count-${type}">계산 대기 중</strong><button class="stsm-preview-prompt menu_button menu_button_icon interactable" data-preview-type="${type}" type="button" title="${label} 전체 보기" aria-label="${label} 전체 보기"><i class="fa-solid fa-eye"></i></button></div>`;
+}
+
+function renderAtlasHeadingActions(category, countId, initialCount, label) {
+    return `
+        <span class="stsm-atlas-heading-actions">
+            <span id="${countId}">${initialCount}</span>
+            <button class="menu_button menu_button_icon interactable" data-atlas-fullscreen="${category}" type="button" title="${label} 크게 보기" aria-label="${label} 크게 보기">
+                <i class="fa-solid fa-expand" aria-hidden="true"></i>
+            </button>
+        </span>
+    `;
 }
 
 function renderTab(name, label, active = false) {

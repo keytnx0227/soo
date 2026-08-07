@@ -79,6 +79,31 @@ export async function saveAtlasTranslation(category, entityId, translation) {
     return getAtlasTranslation(category, entityId);
 }
 
+export function getPeopleRetrievalMetadata() {
+    return structuredClone(getAtlasStore().retrieval.people);
+}
+
+export function getPersonRetrievalMetadata(entityId) {
+    return structuredClone(getAtlasStore().retrieval.people[String(entityId)] || { keywords: [], pinned: false });
+}
+
+export async function savePersonRetrievalMetadata(entityId, value) {
+    const store = getAtlasStore();
+    const previous = structuredClone(store.retrieval.people);
+    const id = String(entityId);
+    const normalized = normalizePersonRetrieval(value);
+    if (normalized.keywords.length || normalized.pinned) store.retrieval.people[id] = normalized;
+    else delete store.retrieval.people[id];
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.retrieval.people = previous;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return getPersonRetrievalMetadata(id);
+}
+
 function getAtlasStore() {
     const metadata = SillyTavern.getContext().chatMetadata;
     if (!metadata[METADATA_KEY] || typeof metadata[METADATA_KEY] !== 'object') {
@@ -88,6 +113,8 @@ function getAtlasStore() {
     if (!root.atlas || typeof root.atlas !== 'object') root.atlas = {};
     if (!root.atlas.corrections || typeof root.atlas.corrections !== 'object') root.atlas.corrections = {};
     if (!root.atlas.translations || typeof root.atlas.translations !== 'object') root.atlas.translations = {};
+    if (!root.atlas.retrieval || typeof root.atlas.retrieval !== 'object') root.atlas.retrieval = {};
+    root.atlas.retrieval.people = normalizeEntityMap(root.atlas.retrieval.people, normalizePersonRetrieval);
     for (const category of CATEGORIES) {
         root.atlas.corrections[category] = normalizeEntityMap(
             root.atlas.corrections[category],
@@ -168,6 +195,24 @@ function normalizeTranslation(value) {
         provider: ['google', 'bing'].includes(value.provider) ? value.provider : 'google',
         targetLanguage: String(value.targetLanguage || 'ko'),
         translatedAt: String(value.translatedAt || new Date().toISOString()),
+    };
+}
+
+function normalizePersonRetrieval(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    const keywords = Array.isArray(source.keywords) ? source.keywords : [];
+    const normalizedKeywords = [];
+    const seen = new Set();
+    for (const keywordValue of keywords) {
+        const keyword = String(keywordValue || '').trim();
+        const identity = keyword.normalize('NFKC').toLocaleLowerCase();
+        if (!keyword || seen.has(identity)) continue;
+        seen.add(identity);
+        normalizedKeywords.push(keyword);
+    }
+    return {
+        keywords: normalizedKeywords,
+        pinned: Boolean(source.pinned),
     };
 }
 

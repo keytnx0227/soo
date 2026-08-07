@@ -678,6 +678,11 @@ export const defaultSettings = Object.freeze({
         summarySections: DEFAULT_SUMMARY_SECTIONS,
         memorySections: DEFAULT_MEMORY_SECTIONS,
         injectionMaxTokens: 24000,
+        eventInjectionMaxTokens: 4000,
+        personRetrieval: {
+            maxTokens: 6000,
+            messageCount: 6,
+        },
         autoHideSummarizedMessages: false,
         summaryContentTemplate: DEFAULT_SUMMARY_CONTENT_TEMPLATE,
         summaryContentTemplatePreset: 'compact',
@@ -1408,6 +1413,15 @@ function normalizeSettings(settings, {
     settings.summarization.memorySections = normalizeMemorySections(settings.summarization.memorySections);
     delete settings.summarization.autoStartFromLastSummary;
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
+    settings.summarization.eventInjectionMaxTokens = clampInteger(
+        settings.summarization.eventInjectionMaxTokens,
+        100,
+        200000,
+        defaultSettings.summarization.eventInjectionMaxTokens,
+    );
+    settings.summarization.personRetrieval = normalizePersonRetrievalSettings(
+        settings.summarization.personRetrieval,
+    );
     settings.summarization.autoHideSummarizedMessages = Boolean(settings.summarization.autoHideSummarizedMessages);
     const summaryContentTemplate = String(
         settings.summarization.summaryContentTemplate || defaultSettings.summarization.summaryContentTemplate,
@@ -1468,6 +1482,14 @@ function normalizeLongTermRetrievalSettings(value) {
         relevance: ['loose', 'balanced', 'strict'].includes(source.relevance) ? source.relevance : 'balanced',
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
+    };
+}
+
+function normalizePersonRetrievalSettings(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return {
+        maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
+        messageCount: clampInteger(source.messageCount, 1, 100, 6),
     };
 }
 
