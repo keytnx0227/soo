@@ -4,23 +4,29 @@ import { getAtlasProjection } from '../memory/atlas-projection-service.js';
 import { getActiveSummaryRecords } from './summary-store.js';
 import { composeAtomicContext } from './context-block-trimmer.js';
 
-export function buildContextBlockComposition(budget = Infinity) {
+export function buildContextBlockComposition(budget = Infinity, {
+    records = getActiveSummaryRecords(),
+    retrievedRecordIds = [],
+} = {}) {
     const settings = getSettings().summarization;
     const sourceBlocks = buildRenderedBlocks(
         settings.contextBlocks,
-        getActiveSummaryRecords(),
+        records,
         getAtlasProjection(),
+        { retrievedRecordIds },
     );
     return composeAtomicContext(sourceBlocks, budget, getTokenCount);
 }
 
-export function buildRenderedBlocks(blockSettings, records, atlas) {
+export function buildRenderedBlocks(blockSettings, records, atlas, { retrievedRecordIds = [] } = {}) {
+    const retrievedIds = new Set(retrievedRecordIds.map(String));
     const sources = {
         [SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS]: [...(records || [])]
             .sort((left, right) => left.startId - right.startId || left.endId - right.endId)
             .map(record => ({
                 id: String(record.id),
                 label: `#${record.startId} ~ #${record.endId}`,
+                retrieved: retrievedIds.has(String(record.id)),
                 values: {
                     sumiRecordStartId: record.startId,
                     sumiRecordEndId: record.endId,
@@ -58,6 +64,7 @@ export function buildRenderedBlocks(blockSettings, records, atlas) {
         units: (sources[block.kind] || []).map(unit => ({
             id: unit.id,
             label: unit.label,
+            retrieved: Boolean(unit.retrieved),
             content: renderTemplate(block.entryTemplate, unit.values),
         })).filter(unit => unit.content),
     }));

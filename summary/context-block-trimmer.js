@@ -9,9 +9,14 @@ export function composeAtomicContext(sourceBlocks, budget, countTokens) {
 
     if (Number.isFinite(budget)) {
         while (countTokens(renderBlocks(workingBlocks)) > budget) {
-            const block = workingBlocks.find(candidate => candidate.enabled && candidate.units.length);
+            const retrievedBlock = workingBlocks.find(candidate => (
+                candidate.enabled && candidate.units.some(unit => unit.retrieved)
+            ));
+            const block = retrievedBlock || workingBlocks.find(candidate => candidate.enabled && candidate.units.length);
             if (!block) break;
-            omittedUnits.push({ kind: block.kind, name: block.name, ...block.units.shift() });
+            const unitIndex = retrievedBlock ? block.units.findIndex(unit => unit.retrieved) : 0;
+            const [unit] = block.units.splice(unitIndex, 1);
+            omittedUnits.push({ kind: block.kind, name: block.name, ...unit });
         }
     }
 

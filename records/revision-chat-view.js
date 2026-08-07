@@ -7,6 +7,7 @@ import {
 } from '../core/extension-state.js';
 import { generateSummary } from '../connection/generation.js';
 import { buildRevisionPrompt } from '../prompts/prompt-builder.js';
+import { createSummaryChunks } from '../summary/chunking.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import {
     getRecentRevisionConversation,
@@ -107,6 +108,7 @@ function createSession(record) {
         endId: record.endId,
         baseContent: record.content,
         baseHash: record.contentHash,
+        summarySource: buildSummarySource(record),
         compressionSourceContent: buildCompressionSourceContent(record),
         messages: [],
         isGenerating: false,
@@ -300,6 +302,7 @@ async function restoreRecentConversation() {
 
     activeSession = {
         ...structuredClone(recent),
+        summarySource: buildSummarySource(sourceRecord),
         compressionSourceContent: buildCompressionSourceContent(sourceRecord),
         chatRef: SillyTavern.getContext().chat,
         isGenerating: false,
@@ -316,6 +319,16 @@ function buildCompressionSourceContent(record) {
         .map(source => `[#${source.startId}-#${source.endId}]\n${String(source.content || '').trim()}`)
         .filter(Boolean)
         .join('\n\n');
+}
+
+function buildSummarySource(record) {
+    if (record?.type !== 'summary') return null;
+    const chat = SillyTavern.getContext().chat;
+    if (!Array.isArray(chat)) return null;
+    const startId = Number(record.startId);
+    const endId = Number(record.endId);
+    if (!Number.isInteger(startId) || !Number.isInteger(endId) || startId < 0 || endId < startId) return null;
+    return createSummaryChunks(chat, startId, Math.min(endId, chat.length - 1), endId - startId + 1)[0] || null;
 }
 
 async function persistActiveSession() {

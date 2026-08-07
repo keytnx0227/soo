@@ -104,6 +104,44 @@ export function buildPopup() {
                     <label class="stsm-field stsm-injection-position"><span>Story/Main Prompt 위치</span><select id="stsm-injection-position" class="text_pole"><option value="before">앞</option><option value="after">뒤</option></select></label>
                 </div>
                 <div id="stsm-context-block-list" class="stsm-context-block-list"></div>
+                <div class="stsm-long-term-retrieval">
+                    <div class="stsm-long-term-heading">
+                        <div>
+                            <strong>장기기억 불러오기</strong>
+                            <span>최근 채팅의 검색 단서와 일치하는 원본 기억을 요약 매크로에 함께 넣습니다.</span>
+                        </div>
+                        <label class="stsm-switch" title="장기기억 자동 회상 켜기/끄기">
+                            <input id="stsm-long-term-enabled" data-long-term-setting="enabled" type="checkbox" />
+                            <span></span>
+                        </label>
+                    </div>
+                    <div class="stsm-long-term-settings-grid">
+                        <label class="stsm-field">
+                            <span>불러오기 방식</span>
+                            <select id="stsm-long-term-mode" data-long-term-setting="mode" class="text_pole">
+                                <option value="simple">단순 키워드 일치</option>
+                                <option value="relevance">관련도 점수</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field">
+                            <span>검색할 최근 메시지 수</span>
+                            <input id="stsm-long-term-message-count" data-long-term-setting="messageCount" class="text_pole" type="number" min="1" max="100" />
+                        </label>
+                        <label class="stsm-field">
+                            <span>장기기억 최대 토큰</span>
+                            <input id="stsm-long-term-max-tokens" data-long-term-setting="maxTokens" class="text_pole" type="number" min="100" max="100000" step="100" />
+                        </label>
+                        <label class="stsm-field stsm-long-term-relevance-field">
+                            <span>관련도 기준</span>
+                            <select id="stsm-long-term-relevance" data-long-term-setting="relevance" class="text_pole">
+                                <option value="loose">느슨함</option>
+                                <option value="balanced">보통</option>
+                                <option value="strict">엄격함</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="stsm-long-term-result" aria-live="polite"></div>
+                </div>
             </div>
         </section>
 
@@ -140,6 +178,7 @@ export function buildPopup() {
                     <button class="stsm-record-memory-tab stsm-record-memory-tab-active menu_button interactable" type="button" data-memory-view="active" role="tab" aria-selected="true">상시기억</button>
                     <button class="stsm-record-memory-tab menu_button interactable" type="button" data-memory-view="long-term" role="tab" aria-selected="false">장기기억</button>
                 </div>
+                ${renderRecordSearchControls()}
                 <div id="stsm-record-list" class="stsm-record-list"></div>
             </div>
             ${renderTranslationSettings()}
@@ -338,6 +377,25 @@ export function buildPopup() {
         </section>
     `;
     return root;
+}
+
+export function renderRecordSearchControls() {
+    return `
+        <div class="stsm-record-search">
+            <select class="stsm-record-search-mode text_pole" aria-label="기억 검색 방식">
+                <option value="number">번호</option>
+                <option value="all">전체</option>
+                <option value="tags">태그</option>
+            </select>
+            <div class="stsm-record-search-input-wrap">
+                <input class="stsm-record-search-input text_pole" type="search" inputmode="numeric" placeholder="메시지 ID" aria-label="기억 검색어" />
+                <button class="stsm-record-search-clear stsm-record-search-clear-hidden menu_button menu_button_icon interactable" type="button" title="검색어 지우기" aria-label="검색어 지우기" aria-hidden="true" disabled>
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+            </div>
+            <span class="stsm-record-search-count" aria-live="polite"></span>
+        </div>
+    `;
 }
 
 function renderSummarySectionToggle(section, label, required = false) {

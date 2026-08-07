@@ -6,10 +6,13 @@ import { getSummaryRecordSourceStatuses, SOURCE_STATES } from '../summary/source
 import { getSummaryRecords } from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
+import { getRecordTags } from './record-tags.js';
 import { openRecordTagEditor, renderRecordTagSummary } from './record-tags-view.js';
 import { renderRecordMemoryUpdateBadge } from './record-memory-updates-view.js';
 import { getExtensionState, subscribeExtensionState } from '../core/extension-state.js';
 import { renderExtensionControls } from '../ui/extension-status-view.js';
+import { renderRecordSearchControls } from '../ui/popup-template.js';
+import { renderLongTermRetrievalPreview } from '../memory/long-term-retrieval-view.js';
 
 export function bindRecordsView(root, bindRecordEvents) {
     root.querySelector('#stsm-preview-summary-context').addEventListener('click', async () => {
@@ -22,12 +25,18 @@ export function bindRecordsView(root, bindRecordEvents) {
     root.querySelector('#stsm-record-sort').addEventListener('change', () => {
         renderSummaryRecords(root, bindRecordEvents);
     });
+    bindRecordSearch(root, () => renderSummaryRecords(root, bindRecordEvents));
     bindMemoryTabs(root, () => renderSummaryRecords(root, bindRecordEvents));
     root.querySelector('#stsm-records-fullscreen').addEventListener('click', () => {
         showRecordsFullscreen(
             root.querySelector('#stsm-record-sort').value,
             getSelectedMemoryView(root),
+            getRecordSearchState(root),
             bindRecordEvents,
+            searchState => {
+                setRecordSearchState(root, searchState);
+                renderSummaryRecords(root, bindRecordEvents);
+            },
         ).catch(error => {
             logRecordViewError(error, '요약 기록 전체 화면 열기 실패', '요약 기록 전체 화면을 열지 못했습니다.');
         });
@@ -38,23 +47,27 @@ export function bindRecordsView(root, bindRecordEvents) {
 export function renderSummaryRecords(root, bindRecordEvents) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
-    renderRecordList(list, direction, getSelectedMemoryView(root), bindRecordEvents);
+    renderRecordList(list, direction, getSelectedMemoryView(root), getRecordSearchState(root), bindRecordEvents);
     root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
 }
 
-function renderRecordList(list, direction, memoryView, bindRecordEvents) {
+function renderRecordList(list, direction, memoryView, searchState, bindRecordEvents) {
     const allRecords = getSummaryRecords();
-    const records = allRecords.filter(record => memoryView === 'long-term'
+    const memoryRecords = allRecords.filter(record => memoryView === 'long-term'
         ? Boolean(record.compressedBy)
-        : !record.compressedBy).sort((left, right) => {
+        : !record.compressedBy);
+    const records = filterRecords(memoryRecords, searchState).sort((left, right) => {
         const difference = left.startId - right.startId || left.endId - right.endId;
         return direction === 'id-asc' ? difference : -difference;
     });
     const sourceStatuses = getSummaryRecordSourceStatuses(allRecords);
+    updateRecordSearchCount(list, records.length, memoryRecords.length, searchState.query);
 
     list.innerHTML = records.length
         ? records.map(record => renderSummaryRecord(record, sourceStatuses.get(record.id))).join('')
-        : `<div class="stsm-empty">${memoryView === 'long-term' ? '저장된 장기기억이 없습니다.' : '저장된 상시기억이 없습니다.'}</div>`;
+        : `<div class="stsm-empty">${searchState.query
+            ? '검색 결과가 없습니다.'
+            : memoryView === 'long-term' ? '저장된 장기기억이 없습니다.' : '저장된 상시기억이 없습니다.'}</div>`;
     list.querySelectorAll('.stsm-record').forEach(recordElement => {
         recordElement.querySelector('.stsm-record-detail').addEventListener('click', () => {
             openSummaryRecordDetail(recordElement.dataset.recordId).catch(error => {
@@ -66,7 +79,7 @@ function renderRecordList(list, direction, memoryView, bindRecordEvents) {
         recordElement.querySelector('.stsm-record-tag-edit')?.addEventListener('click', () => {
             openRecordTagEditor(recordElement.dataset.recordId)
                 .then(saved => {
-                    if (saved) renderRecordList(list, direction, memoryView, bindRecordEvents);
+                    if (saved) renderRecordList(list, direction, memoryView, searchState, bindRecordEvents);
                 })
                 .catch(error => {
                     logRecordViewError(error, '장기기억 검색 태그 수정 실패', '검색 태그를 저장하지 못했습니다.', {
@@ -78,7 +91,7 @@ function renderRecordList(list, direction, memoryView, bindRecordEvents) {
     });
 }
 
-async function showRecordsFullscreen(initialDirection, initialMemoryView, bindRecordEvents) {
+async function showRecordsFullscreen(initialDirection, initialMemoryView, initialSearchState, bindRecordEvents, onSearchChange) {
     const content = document.createElement('div');
     content.className = 'stsm-records-fullscreen';
     content.innerHTML = `
@@ -96,6 +109,7 @@ async function showRecordsFullscreen(initialDirection, initialMemoryView, bindRe
                 <button class="stsm-record-memory-tab menu_button interactable" type="button" data-memory-view="active" role="tab">상시기억</button>
                 <button class="stsm-record-memory-tab menu_button interactable" type="button" data-memory-view="long-term" role="tab">장기기억</button>
             </div>
+            ${renderRecordSearchControls()}
             <div class="stsm-record-list"></div>
         </div>
     `;
@@ -104,13 +118,18 @@ async function showRecordsFullscreen(initialDirection, initialMemoryView, bindRe
     const list = content.querySelector('.stsm-record-list');
     sort.value = initialDirection === 'id-asc' ? 'id-asc' : 'id-desc';
     setSelectedMemoryView(content, initialMemoryView);
+    setRecordSearchState(content, initialSearchState);
     const render = () => {
-        renderRecordList(list, sort.value, getSelectedMemoryView(content), bindRecordEvents);
+        renderRecordList(list, sort.value, getSelectedMemoryView(content), getRecordSearchState(content), bindRecordEvents);
         renderExtensionControls(content, getExtensionState());
     };
     const handleRecordsChanged = () => render();
     const unsubscribeExtensionState = subscribeExtensionState(state => renderExtensionControls(content, state));
     sort.addEventListener('change', render);
+    bindRecordSearch(content, () => {
+        render();
+        onSearchChange?.(getRecordSearchState(content));
+    });
     bindMemoryTabs(content, render);
     window.addEventListener('stsm:records-changed', handleRecordsChanged);
     render();
@@ -126,6 +145,92 @@ async function showRecordsFullscreen(initialDirection, initialMemoryView, bindRe
         unsubscribeExtensionState();
         window.removeEventListener('stsm:records-changed', handleRecordsChanged);
     }
+}
+
+function bindRecordSearch(root, onChange) {
+    const mode = root.querySelector('.stsm-record-search-mode');
+    const input = root.querySelector('.stsm-record-search-input');
+    const clear = root.querySelector('.stsm-record-search-clear');
+    if (!mode || !input || !clear || mode.dataset.bound) return;
+    mode.dataset.bound = 'true';
+    mode.addEventListener('change', () => {
+        updateRecordSearchControls(root);
+        onChange();
+    });
+    input.addEventListener('input', () => {
+        updateRecordSearchControls(root);
+        onChange();
+    });
+    clear.addEventListener('click', () => {
+        input.value = '';
+        updateRecordSearchControls(root);
+        onChange();
+        input.focus();
+    });
+    updateRecordSearchControls(root);
+}
+
+function getRecordSearchState(root) {
+    return {
+        mode: ['number', 'all', 'tags'].includes(root.querySelector('.stsm-record-search-mode')?.value)
+            ? root.querySelector('.stsm-record-search-mode').value
+            : 'number',
+        query: String(root.querySelector('.stsm-record-search-input')?.value || '').trim(),
+    };
+}
+
+function setRecordSearchState(root, state = {}) {
+    const mode = root.querySelector('.stsm-record-search-mode');
+    const input = root.querySelector('.stsm-record-search-input');
+    if (!mode || !input) return;
+    mode.value = ['number', 'all', 'tags'].includes(state.mode) ? state.mode : 'number';
+    input.value = String(state.query || '');
+    updateRecordSearchControls(root);
+}
+
+function updateRecordSearchControls(root) {
+    const { mode, query } = getRecordSearchState(root);
+    const input = root.querySelector('.stsm-record-search-input');
+    const clear = root.querySelector('.stsm-record-search-clear');
+    if (!input || !clear) return;
+    input.inputMode = mode === 'number' ? 'numeric' : 'search';
+    input.placeholder = mode === 'number' ? '메시지 ID' : mode === 'tags' ? '태그 검색' : '기억 전체 검색';
+    clear.classList.toggle('stsm-record-search-clear-hidden', !query);
+    clear.disabled = !query;
+    clear.setAttribute('aria-hidden', String(!query));
+}
+
+function filterRecords(records, { mode, query }) {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return [...records];
+
+    if (mode === 'number') {
+        const messageId = Number(query);
+        if (!Number.isInteger(messageId) || messageId < 0) return [];
+        return records.filter(record => record.startId <= messageId && messageId <= record.endId);
+    }
+
+    return records.filter(record => {
+        const tags = getRecordTags(record).flatMap(tag => [tag.canonical, ...tag.matchTerms]);
+        const values = mode === 'tags'
+            ? tags
+            : [
+                record.content,
+                record.translation?.content,
+                record.structuredSummary?.data?.title,
+                ...tags,
+            ];
+        return values.some(value => normalizeSearchText(value).includes(normalizedQuery));
+    });
+}
+
+function normalizeSearchText(value) {
+    return String(value || '').trim().toLocaleLowerCase();
+}
+
+function updateRecordSearchCount(list, visibleCount, totalCount, query) {
+    const count = list.closest('.stsm-record-memory-browser')?.querySelector('.stsm-record-search-count');
+    if (count) count.textContent = query ? `${visibleCount}/${totalCount}개` : `${totalCount}개`;
 }
 
 function bindMemoryTabs(root, onChange) {
@@ -199,6 +304,7 @@ async function showSummaryContextPreview() {
             <label class="stsm-field">
                 <span class="stsm-section-title">{{sumiSummary}} 미리보기</span>
                 ${renderContextTokenStatus(details)}
+                ${renderLongTermRetrievalPreview(details.retrieval)}
                 ${preview}
             </label>
         `;

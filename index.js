@@ -18,6 +18,10 @@ import { invalidateAtlasProjection } from './memory/atlas-projection-service.js'
 import { bindCommitmentMemoryView, renderCommitmentMemory } from './memory/commitment-memory-view.js';
 import { bindEventMemoryView, renderEventMemory } from './memory/event-memory-view.js';
 import {
+    bindLongTermRetrievalSettings,
+    renderLongTermRetrievalSettings,
+} from './memory/long-term-retrieval-view.js';
+import {
     hideAllSummarizedMessages,
     initializeMessageVisibility,
     syncSummarizedMessageVisibility,
@@ -160,6 +164,7 @@ function bindEvents(root) {
     });
     bindSummarizationSettings(root);
     bindContextBlockSettings(root);
+    const unbindLongTermRetrieval = bindLongTermRetrievalSettings(root);
     bindSummaryRecordTemplateSettings(root);
     bindCompressionTemplateSettings(root);
     bindRangeActions(root);
@@ -203,6 +208,7 @@ function bindEvents(root) {
     });
     renderSummaryStatus(root);
     return () => {
+        unbindLongTermRetrieval?.();
         unbindSummaryErrorView();
         unbindExtensionStatus();
         unbindSectionTooltips();
@@ -302,6 +308,7 @@ async function applyImportedGlobalSettings(root) {
     renderPromptEditor(root, 'revision');
     renderPromptEditor(root, 'compression');
     renderContextBlockSettings(root);
+    renderLongTermRetrievalSettings(root);
     renderSummaryRecordTemplateSettings(root);
     renderCompressionTemplateSettings(root);
     renderChunkRangeActions(root);

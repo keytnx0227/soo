@@ -67,17 +67,23 @@ function isSummaryBlockEnabled(block, sections) {
     return sectionKey ? Boolean(sections[sectionKey]) : block.enabled;
 }
 
-export async function buildRevisionPrompt({ baseContent, compressionSourceContent = '', messages }) {
+export async function buildRevisionPrompt({ baseContent, summarySource = null, compressionSourceContent = '', messages }) {
     const preset = getActivePreset(PROMPT_TYPES.REVISION);
     const parts = [];
     const includeCompressionSources = Boolean(
         compressionSourceContent
         && preset.blocks.some(block => block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES && block.enabled),
     );
+    const includeSummarySource = Boolean(
+        summarySource?.messages?.length
+        && preset.blocks.some(block => block.kind === BLOCK_KINDS.REVISION_SUMMARY_MESSAGES && block.enabled),
+    );
 
     for (const block of preset.blocks.filter(block => block.enabled)) {
         const content = renderRevisionBlock(block, {
             baseContent,
+            summarySource,
+            includeSummarySource,
             compressionSourceContent,
             includeCompressionSources,
             messages,
@@ -179,14 +185,31 @@ function buildRecentSummaryContent(block, startId) {
     return buildSummaryRecordsContext(records, settings.recordTemplate, tokenBudget);
 }
 
-function renderRevisionBlock(block, { baseContent, compressionSourceContent, includeCompressionSources, messages }) {
+function renderRevisionBlock(block, {
+    baseContent,
+    summarySource,
+    includeSummarySource,
+    compressionSourceContent,
+    includeCompressionSources,
+    messages,
+}) {
     const commonValues = {
         sumiCurrentSummary: baseContent,
+        sumiStartId: summarySource?.startId ?? '',
+        sumiEndId: summarySource?.endId ?? '',
         sumiCompressionRevisionSources: compressionSourceContent,
     };
 
     if (block.kind === BLOCK_KINDS.CURRENT_SUMMARY) {
         return renderDataBlock(block, 'sumiCurrentSummary', baseContent);
+    }
+    if (block.kind === BLOCK_KINDS.REVISION_SUMMARY_MESSAGES) {
+        return includeSummarySource
+            ? renderSummaryMessages(block.content, summarySource, SillyTavern.getContext())
+            : '';
+    }
+    if (block.kind === BLOCK_KINDS.REVISION_SUMMARY_SOURCE_SEPARATOR) {
+        return includeSummarySource ? renderTemplate(block.content, commonValues) : '';
     }
     if (block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES) {
         return includeCompressionSources
