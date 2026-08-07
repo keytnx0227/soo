@@ -53,6 +53,7 @@ export async function openRecordTagEditor(recordId) {
         okButton: '저장',
         cancelButton: '취소',
         wide: true,
+        allowVerticalScrolling: true,
     });
     if (await popup.show() !== 1) return false;
 

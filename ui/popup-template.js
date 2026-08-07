@@ -139,6 +139,17 @@ export function buildPopup() {
                                 <option value="strict">엄격함</option>
                             </select>
                         </label>
+                        <label class="stsm-field stsm-long-term-relevance-field">
+                            <span>불러올 기억 수</span>
+                            <select id="stsm-long-term-limit-mode" data-long-term-setting="relevanceLimitMode" class="text_pole">
+                                <option value="all">전체</option>
+                                <option value="top">상위 N개</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field stsm-long-term-relevance-field stsm-long-term-max-records-field">
+                            <span>최대 기억 수</span>
+                            <input id="stsm-long-term-max-records" data-long-term-setting="relevanceMaxRecords" class="text_pole" type="number" min="1" max="100" />
+                        </label>
                     </div>
                     <div class="stsm-long-term-result" aria-live="polite"></div>
                 </div>

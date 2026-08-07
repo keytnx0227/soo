@@ -22,11 +22,17 @@ export function renderLongTermRetrievalSettings(root) {
     container.querySelector('#stsm-long-term-message-count').value = settings.messageCount;
     container.querySelector('#stsm-long-term-max-tokens').value = settings.maxTokens;
     container.querySelector('#stsm-long-term-relevance').value = settings.relevance;
+    container.querySelector('#stsm-long-term-limit-mode').value = settings.relevanceLimitMode;
+    container.querySelector('#stsm-long-term-max-records').value = settings.relevanceMaxRecords;
     container.querySelector('.stsm-long-term-settings-grid').classList.toggle('stsm-control-disabled', !settings.enabled);
     container.querySelectorAll('.stsm-long-term-settings-grid :is(input, select)').forEach(control => {
         control.disabled = !settings.enabled;
     });
-    container.querySelector('.stsm-long-term-relevance-field').hidden = settings.mode !== 'relevance';
+    container.querySelectorAll('.stsm-long-term-relevance-field').forEach(field => {
+        field.hidden = settings.mode !== 'relevance';
+    });
+    container.querySelector('.stsm-long-term-max-records-field').hidden = settings.mode !== 'relevance'
+        || settings.relevanceLimitMode !== 'top';
     renderRetrievalResult(container, buildSummaryContextDetails().retrieval);
 }
 
@@ -81,6 +87,7 @@ function renderRetrievalResult(container, retrieval) {
         retrieval.mode,
     )).join('');
     const omittedCount = retrieval.excludedByThreshold.length
+        + retrieval.excludedByRecordLimit.length
         + retrieval.omittedByRetrievalBudget.length
         + retrieval.omittedByInjectionBudget.length;
     const summary = `${retrieval.injected.length}개 불러옴${omittedCount ? ` · ${omittedCount}개 제외` : ''}`;
@@ -90,6 +97,7 @@ function renderRetrievalResult(container, retrieval) {
             <div class="stsm-long-term-result-list">
                 ${rows || '<span class="stsm-long-term-result-empty">일치한 기억은 있지만 현재 선택 기준에서는 주입되지 않았어요.</span>'}
                 ${retrieval.excludedByThreshold.map(item => renderResultRow(item, false, retrieval.mode, '관련도 기준 미달')).join('')}
+                ${retrieval.excludedByRecordLimit.map(item => renderResultRow(item, false, retrieval.mode, '상위 N개 제한')).join('')}
                 ${retrieval.omittedByRetrievalBudget.map(item => renderResultRow(item, false, retrieval.mode, '장기기억 토큰 제한')).join('')}
             </div>
         </details>

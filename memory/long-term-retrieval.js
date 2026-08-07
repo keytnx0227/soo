@@ -18,6 +18,7 @@ export function retrieveLongTermRecords({ records, messages, settings, countToke
         longTermRecordCount: longTermRecords.length,
         candidates: [],
         excludedByThreshold: [],
+        excludedByRecordLimit: [],
         selected: [],
         omittedByRetrievalBudget: [],
         injected: [],
@@ -51,12 +52,17 @@ export function retrieveLongTermRecords({ records, messages, settings, countToke
             ? right.score - left.score || right.record.endId - left.record.endId
             : right.record.endId - left.record.endId || right.record.startId - left.record.startId
     ));
-    const { selected, omitted } = selectWithinBudget(ranked, normalizedSettings.maxTokens);
+    const limited = normalizedSettings.mode === 'relevance' && normalizedSettings.relevanceLimitMode === 'top'
+        ? ranked.slice(0, normalizedSettings.relevanceMaxRecords)
+        : ranked;
+    const excludedByRecordLimit = limited.length < ranked.length ? ranked.slice(limited.length) : [];
+    const { selected, omitted } = selectWithinBudget(limited, normalizedSettings.maxTokens);
 
     return {
         ...base,
         candidates,
         excludedByThreshold,
+        excludedByRecordLimit,
         selected: selected.sort((left, right) => left.record.startId - right.record.startId || left.record.endId - right.record.endId),
         omittedByRetrievalBudget: omitted,
     };
@@ -173,6 +179,8 @@ function normalizeRetrievalSettings(value) {
         messageCount: clampInteger(source.messageCount, 1, 100, 6),
         maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
         relevance: Object.hasOwn(RELEVANCE_THRESHOLDS, source.relevance) ? source.relevance : 'balanced',
+        relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
+        relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
 }
 
