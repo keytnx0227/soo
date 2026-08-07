@@ -67,12 +67,21 @@ function isSummaryBlockEnabled(block, sections) {
     return sectionKey ? Boolean(sections[sectionKey]) : block.enabled;
 }
 
-export async function buildRevisionPrompt({ baseContent, messages }) {
+export async function buildRevisionPrompt({ baseContent, compressionSourceContent = '', messages }) {
     const preset = getActivePreset(PROMPT_TYPES.REVISION);
     const parts = [];
+    const includeCompressionSources = Boolean(
+        compressionSourceContent
+        && preset.blocks.some(block => block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES && block.enabled),
+    );
 
     for (const block of preset.blocks.filter(block => block.enabled)) {
-        const content = renderRevisionBlock(block, { baseContent, messages });
+        const content = renderRevisionBlock(block, {
+            baseContent,
+            compressionSourceContent,
+            includeCompressionSources,
+            messages,
+        });
         if (content.trim()) parts.push(content.trim());
     }
 
@@ -170,11 +179,22 @@ function buildRecentSummaryContent(block, startId) {
     return buildSummaryRecordsContext(records, settings.recordTemplate, tokenBudget);
 }
 
-function renderRevisionBlock(block, { baseContent, messages }) {
-    const commonValues = { sumiCurrentSummary: baseContent };
+function renderRevisionBlock(block, { baseContent, compressionSourceContent, includeCompressionSources, messages }) {
+    const commonValues = {
+        sumiCurrentSummary: baseContent,
+        sumiCompressionRevisionSources: compressionSourceContent,
+    };
 
     if (block.kind === BLOCK_KINDS.CURRENT_SUMMARY) {
         return renderDataBlock(block, 'sumiCurrentSummary', baseContent);
+    }
+    if (block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES) {
+        return includeCompressionSources
+            ? renderDataBlock(block, 'sumiCompressionRevisionSources', compressionSourceContent, commonValues)
+            : '';
+    }
+    if (block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCE_SEPARATOR) {
+        return includeCompressionSources ? renderTemplate(block.content, commonValues) : '';
     }
     if (block.kind === BLOCK_KINDS.REVISION_MESSAGES) {
         return messages

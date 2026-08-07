@@ -26,7 +26,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 16;
+const PROMPT_SCHEMA_VERSION = 17;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -39,6 +39,8 @@ export const BLOCK_KINDS = Object.freeze({
     RECENT_SUMMARY_SEPARATOR: 'recentSummarySeparator',
     SUMMARY_MESSAGES: 'summaryMessages',
     CURRENT_SUMMARY: 'currentSummary',
+    REVISION_COMPRESSION_SOURCES: 'revisionCompressionSources',
+    REVISION_COMPRESSION_SOURCE_SEPARATOR: 'revisionCompressionSourceSeparator',
     REVISION_MESSAGES: 'revisionMessages',
     LEGACY_CHARACTER: 'character',
     LEGACY_SUMMARY_TARGET: 'summaryTarget',
@@ -412,9 +414,13 @@ const DEFAULT_SUMMARY_MAIN_PROMPT = `# Summary Task
 
 Write the smallest self-contained long-term memory that preserves the Summary Target's future-relevant continuity. Use only the target as evidence; other context may resolve identity and chronology. Prefer omission over repetition, scene texture, or speculative detail. Follow the enabled extraction rules and JSON contract exactly. Never invent facts.`;
 
-const DEFAULT_REVISION_MAIN_PROMPT = `# Summary Revision
+const V16_DEFAULT_REVISION_MAIN_PROMPT = `# Summary Revision
 
 You are revising an existing conversation summary. Apply the user's feedback accurately while preserving useful facts and chronology from the current summary.`;
+
+const DEFAULT_REVISION_MAIN_PROMPT = `# Summary Revision
+
+You are revising an existing conversation summary. Apply the user's feedback accurately while preserving useful facts and chronology from the current summary. When compression source records are provided, use them to verify or recover details requested by the user; do not restore omitted detail unless it serves the feedback.`;
 
 const DEFAULT_REVISION_TEMPLATE = 'Return only the revised summary without a preface, explanation, or commentary.';
 
@@ -1068,6 +1074,7 @@ function getDefaultPreset(type) {
             blocks: [
                 createPromptBlock({ id: 'revision-main', name: '수정 대화 기본 지시문', content: DEFAULT_REVISION_MAIN_PROMPT, locked: true }),
                 ...createCurrentSummaryBlocks(),
+                ...createRevisionCompressionSourceBlocks(),
                 ...createRevisionConversationBlocks(),
                 createPromptBlock({ id: 'revision-template', name: '수정 결과 템플릿', content: DEFAULT_REVISION_TEMPLATE, locked: true }),
             ],
@@ -1222,6 +1229,39 @@ function createCurrentSummaryBlocks(source = {}) {
         createPromptBlock({ id: `${prefix}-start`, name: '현재 요약 구분선 시작', content: '<Current Summary>', enabled, locked: true, separator: true }),
         createPromptBlock({ id: `${prefix}-content`, name: '현재 요약', content: '{{sumiCurrentSummary}}', enabled, locked: true, kind: BLOCK_KINDS.CURRENT_SUMMARY }),
         createPromptBlock({ id: `${prefix}-end`, name: '현재 요약 구분선 끝', content: '</Current Summary>', enabled, locked: true, separator: true }),
+    ];
+}
+
+function createRevisionCompressionSourceBlocks(source = {}) {
+    const enabled = source.enabled ?? true;
+    const prefix = source.id ? `${source.id}-v2` : 'revision-compression-sources';
+    return [
+        createPromptBlock({
+            id: `${prefix}-start`,
+            name: '압축 원본 레코드 구분선 시작',
+            content: '<Compression Source Records>',
+            enabled,
+            locked: true,
+            separator: true,
+            kind: BLOCK_KINDS.REVISION_COMPRESSION_SOURCE_SEPARATOR,
+        }),
+        createPromptBlock({
+            id: `${prefix}-content`,
+            name: '압축 원본 레코드',
+            content: '{{sumiCompressionRevisionSources}}',
+            enabled,
+            locked: true,
+            kind: BLOCK_KINDS.REVISION_COMPRESSION_SOURCES,
+        }),
+        createPromptBlock({
+            id: `${prefix}-end`,
+            name: '압축 원본 레코드 구분선 끝',
+            content: '</Compression Source Records>',
+            enabled,
+            locked: true,
+            separator: true,
+            kind: BLOCK_KINDS.REVISION_COMPRESSION_SOURCE_SEPARATOR,
+        }),
     ];
 }
 
@@ -1710,6 +1750,28 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
         ));
     }
 
+    if (type === PROMPT_TYPES.REVISION && sourceSchemaVersion < 17) {
+        migratedBlocks = migratedBlocks.map(block => (
+            block.id === 'revision-main'
+                && String(block.content || '').trim() === V16_DEFAULT_REVISION_MAIN_PROMPT.trim()
+                ? { ...block, content: DEFAULT_REVISION_MAIN_PROMPT }
+                : block
+        ));
+        if (!migratedBlocks.some(block => block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES)) {
+            const revisionMessagesIndex = migratedBlocks.findIndex(block => block.kind === BLOCK_KINDS.REVISION_MESSAGES);
+            const insertIndex = revisionMessagesIndex < 0
+                ? migratedBlocks.length
+                : revisionMessagesIndex > 0 && migratedBlocks[revisionMessagesIndex - 1]?.separator
+                    ? revisionMessagesIndex - 1
+                    : revisionMessagesIndex;
+            migratedBlocks = [
+                ...migratedBlocks.slice(0, insertIndex),
+                ...createRevisionCompressionSourceBlocks(),
+                ...migratedBlocks.slice(insertIndex),
+            ];
+        }
+    }
+
     return {
         ...preset,
         blocks: migratedBlocks,
@@ -1717,7 +1779,7 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
 }
 
 function isKnownSeparatorBlock(block) {
-    return Boolean(block?.locked && /(character-info|world-info|summary-target|current-summary|revision-history).*(?:-start|-end)$/.test(String(block.id || '')));
+    return Boolean(block?.locked && /(character-info|world-info|summary-target|current-summary|revision-history|revision-compression-sources).*(?:-start|-end)$/.test(String(block.id || '')));
 }
 
 function migrateSummaryExtractionRules(blocks) {

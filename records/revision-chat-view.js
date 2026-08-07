@@ -107,6 +107,7 @@ function createSession(record) {
         endId: record.endId,
         baseContent: record.content,
         baseHash: record.contentHash,
+        compressionSourceContent: buildCompressionSourceContent(record),
         messages: [],
         isGenerating: false,
     };
@@ -299,11 +300,22 @@ async function restoreRecentConversation() {
 
     activeSession = {
         ...structuredClone(recent),
+        compressionSourceContent: buildCompressionSourceContent(sourceRecord),
         chatRef: SillyTavern.getContext().chat,
         isGenerating: false,
     };
     renderRevisionSession();
     scrollMessagesToBottom();
+}
+
+function buildCompressionSourceContent(record) {
+    if (record?.type !== 'compressed' || !Array.isArray(record.compression?.sourceRecordIds)) return '';
+    return record.compression.sourceRecordIds
+        .map(getSummaryRecord)
+        .filter(Boolean)
+        .map(source => `[#${source.startId}-#${source.endId}]\n${String(source.content || '').trim()}`)
+        .filter(Boolean)
+        .join('\n\n');
 }
 
 async function persistActiveSession() {

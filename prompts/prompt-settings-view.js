@@ -109,6 +109,7 @@ function renderPromptBlock(block, summarySections) {
         BLOCK_KINDS.EVENT_MEMORY,
         BLOCK_KINDS.COMPRESSION_SOURCES,
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
+        BLOCK_KINDS.REVISION_COMPRESSION_SOURCES,
     ].includes(block.kind);
     const detailOnly = [BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT, BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT].includes(block.kind);
     return `
@@ -142,6 +143,7 @@ function getBlockPreview(block) {
     if (block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return '항목별 추출 지시문을 한 곳에서 관리합니다.';
     if (block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT) return '요약 항목 설정에 따라 자동 생성됩니다.';
     if (block.kind === BLOCK_KINDS.COMPRESSION_SOURCES) return '선택한 활성 요약 레코드로 자동 구성됩니다.';
+    if (block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES) return '압축 레코드의 원본 요약 레코드로 자동 구성됩니다.';
     if (block.kind === BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT) return '압축 스키마에 따라 자동 생성됩니다.';
     return block.content || '';
 }
