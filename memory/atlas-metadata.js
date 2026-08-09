@@ -1,5 +1,7 @@
+import { createId } from '../core/utils.js';
+
 const METADATA_KEY = 'sumi_chat_summarizer';
-const CATEGORIES = Object.freeze(['people', 'items', 'commitments', 'events']);
+const CATEGORIES = Object.freeze(['people', 'items', 'commitments', 'events', 'world']);
 
 export function getAtlasCorrections() {
     return structuredClone(getAtlasStore().corrections);
@@ -104,6 +106,81 @@ export async function savePersonRetrievalMetadata(entityId, value) {
     return getPersonRetrievalMetadata(id);
 }
 
+export function getManualWorldEntries() {
+    return structuredClone(getAtlasStore().manual.world);
+}
+
+export async function addManualWorldEntry({ keys, content }) {
+    const store = getAtlasStore();
+    const previous = structuredClone(store.manual.world);
+    const now = new Date().toISOString();
+    const entry = normalizeManualWorldEntry({
+        id: createId('world-manual'),
+        keys,
+        content,
+        createdAt: now,
+        updatedAt: now,
+    });
+    if (!entry) throw new Error('세계 설정의 키와 내용을 모두 입력해주세요.');
+    store.manual.world = [...store.manual.world, entry];
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.manual.world = previous;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return structuredClone(entry);
+}
+
+export async function updateManualWorldEntry(entityId, { keys, content }) {
+    const store = getAtlasStore();
+    const previousEntries = structuredClone(store.manual.world);
+    const previousTranslations = structuredClone(store.translations.world);
+    const id = String(entityId);
+    let updated = null;
+    store.manual.world = store.manual.world.map(entry => {
+        if (entry.id !== id) return entry;
+        updated = normalizeManualWorldEntry({
+            ...entry,
+            keys,
+            content,
+            updatedAt: new Date().toISOString(),
+        });
+        return updated;
+    });
+    if (!updated) throw new Error('수정할 직접 추가 세계 설정을 찾지 못했습니다.');
+    delete store.translations.world[id];
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.manual.world = previousEntries;
+        store.translations.world = previousTranslations;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return structuredClone(updated);
+}
+
+export async function deleteManualWorldEntry(entityId) {
+    const store = getAtlasStore();
+    const id = String(entityId);
+    if (!store.manual.world.some(entry => entry.id === id)) return false;
+    const previousEntries = structuredClone(store.manual.world);
+    const previousTranslations = structuredClone(store.translations.world);
+    store.manual.world = store.manual.world.filter(entry => entry.id !== id);
+    delete store.translations.world[id];
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.manual.world = previousEntries;
+        store.translations.world = previousTranslations;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return true;
+}
+
 function getAtlasStore() {
     const metadata = SillyTavern.getContext().chatMetadata;
     if (!metadata[METADATA_KEY] || typeof metadata[METADATA_KEY] !== 'object') {
@@ -114,6 +191,8 @@ function getAtlasStore() {
     if (!root.atlas.corrections || typeof root.atlas.corrections !== 'object') root.atlas.corrections = {};
     if (!root.atlas.translations || typeof root.atlas.translations !== 'object') root.atlas.translations = {};
     if (!root.atlas.retrieval || typeof root.atlas.retrieval !== 'object') root.atlas.retrieval = {};
+    if (!root.atlas.manual || typeof root.atlas.manual !== 'object') root.atlas.manual = {};
+    root.atlas.manual.world = normalizeManualWorldEntries(root.atlas.manual.world);
     root.atlas.retrieval.people = normalizeEntityMap(root.atlas.retrieval.people, normalizePersonRetrieval);
     for (const category of CATEGORIES) {
         root.atlas.corrections[category] = normalizeEntityMap(
@@ -123,6 +202,45 @@ function getAtlasStore() {
         root.atlas.translations[category] = normalizeEntityMap(root.atlas.translations[category], normalizeTranslation);
     }
     return root.atlas;
+}
+
+function normalizeManualWorldEntries(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    return value.map(normalizeManualWorldEntry).filter(entry => {
+        if (!entry || seen.has(entry.id)) return false;
+        seen.add(entry.id);
+        return true;
+    });
+}
+
+function normalizeManualWorldEntry(value) {
+    if (!value || typeof value !== 'object') return null;
+    const keys = normalizeStringList(value.keys);
+    const content = String(value.content || '').trim();
+    if (!keys.length || !content) return null;
+    const createdAt = String(value.createdAt || new Date().toISOString());
+    return {
+        id: String(value.id || createId('world-manual')),
+        keys,
+        content,
+        createdAt,
+        updatedAt: String(value.updatedAt || createdAt),
+    };
+}
+
+function normalizeStringList(value) {
+    const source = Array.isArray(value) ? value : [];
+    const result = [];
+    const seen = new Set();
+    for (const item of source) {
+        const text = String(item || '').trim();
+        const identity = text.normalize('NFKC').toLocaleLowerCase();
+        if (!text || seen.has(identity)) continue;
+        seen.add(identity);
+        result.push(text);
+    }
+    return result;
 }
 
 function normalizeEntityMap(value, normalizer) {

@@ -11,12 +11,13 @@ import {
     PROMPT_TYPES,
     SUMMARY_EXTRACTION_RULE_DEFINITIONS,
 } from '../core/settings.js';
-import { buildSummaryRecordsContext } from '../summary/summary-context.js';
+import { buildSummaryRecordsContext, withWorldInfoInjectionSuppressed } from '../summary/summary-context.js';
 import { getSummaryRecords } from '../summary/summary-store.js';
 import { buildPeopleMemoryPromptContext } from '../memory/people-memory-service.js';
 import { buildItemMemoryPromptContext } from '../memory/item-memory-service.js';
 import { buildCommitmentMemoryPromptContext } from '../memory/commitment-memory-service.js';
 import { buildEventMemoryPromptContext } from '../memory/event-memory-service.js';
+import { buildWorldMemoryPromptContext } from '../memory/world-memory-service.js';
 import {
     buildSummaryJsonContract,
     getEnabledMemorySections,
@@ -62,6 +63,9 @@ function isSummaryBlockEnabled(block, sections) {
     }
     if (block.kind === BLOCK_KINDS.EVENT_MEMORY) {
         return getEnabledMemorySections(getSettings().summarization.memorySections).events;
+    }
+    if (block.kind === BLOCK_KINDS.WORLD_MEMORY) {
+        return getEnabledMemorySections(getSettings().summarization.memorySections).world;
     }
     const sectionKey = getSummarySectionKeyForKind(block.kind);
     return sectionKey ? Boolean(sections[sectionKey]) : block.enabled;
@@ -157,6 +161,8 @@ async function renderSummaryBlock(block, chunk) {
             return renderDataBlock(block, 'sumiCommitmentMemory', buildCommitmentMemoryPromptContext(), commonValues);
         case BLOCK_KINDS.EVENT_MEMORY:
             return renderDataBlock(block, 'sumiEventMemory', buildEventMemoryPromptContext(), commonValues);
+        case BLOCK_KINDS.WORLD_MEMORY:
+            return renderDataBlock(block, 'sumiWorldMemory', buildWorldMemoryPromptContext(), commonValues);
         case BLOCK_KINDS.SUMMARY_EXTRACTION_RULES:
             return renderSummaryExtractionRules(block.config.rules, chunk.sections, chunk.memorySections);
         default:
@@ -275,15 +281,20 @@ async function getWorldInfoContent(chunk) {
             && message.mes)
         .map(message => world_info_include_names ? `${message.name}: ${message.mes}` : message.mes)
         .reverse();
-    const result = await getWorldInfoPrompt(chatForWorldInfo, context.maxContext, true, {
-        personaDescription: context.powerUserSettings?.persona_description || '',
-        characterDescription: character.description || '',
-        characterPersonality: character.personality || '',
-        characterDepthPrompt: character.data?.extensions?.depth_prompt?.prompt || '',
-        scenario: context.chatMetadata?.scenario || character.scenario || '',
-        creatorNotes: character.creator_notes || '',
-        trigger: 'quiet',
-    });
+    const result = await withWorldInfoInjectionSuppressed(() => getWorldInfoPrompt(
+        chatForWorldInfo,
+        context.maxContext,
+        true,
+        {
+            personaDescription: context.powerUserSettings?.persona_description || '',
+            characterDescription: character.description || '',
+            characterPersonality: character.personality || '',
+            characterDepthPrompt: character.data?.extensions?.depth_prompt?.prompt || '',
+            scenario: context.chatMetadata?.scenario || character.scenario || '',
+            creatorNotes: character.creator_notes || '',
+            trigger: 'quiet',
+        },
+    ));
 
     return [
         result.worldInfoBefore,

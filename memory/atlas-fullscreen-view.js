@@ -4,6 +4,7 @@ import { bindCommitmentMemoryView, renderCommitmentMemory } from './commitment-m
 import { bindEventMemoryView, renderEventMemory } from './event-memory-view.js';
 import { bindItemMemoryView, renderItemMemory } from './item-memory-view.js';
 import { bindPeopleMemoryView, renderPeopleMemory } from './people-memory-view.js';
+import { bindWorldMemoryView, renderWorldMemory } from './world-memory-view.js';
 
 const ATLAS_VIEWS = Object.freeze({
     people: {
@@ -56,6 +57,19 @@ const ATLAS_VIEWS = Object.freeze({
         bind: bindEventMemoryView,
         render: renderEventMemory,
     },
+    world: {
+        title: '세계 설정',
+        countId: 'stsm-world-memory-count',
+        initialCount: '0개',
+        tokenUsageId: 'stsm-world-token-usage',
+        warningId: 'stsm-world-memory-skipped',
+        warningClass: 'stsm-world-memory-warning',
+        listId: 'stsm-world-memory-list',
+        listClass: 'stsm-world-memory-list',
+        excludedId: 'stsm-world-memory-excluded',
+        bind: bindWorldMemoryView,
+        render: renderWorldMemory,
+    },
 });
 
 export function bindAtlasFullscreenView(root) {
@@ -84,7 +98,14 @@ async function showAtlasFullscreen(category) {
     content.innerHTML = `
         <div class="stsm-atlas-fullscreen-toolbar">
             <strong>${view.title}</strong>
-            <span id="${view.countId}">${view.initialCount}</span>
+            <span class="stsm-atlas-heading-actions">
+                <span id="${view.countId}">${view.initialCount}</span>
+                ${category === 'world' ? `
+                    <button class="menu_button menu_button_icon interactable" data-world-manual-add type="button" title="세계 설정 직접 추가" aria-label="세계 설정 직접 추가">
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    </button>
+                ` : ''}
+            </span>
         </div>
         ${view.tokenUsageId ? `<div id="${view.tokenUsageId}"></div>` : ''}
         <div class="stsm-atlas-section-scroll">

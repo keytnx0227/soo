@@ -16,7 +16,7 @@ export function renderExcludedAtlasEntries(entries, { open = false } = {}) {
 }
 
 function renderExcludedEntry(entry) {
-    const name = entry.name || entry.title || entry.id;
+    const name = entry.name || entry.title || entry.keys?.join(', ') || entry.content || entry.id;
     return `
         <div class="stsm-atlas-excluded-entry" data-entity-id="${escapeHtml(entry.id)}">
             <span>

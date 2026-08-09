@@ -39,7 +39,9 @@ export function createAtlasSourceHash(category, entity) {
 }
 
 export function serializeAtlasEntity(category, entity) {
-    const lines = [`# ${['commitments', 'events'].includes(category) ? entity.title : entity.name}`];
+    const lines = [`# ${category === 'world'
+        ? 'World Setting'
+        : ['commitments', 'events'].includes(category) ? entity.title : entity.name}`];
     appendList(lines, 'aliases', entity.aliases);
     if (category === 'people') {
         if (entity.provisional) lines.push('- provisional: true');
@@ -87,12 +89,15 @@ export function serializeAtlasEntity(category, entity) {
         appendList(lines, 'facts', entity.facts);
         lines.push(`- status: ${entity.status}`);
         if (entity.statusReason) lines.push(`- status reason: ${entity.statusReason}`);
-    } else {
+    } else if (category === 'events') {
         if (entity.date) lines.push(`- date: ${entity.date}`);
         if (entity.location) lines.push(`- location: ${entity.location}`);
         lines.push(`- summary: ${entity.summary}`);
         lines.push(`- importance: ${entity.importance}`);
         appendScalar(lines, 'shift', entity.shift);
+    } else {
+        appendList(lines, 'keys', entity.keys);
+        lines.push(`- content: ${entity.content}`);
     }
     return lines.join('\n');
 }
@@ -105,7 +110,9 @@ function getEntity(category, entityId) {
             ? atlas.items
             : category === 'commitments'
                 ? atlas.commitments
-                : atlas.events;
+                : category === 'events'
+                    ? atlas.events
+                    : atlas.world;
     return collection.find(entity => entity.id === entityId) || null;
 }
 

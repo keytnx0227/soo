@@ -249,6 +249,18 @@ export function buildPopup() {
                         <div id="stsm-event-memory-excluded" class="stsm-atlas-excluded-host"></div>
                     </div>
                 </section>
+                <section class="stsm-atlas-section">
+                    <div class="stsm-atlas-section-heading">
+                        <strong>세계 설정</strong>
+                        ${renderAtlasHeadingActions('world', 'stsm-world-memory-count', '0개', '세계 설정')}
+                    </div>
+                    <div id="stsm-world-token-usage"></div>
+                    <div class="stsm-atlas-section-scroll">
+                        <div id="stsm-world-memory-skipped" class="stsm-world-memory-warning" hidden></div>
+                        <div id="stsm-world-memory-list" class="stsm-world-memory-list"></div>
+                        <div id="stsm-world-memory-excluded" class="stsm-atlas-excluded-host"></div>
+                    </div>
+                </section>
             </div>
         </section>
 
@@ -270,50 +282,107 @@ export function buildPopup() {
         </section>
 
         <section id="stsm-panel-settings" class="stsm-panel stsm-settings-panel" role="tabpanel" hidden>
-            <div class="stsm-settings-top-grid">
-                <label class="stsm-field">
-                    <span>요약 청크 크기</span>
-                    <input id="stsm-chunk-size" class="text_pole" type="number" min="1" max="1000" step="1" />
-                </label>
-                <label class="stsm-field">
-                    <span>요약 작성 언어</span>
-                    <select id="stsm-summary-output-language" class="text_pole">
-                        <option value="english">영어로</option>
-                        <option value="source">원문 언어로</option>
-                        <option value="english-dialogue-source">영어로, 대사만 원문 언어로</option>
-                    </select>
-                </label>
-                <label class="stsm-field">
-                    <span>요약 주입 최대 토큰</span>
-                    <input id="stsm-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
-                </label>
-                <label class="stsm-field" title="중요도와 최신성 점수가 높은 사건부터 이 예산 안에 선발합니다.">
-                    <span>주요 사건 최대 토큰</span>
-                    <input id="stsm-event-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
-                </label>
-                <label class="stsm-field" title="고정 여부와 사용자 검색 키워드 점수가 높은 인물부터 이 예산 안에 선발합니다.">
-                    <span>인물 도감 최대 토큰</span>
-                    <input id="stsm-person-injection-max-tokens" class="text_pole" type="number" min="100" max="100000" step="100" />
-                </label>
-                <label class="stsm-field" title="인물의 사용자 검색 키워드를 비교할 최근 채팅 메시지 수입니다.">
-                    <span>인물 검색 메시지 수</span>
-                    <input id="stsm-person-search-message-count" class="text_pole" type="number" min="1" max="100" step="1" />
-                </label>
-                <label class="stsm-field">
-                    <span>기본 압축 레코드 수</span>
-                    <input id="stsm-compression-group-size" class="text_pole" type="number" min="2" max="100" step="1" />
-                </label>
-                <div class="stsm-field stsm-auto-hide-field">
-                    <span>요약한 메시지 자동 숨김</span>
-                    <label class="stsm-switch" title="요약한 메시지 자동 숨김">
-                        <input id="stsm-auto-hide-summarized" type="checkbox" />
-                        <span></span>
-                    </label>
-                </div>
-            </div>
-            <div class="stsm-auto-hide-actions">
-                <button id="stsm-unhide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 해제</button>
-                <button id="stsm-hide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 진행</button>
+            <div class="stsm-settings-top-groups">
+                <details class="stsm-settings-group" open>
+                    <summary>기본 요약 설정</summary>
+                    <div class="stsm-settings-top-grid">
+                        <label class="stsm-field">
+                            <span>요약 청크 크기</span>
+                            <input id="stsm-chunk-size" class="text_pole" type="number" min="1" max="1000" step="1" />
+                        </label>
+                        <label class="stsm-field">
+                            <span>요약 작성 언어</span>
+                            <select id="stsm-summary-output-language" class="text_pole">
+                                <option value="english">영어로</option>
+                                <option value="source">원문 언어로</option>
+                                <option value="english-dialogue-source">영어로, 대사만 원문 언어로</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field">
+                            <span>기본 압축 레코드 수</span>
+                            <input id="stsm-compression-group-size" class="text_pole" type="number" min="2" max="100" step="1" />
+                        </label>
+                    </div>
+                </details>
+
+                <details class="stsm-settings-group">
+                    <summary>요약·도감 주입 설정</summary>
+                    <div class="stsm-settings-top-grid">
+                        <label class="stsm-field">
+                            <span>요약 주입 최대 토큰</span>
+                            <input id="stsm-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
+                        </label>
+                        <label class="stsm-field" title="중요도와 최신성 점수가 높은 사건부터 이 예산 안에 선발합니다.">
+                            <span>주요 사건 최대 토큰</span>
+                            <input id="stsm-event-injection-max-tokens" class="text_pole" type="number" min="100" max="200000" step="100" />
+                        </label>
+                        <label class="stsm-field" title="고정 여부와 사용자 검색 키워드 점수가 높은 인물부터 이 예산 안에 선발합니다.">
+                            <span>인물 도감 최대 토큰</span>
+                            <input id="stsm-person-injection-max-tokens" class="text_pole" type="number" min="100" max="100000" step="100" />
+                        </label>
+                        <label class="stsm-field" title="인물의 사용자 검색 키워드를 비교할 최근 채팅 메시지 수입니다.">
+                            <span>인물 검색 메시지 수</span>
+                            <input id="stsm-person-search-message-count" class="text_pole" type="number" min="1" max="100" step="1" />
+                        </label>
+                    </div>
+                </details>
+
+                <details class="stsm-settings-group">
+                    <summary>세계 설정</summary>
+                    <div class="stsm-settings-top-grid">
+                        <label class="stsm-field">
+                            <span>검색 방식</span>
+                            <select id="stsm-world-retrieval-mode" class="text_pole">
+                                <option value="lorebook">로어북식 활성화</option>
+                                <option value="priority">점수제 우선순위</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field" title="세계 설정 카드가 사용할 수 있는 최대 주입 토큰입니다.">
+                            <span>최대 토큰</span>
+                            <input id="stsm-world-injection-max-tokens" class="text_pole" type="number" min="100" max="100000" step="100" />
+                        </label>
+                        <label class="stsm-field" title="세계 설정 키를 비교할 최근 채팅 메시지 수입니다.">
+                            <span>검색 메시지 수</span>
+                            <input id="stsm-world-search-message-count" class="text_pole" type="number" min="1" max="100" step="1" />
+                        </label>
+                        <label class="stsm-field">
+                            <span>사용 위치</span>
+                            <select id="stsm-world-output-mode" class="text_pole">
+                                <option value="summary">요약 매크로에 포함</option>
+                                <option value="macro">세계 설정 매크로로 분리</option>
+                                <option value="worldInfo">월드 인포에 주입</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field stsm-world-info-position">
+                            <span>월드 인포 위치</span>
+                            <select id="stsm-world-info-position" class="text_pole">
+                                <option value="before">이전</option>
+                                <option value="after">이후</option>
+                            </select>
+                        </label>
+                        <div class="stsm-field stsm-world-output-macro">
+                            <span>세계 설정 매크로</span>
+                            <code>{{sumiWorldSetting}}</code>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="stsm-settings-group">
+                    <summary>메시지 숨김</summary>
+                    <div class="stsm-settings-top-grid">
+                        <div class="stsm-field stsm-auto-hide-field">
+                            <span>요약한 메시지 자동 숨김</span>
+                            <label class="stsm-switch" title="요약한 메시지 자동 숨김">
+                                <input id="stsm-auto-hide-summarized" type="checkbox" />
+                                <span></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="stsm-auto-hide-actions">
+                        <button id="stsm-unhide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 해제</button>
+                        <button id="stsm-hide-all-summarized" class="menu_button interactable" type="button">숨김 일괄 진행</button>
+                    </div>
+                </details>
             </div>
 
             <div class="stsm-settings-section">
@@ -348,6 +417,7 @@ export function buildPopup() {
                     ${renderMemorySectionToggle('items', '아이템 도감')}
                     ${renderMemorySectionToggle('commitments', '서약 장부')}
                     ${renderMemorySectionToggle('events', '주요 사건')}
+                    ${renderMemorySectionToggle('world', '세계 설정')}
                 </div>
             </div>
 
@@ -476,6 +546,11 @@ function renderAtlasHeadingActions(category, countId, initialCount, label) {
     return `
         <span class="stsm-atlas-heading-actions">
             <span id="${countId}">${initialCount}</span>
+            ${category === 'world' ? `
+                <button class="menu_button menu_button_icon interactable" data-world-manual-add type="button" title="세계 설정 직접 추가" aria-label="세계 설정 직접 추가">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                </button>
+            ` : ''}
             <button class="menu_button menu_button_icon interactable" data-atlas-fullscreen="${category}" type="button" title="${label} 크게 보기" aria-label="${label} 크게 보기">
                 <i class="fa-solid fa-expand" aria-hidden="true"></i>
             </button>

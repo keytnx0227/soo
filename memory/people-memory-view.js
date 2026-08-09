@@ -62,9 +62,13 @@ export function renderPeopleMemory(root) {
     const retrievalById = new Map(retrieval.map(result => [String(result.person.id), result]));
     const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.people.length.toLocaleString()}명`;
+    let omittedIds = new Set();
     if (tokenUsage) {
         const details = buildSummaryContextDetails();
         const block = details.blocks?.find(item => item.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE);
+        if (details.enabled && block?.enabled) {
+            omittedIds = new Set((block.omittedItems || []).map(item => String(item.id)));
+        }
         tokenUsage.innerHTML = renderTokenUsageBar({
             label: '인물 도감 주입',
             used: block?.outputTokenCount || 0,
@@ -80,29 +84,35 @@ export function renderPeopleMemory(root) {
             translations[person.id],
             retrievalMetadata[person.id] || { keywords: [], pinned: false },
             retrievalById.get(String(person.id)),
+            omittedIds.has(String(person.id)),
         )).join('')
         : '<div class="stsm-empty">아직 추출된 인물 도감이 없습니다.</div>';
     excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
-function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval) {
+function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval, omitted) {
     const translation = getValidAtlasTranslation('people', person, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(person.manualCorrections || {}).length);
+    const pinAction = renderAction('pin', 'fa-thumbtack', retrievalMetadata.pinned ? '고정 해제' : '고정', {
+        className: 'stsm-person-pin',
+        pressed: retrievalMetadata.pinned,
+    });
+    const fields = FIELD_DEFINITIONS.map(field => field.list
+        ? renderField(field.label, person[field.key])
+        : renderScalarField(field.label, person[field.key])).join('');
     return `
-        <article class="stsm-person-card" data-atlas-category="people" data-entity-id="${escapeHtml(person.id)}">
+        <article class="stsm-person-card${omitted ? ' stsm-atlas-card-injection-omitted' : ''}" data-atlas-category="people" data-entity-id="${escapeHtml(person.id)}">
             <header>
                 <div>
                     <strong>${escapeHtml(person.name)}</strong>
+                    ${renderInjectionState(omitted)}
                     ${person.provisional ? '<span class="stsm-atlas-correction-state">임시 이름</span>' : ''}
                     ${person.aliases.length ? `<span>${person.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
                     ${renderCorrectionState(person.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
-                        ${renderAction('pin', 'fa-thumbtack', retrievalMetadata.pinned ? '고정 해제' : '고정', {
-                            className: 'stsm-person-pin',
-                            pressed: retrievalMetadata.pinned,
-                        })}
+                        ${pinAction}
                         ${renderAction('keywords', 'fa-key', '검색 키워드 편집')}
                         ${renderAction('edit', 'fa-pen', '수정')}
                         ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
@@ -118,15 +128,19 @@ function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval) {
             </header>
             ${renderRetrievalState(retrievalMetadata, retrieval)}
             <div class="stsm-person-fields stsm-atlas-original">
-                ${FIELD_DEFINITIONS.map(field => field.list
-                    ? renderField(field.label, person[field.key])
-                    : renderScalarField(field.label, person[field.key])).join('')}
+                ${fields}
                 ${renderLastKnownState(person.lastKnownState)}
                 ${renderRelationships(person.relationships)}
             </div>
             ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
         </article>
     `;
+}
+
+function renderInjectionState(omitted) {
+    return omitted
+        ? '<span class="stsm-atlas-injection-state" title="현재 토큰 예산 계산에서 요약 주입본에 포함되지 않습니다."><i class="fa-solid fa-eye-slash" aria-hidden="true"></i> 주입 제외</span>'
+        : '';
 }
 
 async function handleAtlasAction(event, category) {

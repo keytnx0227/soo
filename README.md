@@ -46,6 +46,8 @@
 ### 요약 사용
 
 - `{{sumiSummary}}` 매크로 제공
+- 세계 설정을 `{{sumiSummary}}`, 별도 `{{sumiWorldSetting}}` 매크로 또는 World Info 이전·이후로 출력
+- 채팅별 세계 설정 직접 추가·수정·삭제
 - 채팅 depth 또는 Story/Main Prompt 앞뒤 자동 주입
 - 개별 요약 레코드 출력 포맷 설정
 - 요약 주입 토큰 예산과 잘린 범위 미리보기

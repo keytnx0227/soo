@@ -18,6 +18,7 @@ export function renderRecordMemoryUpdateBadge(record) {
         ['아이템', getItemUpdates(record)],
         ['서약', getCommitmentUpdates(record)],
         ['사건', getEventUpdates(record)],
+        ['세계 설정', getWorldUpdates(record)],
     ];
     return groups.map(([label, updates]) => {
         const parts = [];
@@ -34,10 +35,12 @@ export function renderRecordMemoryUpdateDetails(record) {
     const items = getItemUpdates(record);
     const commitments = getCommitmentUpdates(record);
     const events = getEventUpdates(record);
+    const world = getWorldUpdates(record);
     if (!people.created.length && !people.updated.length
         && !items.created.length && !items.updated.length
         && !commitments.created.length && !commitments.updated.length
-        && !events.created.length && !events.updated.length) return '';
+        && !events.created.length && !events.updated.length
+        && !world.created.length && !world.updated.length) return '';
 
     return `
         ${people.created.length || people.updated.length ? `<section class="stsm-record-detail-section">
@@ -78,6 +81,16 @@ export function renderRecordMemoryUpdateDetails(record) {
             <div class="stsm-memory-update-list">
                 ${events.created.map(renderCreatedEvent).join('')}
                 ${events.updated.map(renderUpdatedEvent).join('')}
+            </div>
+        </section>` : ''}
+        ${world.created.length || world.updated.length ? `<section class="stsm-record-detail-section">
+            <div class="stsm-record-detail-section-title">
+                <span>세계 설정 변경안</span>
+                <span>현재 세계 설정을 계산하는 데 사용되는 레코드별 변경 이력</span>
+            </div>
+            <div class="stsm-memory-update-list">
+                ${world.created.map(renderCreatedWorldEntry).join('')}
+                ${world.updated.map(renderUpdatedWorldEntry).join('')}
             </div>
         </section>` : ''}
     `;
@@ -208,6 +221,27 @@ function renderUpdatedEvent(update) {
     `;
 }
 
+function renderCreatedWorldEntry(entry) {
+    return `
+        <article class="stsm-memory-update-card">
+            <header><span>신규 세계 설정</span><strong>${escapeHtml(entry.keys.join(', '))}</strong></header>
+            ${renderValueRow('키', entry.keys)}
+            ${renderValueRow('내용', entry.content)}
+        </article>
+    `;
+}
+
+function renderUpdatedWorldEntry(update) {
+    const replace = update.replace || {};
+    return `
+        <article class="stsm-memory-update-card">
+            <header><span>기존 세계 설정 변경</span><strong>${escapeHtml(update.targetId)}</strong></header>
+            ${Object.hasOwn(replace, 'keys') ? renderValueRow('교체 · 키', replace.keys) : ''}
+            ${Object.hasOwn(replace, 'content') ? renderValueRow('교체 · 내용', replace.content) : ''}
+        </article>
+    `;
+}
+
 function isMajorEvent(value) {
     return value === 'major' || value === 'turning_point';
 }
@@ -297,5 +331,13 @@ function getEventUpdates(record) {
     return {
         created: Array.isArray(events?.created) ? events.created : [],
         updated: Array.isArray(events?.updated) ? events.updated : [],
+    };
+}
+
+function getWorldUpdates(record) {
+    const world = record?.structuredSummary?.data?.memoryUpdates?.world;
+    return {
+        created: Array.isArray(world?.created) ? world.created : [],
+        updated: Array.isArray(world?.updated) ? world.updated : [],
     };
 }

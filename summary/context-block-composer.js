@@ -3,6 +3,7 @@ import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
 import { getPeopleRetrievalMetadata } from '../memory/atlas-metadata.js';
 import { evaluatePeopleRetrieval } from '../memory/people-retrieval.js';
+import { evaluateWorldRetrieval } from '../memory/world-retrieval.js';
 import { getActiveSummaryRecords } from './summary-store.js';
 import { composeAtomicContext } from './context-block-trimmer.js';
 
@@ -11,6 +12,7 @@ export function buildContextBlockComposition(budget = Infinity, {
     retrievedRecordIds = [],
     pinnedRecordIds = [],
     messages = SillyTavern.getContext().chat,
+    blockKinds = null,
 } = {}) {
     const settings = getSettings().summarization;
     const atlas = getAtlasProjection();
@@ -20,8 +22,16 @@ export function buildContextBlockComposition(budget = Infinity, {
         metadata: getPeopleRetrievalMetadata(),
         messageCount: settings.personRetrieval.messageCount,
     });
+    const worldRetrieval = evaluateWorldRetrieval({
+        entries: atlas.world,
+        messages,
+        mode: settings.worldRetrieval.mode,
+        messageCount: settings.worldRetrieval.messageCount,
+    });
     const sourceBlocks = buildRenderedBlocks(
-        settings.contextBlocks,
+        Array.isArray(blockKinds)
+            ? settings.contextBlocks.filter(block => blockKinds.includes(block.kind))
+            : settings.contextBlocks,
         records,
         atlas,
         {
@@ -30,6 +40,8 @@ export function buildContextBlockComposition(budget = Infinity, {
             eventBudget: settings.eventInjectionMaxTokens,
             personBudget: settings.personRetrieval.maxTokens,
             peopleRetrieval,
+            worldBudget: settings.worldRetrieval.maxTokens,
+            worldRetrieval,
         },
     );
     return composeAtomicContext(sourceBlocks, budget, getTokenCount);
@@ -41,11 +53,14 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
     eventBudget = Infinity,
     personBudget = Infinity,
     peopleRetrieval = [],
+    worldBudget = Infinity,
+    worldRetrieval = [],
 } = {}) {
     const retrievedIds = new Set(retrievedRecordIds.map(String));
     const pinnedIds = new Set(pinnedRecordIds.map(String));
     const events = buildEventUnits(atlas?.events || []);
     const peopleRetrievalById = new Map(peopleRetrieval.map(result => [String(result.person.id), result]));
+    const eligibleWorld = worldRetrieval.filter(result => result.eligible);
     const sources = {
         [SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS]: [...(records || [])]
             .sort((left, right) => left.startId - right.startId || left.endId - right.endId)
@@ -80,6 +95,12 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
             label: commitment.title,
             values: renderCommitmentValues(commitment),
         })),
+        [SUMMARY_CONTEXT_BLOCK_KINDS.WORLD]: eligibleWorld.map(result => ({
+            id: result.entry.id,
+            label: result.entry.keys.join(', '),
+            priority: result.priority,
+            values: renderWorldValues(result.entry),
+        })),
     };
 
     return blockSettings.map(block => ({
@@ -90,7 +111,9 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
         suffixTemplate: block.suffixTemplate,
         unitBudget: block.kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS
             ? eventBudget
-            : block.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE ? personBudget : Infinity,
+            : block.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE
+                ? personBudget
+                : block.kind === SUMMARY_CONTEXT_BLOCK_KINDS.WORLD ? worldBudget : Infinity,
         units: (sources[block.kind] || []).map(unit => ({
             id: unit.id,
             label: unit.label,
@@ -255,6 +278,14 @@ function renderCommitmentValues(commitment) {
         sumiCommitmentDeadlineValue: commitment.deadline || '',
         sumiCommitmentFactsValue: joinValues(commitment.facts),
         sumiCommitmentStatusReasonValue: commitment.statusReason || '',
+    };
+}
+
+function renderWorldValues(entry) {
+    return {
+        sumiWorldId: entry.id,
+        sumiWorldKeys: joinValues(entry.keys),
+        sumiWorldContent: entry.content,
     };
 }
 

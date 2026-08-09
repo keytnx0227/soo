@@ -54,6 +54,11 @@ const EVENT_FIELDS = Object.freeze([
     { path: 'shift', label: 'SHIFT', type: 'long' },
 ]);
 
+const WORLD_FIELDS = Object.freeze([
+    { path: 'keys', label: '키', type: 'list' },
+    { path: 'content', label: '내용', type: 'long' },
+]);
+
 export async function showAtlasEditor(category, entityId) {
     const currentProjection = getAtlasProjection();
     const rawProjection = getAtlasProjection({ includeCorrections: false });
@@ -69,8 +74,10 @@ export async function showAtlasEditor(category, entityId) {
             ? ITEM_FIELDS
             : category === 'commitments'
                 ? COMMITMENT_FIELDS
-                : EVENT_FIELDS;
-    const displayName = current.name || current.title;
+                : category === 'events'
+                    ? EVENT_FIELDS
+                    : WORLD_FIELDS;
+    const displayName = current.name || current.title || current.keys?.[0] || '세계 설정';
     const form = document.createElement('div');
     form.className = 'stsm-atlas-editor';
     form.innerHTML = `
@@ -90,9 +97,10 @@ export async function showAtlasEditor(category, entityId) {
     for (const definition of definitions) {
         const editor = form.querySelector(`[data-atlas-field="${definition.path}"]`);
         const value = readFieldValue(editor, definition);
-        if (['name', 'title', 'terms', 'summary'].includes(definition.path) && !value) {
+        if (['name', 'title', 'terms', 'summary', 'content'].includes(definition.path) && !value) {
             throw new Error('도감 항목의 이름, 제목과 내용은 비워둘 수 없습니다.');
         }
+        if (definition.path === 'keys' && !value.length) throw new Error('세계 설정의 키는 하나 이상 필요합니다.');
         const normalizedValue = category === 'events'
             && definition.path === 'shift'
             && form.querySelector('[data-atlas-field="importance"] select').value === 'minor'
@@ -404,5 +412,6 @@ function getCollectionName(category) {
     if (category === 'items') return 'items';
     if (category === 'commitments') return 'commitments';
     if (category === 'events') return 'events';
+    if (category === 'world') return 'world';
     throw new Error('지원하지 않는 도감 종류입니다.');
 }

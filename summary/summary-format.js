@@ -40,6 +40,7 @@ export const DEFAULT_MEMORY_SECTIONS = Object.freeze({
     items: true,
     commitments: true,
     events: true,
+    world: true,
 });
 
 export const SUMMARY_SECTION_DESCRIPTIONS = Object.freeze({
@@ -56,6 +57,7 @@ export const SUMMARY_SECTION_DESCRIPTIONS = Object.freeze({
     items: '요약 대상에서 확인된 중요한 아이템의 장기 정보와 기존 아이템에 대한 변경안을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
     commitments: '향후 추적할 약속과 서약, 명시적인 의무가 붙은 비밀의 생성 및 상태 변경을 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
     events: '미래 맥락에 남길 사건과 이야기의 변곡점을 간결한 연대기로 추출합니다. 청크 요약 본문에는 출력되지 않습니다.',
+    world: '대화에서 새롭게 밝혀진 지속적인 세계관 정보를 로어북 형태로 추출합니다. 기존 월드 인포는 반복하지 않습니다.',
 });
 
 const SECTION_KEYS_BY_KIND = Object.freeze({
@@ -92,6 +94,7 @@ export function getEnabledMemorySections(value) {
         items: source.items ?? DEFAULT_MEMORY_SECTIONS.items,
         commitments: source.commitments ?? DEFAULT_MEMORY_SECTIONS.commitments,
         events: source.events ?? DEFAULT_MEMORY_SECTIONS.events,
+        world: source.world ?? DEFAULT_MEMORY_SECTIONS.world,
     };
 }
 
@@ -148,7 +151,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
             matchTerms: ['Distinctive source-language cue', 'Normalized lexical cue'],
         }];
     }
-    if (memorySections.people || memorySections.items || memorySections.commitments || memorySections.events) {
+    if (memorySections.people || memorySections.items || memorySections.commitments || memorySections.events || memorySections.world) {
         example.memoryUpdates = {};
     }
     if (memorySections.people) {
@@ -299,6 +302,21 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
             }],
         };
     }
+    if (memorySections.world) {
+        example.memoryUpdates.world = {
+            created: [{
+                keys: ['Concise source-language key', 'Established term'],
+                content: 'One short, objective, self-contained world fact',
+            }],
+            updated: [{
+                targetId: 'ID copied exactly from Current World Setting Memory',
+                replace: {
+                    keys: ['Complete current source-language retrieval keys'],
+                    content: 'Complete revised world fact',
+                },
+            }],
+        };
+    }
 
     return [
         '# JSON Output Contract',
@@ -307,7 +325,7 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         'Do not wrap the JSON in Markdown code fences. Do not add a preface, explanation, or commentary.',
         'Use null for an unavailable scalar value and [] when an enabled list has no supported entries.',
         'Do not add properties that are not present in this contract.',
-        ...(memorySections.people || memorySections.items || memorySections.commitments || memorySections.events ? [
+        ...(memorySections.people || memorySections.items || memorySections.commitments || memorySections.events || memorySections.world ? [
             'For every memory category, omit unchanged optional update fields and use empty created/updated arrays when no proposal is supported.',
         ] : []),
         ...(memorySections.commitments ? [
@@ -358,7 +376,34 @@ function normalizeMemoryUpdates(value, memorySections) {
         items: memorySections.items ? normalizeItemUpdates(source.items) : { created: [], updated: [] },
         commitments: memorySections.commitments ? normalizeCommitmentUpdates(source.commitments) : { created: [], updated: [] },
         events: memorySections.events ? normalizeEventUpdates(source.events) : { created: [], updated: [] },
+        world: memorySections.world ? normalizeWorldUpdates(source.world) : { created: [], updated: [] },
     };
+}
+
+function normalizeWorldUpdates(value) {
+    const source = isPlainObject(value) ? value : {};
+    return {
+        created: Array.isArray(source.created) ? source.created.map(normalizeCreatedWorldEntry).filter(Boolean) : [],
+        updated: Array.isArray(source.updated) ? source.updated.map(normalizeUpdatedWorldEntry).filter(Boolean) : [],
+    };
+}
+
+function normalizeCreatedWorldEntry(value) {
+    if (!isPlainObject(value)) return null;
+    const content = normalizeNullableString(value.content);
+    const keys = normalizeStringList(value.keys);
+    return content && keys.length ? { keys, content } : null;
+}
+
+function normalizeUpdatedWorldEntry(value) {
+    if (!isPlainObject(value)) return null;
+    const targetId = normalizeNullableString(value.targetId);
+    if (!targetId) return null;
+    const replace = isPlainObject(value.replace) ? value.replace : {};
+    const normalizedReplace = {};
+    if (Object.hasOwn(replace, 'keys')) normalizedReplace.keys = normalizeStringList(replace.keys);
+    if (Object.hasOwn(replace, 'content')) normalizedReplace.content = normalizeNullableString(replace.content);
+    return { targetId, replace: normalizedReplace };
 }
 
 function normalizeEventUpdates(value) {

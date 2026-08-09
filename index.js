@@ -18,6 +18,7 @@ import { invalidateAtlasProjection } from './memory/atlas-projection-service.js'
 import { bindCommitmentMemoryView, renderCommitmentMemory } from './memory/commitment-memory-view.js';
 import { bindEventMemoryView, renderEventMemory } from './memory/event-memory-view.js';
 import { bindAtlasFullscreenView } from './memory/atlas-fullscreen-view.js';
+import { bindWorldMemoryView, renderWorldMemory } from './memory/world-memory-view.js';
 import {
     bindLongTermRetrievalSettings,
     renderLongTermRetrievalSettings,
@@ -198,6 +199,7 @@ function bindEvents(root) {
     bindItemMemoryView(root);
     bindCommitmentMemoryView(root);
     bindEventMemoryView(root);
+    bindWorldMemoryView(root);
     bindAtlasFullscreenView(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {
@@ -222,6 +224,11 @@ function bindSummarizationSettings(root) {
     const eventMaxTokens = root.querySelector('#stsm-event-injection-max-tokens');
     const personMaxTokens = root.querySelector('#stsm-person-injection-max-tokens');
     const personMessageCount = root.querySelector('#stsm-person-search-message-count');
+    const worldMode = root.querySelector('#stsm-world-retrieval-mode');
+    const worldMaxTokens = root.querySelector('#stsm-world-injection-max-tokens');
+    const worldMessageCount = root.querySelector('#stsm-world-search-message-count');
+    const worldOutputMode = root.querySelector('#stsm-world-output-mode');
+    const worldInfoPosition = root.querySelector('#stsm-world-info-position');
     const outputLanguage = root.querySelector('#stsm-summary-output-language');
     const mode = root.querySelector('#stsm-injection-mode');
     const depth = root.querySelector('#stsm-injection-depth');
@@ -259,6 +266,24 @@ function bindSummarizationSettings(root) {
     }));
     personMessageCount.addEventListener('change', event => setSummarizationSettings({
         personRetrieval: { ...getSettings().summarization.personRetrieval, messageCount: event.target.value },
+    }));
+    worldMode.addEventListener('change', event => setSummarizationSettings({
+        worldRetrieval: { ...getSettings().summarization.worldRetrieval, mode: event.target.value },
+    }));
+    worldMaxTokens.addEventListener('change', event => setSummarizationSettings({
+        worldRetrieval: { ...getSettings().summarization.worldRetrieval, maxTokens: event.target.value },
+    }));
+    worldMessageCount.addEventListener('change', event => setSummarizationSettings({
+        worldRetrieval: { ...getSettings().summarization.worldRetrieval, messageCount: event.target.value },
+    }));
+    worldOutputMode.addEventListener('change', event => {
+        setSummarizationSettings({
+            worldOutput: { ...getSettings().summarization.worldOutput, mode: event.target.value },
+        });
+        renderWorldOutputFields(root);
+    });
+    worldInfoPosition.addEventListener('change', event => setSummarizationSettings({
+        worldOutput: { ...getSettings().summarization.worldOutput, worldInfoPosition: event.target.value },
     }));
     outputLanguage.addEventListener('change', event => {
         setSummarizationSettings({ outputLanguage: event.target.value });
@@ -298,6 +323,11 @@ function renderSummarizationSettings(root) {
     root.querySelector('#stsm-event-injection-max-tokens').value = settings.eventInjectionMaxTokens;
     root.querySelector('#stsm-person-injection-max-tokens').value = settings.personRetrieval.maxTokens;
     root.querySelector('#stsm-person-search-message-count').value = settings.personRetrieval.messageCount;
+    root.querySelector('#stsm-world-retrieval-mode').value = settings.worldRetrieval.mode;
+    root.querySelector('#stsm-world-injection-max-tokens').value = settings.worldRetrieval.maxTokens;
+    root.querySelector('#stsm-world-search-message-count').value = settings.worldRetrieval.messageCount;
+    root.querySelector('#stsm-world-output-mode').value = settings.worldOutput.mode;
+    root.querySelector('#stsm-world-info-position').value = settings.worldOutput.worldInfoPosition;
     root.querySelector('#stsm-summary-output-language').value = settings.outputLanguage;
     root.querySelector('#stsm-injection-mode').value = settings.injection.mode;
     root.querySelector('#stsm-injection-depth').value = settings.injection.depth;
@@ -312,6 +342,7 @@ function renderSummarizationSettings(root) {
         toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
     });
     renderInjectionFields(root);
+    renderWorldOutputFields(root);
 }
 
 async function applyImportedGlobalSettings(root) {
@@ -472,6 +503,11 @@ function renderInjectionFields(root) {
     root.querySelector('.stsm-injection-depth').hidden = mode !== 'depth';
     root.querySelector('.stsm-injection-role').hidden = mode !== 'depth';
     root.querySelector('.stsm-injection-position').hidden = mode !== 'prompt';
+}
+
+function renderWorldOutputFields(root) {
+    const usesWorldInfo = root.querySelector('#stsm-world-output-mode').value === 'worldInfo';
+    root.querySelector('#stsm-world-info-position').disabled = !usesWorldInfo;
 }
 
 async function runSummarization(root) {
@@ -971,6 +1007,7 @@ function initialize() {
         renderItemMemory(currentRoot);
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
+        renderWorldMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
     });
@@ -981,6 +1018,7 @@ function initialize() {
         renderItemMemory(currentRoot);
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
+        renderWorldMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
     });
@@ -994,11 +1032,13 @@ function initialize() {
         renderItemMemory(currentRoot);
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
+        renderWorldMemory(currentRoot);
     });
     window.addEventListener('stsm:injection-settings-changed', () => {
         if (!currentRoot) return;
         renderPeopleMemory(currentRoot);
         renderEventMemory(currentRoot);
+        renderWorldMemory(currentRoot);
     });
     [
         context.eventTypes.MESSAGE_SENT,
@@ -1013,6 +1053,7 @@ function initialize() {
             renderSummaryStatus(currentRoot);
             refreshSummaryRecordSourceStates(currentRoot);
             renderPeopleMemory(currentRoot);
+            renderWorldMemory(currentRoot);
         }));
     initializeSummaryContext();
     initializeMessageVisibility();

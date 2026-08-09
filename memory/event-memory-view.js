@@ -37,9 +37,13 @@ export function renderEventMemory(root) {
     const translations = getAtlasTranslations('events');
     const excludedOpen = Boolean(excludedHost.querySelector('.stsm-atlas-excluded')?.open);
     count.textContent = `${atlas.events.length.toLocaleString()}개`;
+    let omittedIds = new Set();
     if (tokenUsage) {
         const details = buildSummaryContextDetails();
         const block = details.blocks?.find(item => item.kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS);
+        if (details.enabled && block?.enabled) {
+            omittedIds = new Set((block.omittedItems || []).map(item => String(item.id)));
+        }
         tokenUsage.innerHTML = renderTokenUsageBar({
             label: '주요 사건 주입',
             used: block?.outputTokenCount || 0,
@@ -50,22 +54,27 @@ export function renderEventMemory(root) {
     skipped.innerHTML = renderWarnings(atlas.skippedUpdates, atlas.orphanCorrections);
     skipped.hidden = !atlas.skippedUpdates.length && !atlas.orphanCorrections.length;
     list.innerHTML = atlas.events.length
-        ? atlas.events.map(event => renderEvent(event, translations[event.id])).join('')
+        ? atlas.events.map(event => renderEvent(
+            event,
+            translations[event.id],
+            omittedIds.has(String(event.id)),
+        )).join('')
         : '<div class="stsm-empty">아직 추출된 주요 사건이 없습니다.</div>';
     excludedHost.innerHTML = renderExcludedAtlasEntries(atlas.excluded, { open: excludedOpen });
 }
 
-function renderEvent(event, cachedTranslation) {
+function renderEvent(event, cachedTranslation, omitted) {
     const translation = getValidAtlasTranslation('events', event, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(event.manualCorrections || {}).length);
     const major = event.importance === 'major';
     return `
-        <article class="stsm-event-card${major ? ' stsm-event-card-turning-point' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
+        <article class="stsm-event-card${major ? ' stsm-event-card-turning-point' : ''}${omitted ? ' stsm-atlas-card-injection-omitted' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
             <header>
                 <div>
                     <span class="stsm-event-title-line">
                         <strong>${escapeHtml(event.title)}</strong>
                         <span class="stsm-event-importance ${major ? 'is-turning-point' : ''}">${major ? '<i class="fa-solid fa-bolt" aria-hidden="true"></i> Major' : 'Minor'}</span>
+                        ${renderInjectionState(omitted)}
                     </span>
                     ${renderCorrectionState(event.manualCorrections)}
                 </div>
@@ -92,6 +101,12 @@ function renderEvent(event, cachedTranslation) {
             ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
         </article>
     `;
+}
+
+function renderInjectionState(omitted) {
+    return omitted
+        ? '<span class="stsm-atlas-injection-state" title="현재 토큰 예산 계산에서 요약 주입본에 포함되지 않습니다."><i class="fa-solid fa-eye-slash" aria-hidden="true"></i> 주입 제외</span>'
+        : '';
 }
 
 async function handleAtlasAction(event) {

@@ -84,6 +84,11 @@ const MACROS = Object.freeze({
         ['sumiCommitmentFacts', '객관 정보 줄'],
         ['sumiCommitmentStatusReason', '상태 근거 줄'],
     ],
+    world: [
+        ['sumiWorldId', '세계 설정 ID'],
+        ['sumiWorldKeys', '검색 키 값'],
+        ['sumiWorldContent', '세계 설정 내용'],
+    ],
 });
 
 export function bindContextBlockSettings(root) {

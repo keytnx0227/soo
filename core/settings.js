@@ -26,7 +26,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 21;
+const PROMPT_SCHEMA_VERSION = 23;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -56,6 +56,7 @@ export const BLOCK_KINDS = Object.freeze({
     ITEM_MEMORY: 'itemMemory',
     COMMITMENT_MEMORY: 'commitmentMemory',
     EVENT_MEMORY: 'eventMemory',
+    WORLD_MEMORY: 'worldMemory',
     SUMMARY_TITLE: SUMMARY_SECTION_KINDS.TITLE,
     SUMMARY_DATE: SUMMARY_SECTION_KINDS.DATE,
     SUMMARY_TIME: SUMMARY_SECTION_KINDS.TIME,
@@ -81,6 +82,7 @@ export const SUMMARY_EXTRACTION_RULE_DEFINITIONS = Object.freeze([
     { key: 'items', label: '아이템 도감', kind: null, category: 'memory' },
     { key: 'commitments', label: '서약 장부', kind: null, category: 'memory' },
     { key: 'events', label: '주요 사건', kind: null, category: 'memory' },
+    { key: 'world', label: '세계 설정', kind: null, category: 'memory' },
 ]);
 
 const PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
@@ -422,7 +424,22 @@ Maintain compact current profiles, never plot or action history.
 - role, age, occupation, appearance, affiliations, traits, and voice contain only stable profile facts. voice is a speech pattern, never sample dialogue. Exclude actions, chronology, evidence, temporary moods, clothing, expressions, and injuries unless durable.
 - lastKnownState is only the latest observed location and physical condition. relationships and feelings are directional current snapshots, not scene emotions.
 - Keep scalars to a short phrase or one compact sentence, lists to a few useful entries, and never repeat information across fields.`,
+    world: `# World Setting Memory Updates
+
+Maintain a compact lorebook of durable world facts newly established by the Summary Target.
+
+- Store rules, customs, institutions, geography, history, species, magic or technology systems, terminology, and other setting facts that may matter later.
+- The Summary Target alone can establish or change an entry. Character profiles, World Info, recent summaries, and Current World Setting Memory only prevent duplication and resolve context.
+- Do not restate information already explicit in Character Information, World Info, or Current World Setting Memory. Create only a newly revealed durable fact.
+- Entries marked manual are user-owned facts. Use them to prevent duplication, but never create an update targeting their IDs.
+- Each entry must contain one independent fact. content must be one short, objective, self-contained sentence with no scene recap, atmosphere, speculation, or repeated evidence.
+- keys must contain 2-6 concise source-language lexical cues likely to appear in future dialogue or narration. Prefer names, nouns, established terms, and short noun phrases; never use sentences or mini-summaries.
+- Create only an unmatched fact. Update only an exact targetId when the fact is corrected, refined, or its useful retrieval keys change. Never guess IDs, duplicate, or delete.
+- Return empty created and updated arrays when no durable new setting fact is supported. When in doubt, omit.`,
 });
+
+const V22_DEFAULT_WORLD_EXTRACTION_RULE = DEFAULT_SUMMARY_EXTRACTION_RULES.world
+    .replace('\n- Entries marked manual are user-owned facts. Use them to prevent duplication, but never create an update targeting their IDs.', '');
 
 const LEGACY_SUMMARY_EXTRACTION_IDS = Object.freeze({
     'summary-title': 'title',
@@ -589,12 +606,15 @@ const DEFAULT_COMMITMENT_CONTEXT_TEMPLATE = `## {{sumiCommitmentTitle}}
 - facts: {{sumiCommitmentFactsValue}}
 - status reason: {{sumiCommitmentStatusReasonValue}}`;
 
+const DEFAULT_WORLD_CONTEXT_TEMPLATE = '- {{sumiWorldContent}}';
+
 export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
     RECORDS: 'records',
     EVENTS: 'events',
     PEOPLE: 'people',
     ITEMS: 'items',
     COMMITMENTS: 'commitments',
+    WORLD: 'world',
 });
 
 const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
@@ -633,6 +653,13 @@ const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
         entryTemplate: DEFAULT_COMMITMENT_CONTEXT_TEMPLATE,
         suffixTemplate: '',
     },
+    {
+        kind: SUMMARY_CONTEXT_BLOCK_KINDS.WORLD,
+        name: '세계 설정',
+        prefixTemplate: '# Established World Facts',
+        entryTemplate: DEFAULT_WORLD_CONTEXT_TEMPLATE,
+        suffixTemplate: '',
+    },
 ]);
 
 export function getDefaultSummaryContextBlocks() {
@@ -642,12 +669,13 @@ export function getDefaultSummaryContextBlocks() {
         SUMMARY_CONTEXT_BLOCK_KINDS.ITEMS,
         SUMMARY_CONTEXT_BLOCK_KINDS.COMMITMENTS,
         SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS,
+        SUMMARY_CONTEXT_BLOCK_KINDS.WORLD,
     ];
     return [...SUMMARY_CONTEXT_BLOCK_DEFINITIONS]
         .sort((left, right) => order.indexOf(left.kind) - order.indexOf(right.kind))
         .map(definition => ({
-        ...definition,
-        enabled: true,
+            ...definition,
+            enabled: true,
         }));
 }
 
@@ -679,6 +707,15 @@ export const defaultSettings = Object.freeze({
         memorySections: DEFAULT_MEMORY_SECTIONS,
         injectionMaxTokens: 24000,
         eventInjectionMaxTokens: 4000,
+        worldRetrieval: {
+            mode: 'lorebook',
+            maxTokens: 4000,
+            messageCount: 6,
+        },
+        worldOutput: {
+            mode: 'summary',
+            worldInfoPosition: 'before',
+        },
         personRetrieval: {
             maxTokens: 6000,
             messageCount: 6,
@@ -1025,6 +1062,7 @@ export function isRequiredPromptBlock(block) {
         BLOCK_KINDS.ITEM_MEMORY,
         BLOCK_KINDS.COMMITMENT_MEMORY,
         BLOCK_KINDS.EVENT_MEMORY,
+        BLOCK_KINDS.WORLD_MEMORY,
         BLOCK_KINDS.COMPRESSION_SOURCES,
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
     ].includes(block?.kind);
@@ -1237,6 +1275,13 @@ function createStructuredSummaryBlocks() {
             kind: BLOCK_KINDS.EVENT_MEMORY,
         }),
         createPromptBlock({
+            id: 'world-memory',
+            name: '현재 세계 설정',
+            content: '<Current World Setting Memory>\n{{sumiWorldMemory}}\n</Current World Setting Memory>',
+            locked: true,
+            kind: BLOCK_KINDS.WORLD_MEMORY,
+        }),
+        createPromptBlock({
             id: 'summary-output-contract',
             name: 'JSON 출력 형식 · 자동 생성',
             content: '{{sumiSummaryJsonContract}}',
@@ -1419,6 +1464,12 @@ function normalizeSettings(settings, {
         200000,
         defaultSettings.summarization.eventInjectionMaxTokens,
     );
+    settings.summarization.worldRetrieval = normalizeWorldRetrievalSettings(
+        settings.summarization.worldRetrieval,
+    );
+    settings.summarization.worldOutput = normalizeWorldOutputSettings(
+        settings.summarization.worldOutput,
+    );
     settings.summarization.personRetrieval = normalizePersonRetrievalSettings(
         settings.summarization.personRetrieval,
     );
@@ -1490,6 +1541,25 @@ function normalizePersonRetrievalSettings(value) {
     return {
         maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
         messageCount: clampInteger(source.messageCount, 1, 100, 6),
+    };
+}
+
+function normalizeWorldRetrievalSettings(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return {
+        mode: ['lorebook', 'priority'].includes(source.mode) ? source.mode : 'lorebook',
+        maxTokens: clampInteger(source.maxTokens, 100, 100000, 4000),
+        messageCount: clampInteger(source.messageCount, 1, 100, 6),
+    };
+}
+
+function normalizeWorldOutputSettings(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return {
+        mode: ['summary', 'macro', 'worldInfo'].includes(source.mode) ? source.mode : 'summary',
+        worldInfoPosition: ['before', 'after'].includes(source.worldInfoPosition)
+            ? source.worldInfoPosition
+            : 'before',
     };
 }
 
@@ -1770,8 +1840,9 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 ? block.config.rules
                 : {};
             const rules = Object.fromEntries(SUMMARY_EXTRACTION_RULE_DEFINITIONS.map(({ key }) => {
-                const current = String(sourceRules[key] || PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES[key]);
-                const next = current.trim() === PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES[key].trim()
+                const fallback = PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES[key] ?? DEFAULT_SUMMARY_EXTRACTION_RULES[key];
+                const current = String(sourceRules[key] || fallback);
+                const next = current.trim() === fallback.trim()
                     ? DEFAULT_SUMMARY_EXTRACTION_RULES[key]
                     : current;
                 return [key, next];
@@ -1787,8 +1858,9 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 ? block.config.rules
                 : {};
             const rules = Object.fromEntries(SUMMARY_EXTRACTION_RULE_DEFINITIONS.map(({ key }) => {
-                const current = String(sourceRules[key] || V11_DEFAULT_SUMMARY_EXTRACTION_RULES[key]);
-                const next = current.trim() === V11_DEFAULT_SUMMARY_EXTRACTION_RULES[key].trim()
+                const fallback = V11_DEFAULT_SUMMARY_EXTRACTION_RULES[key] ?? DEFAULT_SUMMARY_EXTRACTION_RULES[key];
+                const current = String(sourceRules[key] || fallback);
+                const next = current.trim() === fallback.trim()
                     ? DEFAULT_SUMMARY_EXTRACTION_RULES[key]
                     : current;
                 return [key, next];
@@ -1994,6 +2066,41 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                         tags: DEFAULT_SUMMARY_EXTRACTION_RULES.tags,
                     },
                 },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY
+        && sourceSchemaVersion < 22
+        && !migratedBlocks.some(block => block.kind === BLOCK_KINDS.WORLD_MEMORY)) {
+        const contractIndex = migratedBlocks.findIndex(block => block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT);
+        const insertIndex = contractIndex < 0 ? migratedBlocks.length : contractIndex;
+        migratedBlocks = [
+            ...migratedBlocks.slice(0, insertIndex),
+            createPromptBlock({
+                id: 'world-memory',
+                name: '현재 세계 설정',
+                content: '<Current World Setting Memory>\n{{sumiWorldMemory}}\n</Current World Setting Memory>',
+                locked: true,
+                kind: BLOCK_KINDS.WORLD_MEMORY,
+            }),
+            ...migratedBlocks.slice(insertIndex),
+        ];
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 23) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const rules = block.config?.rules && typeof block.config.rules === 'object'
+                ? { ...block.config.rules }
+                : {};
+            const current = String(rules.world || V22_DEFAULT_WORLD_EXTRACTION_RULE);
+            if (current.trim() === V22_DEFAULT_WORLD_EXTRACTION_RULE.trim()) {
+                rules.world = DEFAULT_SUMMARY_EXTRACTION_RULES.world;
+            }
+            return {
+                ...block,
+                config: { ...block.config, rules },
             };
         });
     }
