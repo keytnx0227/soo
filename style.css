@@ -393,6 +393,12 @@
     white-space: nowrap;
 }
 
+#stsm-delete-record-range {
+    width: auto;
+    gap: 6px;
+    white-space: nowrap;
+}
+
 .stsm-sort-field {
     width: min(220px, 100%);
 }
@@ -2640,6 +2646,131 @@
     border: 1px solid var(--SmartThemeQuoteColor);
     border-radius: 6px;
     background-color: color-mix(in srgb, transparent, var(--SmartThemeQuoteColor) 8%);
+}
+
+.stsm-range-deletion-popup,
+.stsm-range-deletion-preview {
+    display: grid;
+    gap: 12px;
+    align-content: start;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.stsm-range-deletion-popup::-webkit-scrollbar,
+.stsm-range-deletion-preview::-webkit-scrollbar {
+    display: none;
+}
+
+.stsm-range-deletion-help,
+.stsm-range-deletion-warning {
+    margin: 0;
+    color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-range-deletion-warning {
+    padding: 10px;
+    border: 1px solid color-mix(in srgb, var(--crimson70a) 70%, transparent);
+}
+
+.stsm-range-deletion-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.stsm-range-deletion-inline-preview {
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-range-deletion-inline-preview > summary {
+    padding: 9px 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.stsm-range-deletion-inline-content {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 0 10px 10px;
+}
+
+.stsm-range-deletion-content-list {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.stsm-range-deletion-record-preview {
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-range-deletion-record-preview > summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 7px 8px;
+    cursor: pointer;
+}
+
+.stsm-range-deletion-record-preview > summary > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.stsm-range-deletion-record-chevron {
+    transition: transform 120ms ease;
+}
+
+.stsm-range-deletion-record-preview[open] .stsm-range-deletion-record-chevron {
+    transform: rotate(90deg);
+}
+
+.stsm-range-deletion-record-content {
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 9px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.stsm-range-deletion-preview-button {
+    width: auto;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.stsm-range-deletion-preview-button,
+.stsm-range-deletion-preview .popup-button-ok {
+    color: var(--crimson70a);
+}
+
+.stsm-range-deletion-group {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.stsm-range-deletion-list {
+    display: grid;
+    gap: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-range-deletion-list > span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
 }
 
 .stsm-settings-section {

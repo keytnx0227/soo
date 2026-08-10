@@ -26,12 +26,14 @@ import {
 import {
     hideAllSummarizedMessages,
     initializeMessageVisibility,
+    releaseUncoveredSummarizedMessages,
     syncSummarizedMessageVisibility,
     unhideAllSummarizedMessages,
 } from './visibility/message-visibility.js';
 import { bindPromptSettings, renderPromptEditor } from './prompts/prompt-settings-view.js';
 import { bindPromptInspector } from './prompts/prompt-inspector.js';
 import { bindRangeAdjustment } from './records/range-adjustment-view.js';
+import { bindRangeDeletion } from './records/range-deletion-view.js';
 import {
     bindRecordsView,
     refreshSummaryRecordSourceStates,
@@ -207,6 +209,16 @@ function bindEvents(root) {
             renderSummaryRecords(root, bindRecordEvents);
             renderRangeActions(root);
             renderSummaryStatus(root);
+            await syncSummarizedMessageVisibility();
+        },
+    });
+    bindRangeDeletion(root, {
+        onApplied: async () => {
+            clearRevisionSession();
+            renderSummaryRecords(root, bindRecordEvents);
+            renderRangeActions(root);
+            renderSummaryStatus(root);
+            await releaseUncoveredSummarizedMessages();
             await syncSummarizedMessageVisibility();
         },
     });

@@ -3,6 +3,7 @@ import { getStringHash } from '../../../../../scripts/utils.js';
 import { normalizeSourceFingerprint } from './source-tracking.js';
 import { renderStructuredSummary } from './summary-format.js';
 import { renderCompressionSummary } from './compression-format.js';
+import { createRecordDeletionPlan } from './range-deletion.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 
@@ -150,6 +151,47 @@ export async function deleteSummaryRecord(recordId) {
     }
     notifyRecordsChanged();
     return true;
+}
+
+export function getSummaryRecordDeletionPlan(recordIds) {
+    return createRecordDeletionPlan(getSummaryRecords(), recordIds);
+}
+
+export async function deleteSummaryRecords(recordIds) {
+    const store = getStore();
+    const plan = createRecordDeletionPlan(store.records, recordIds);
+    if (!plan.deletedIds.length) return plan;
+
+    const deletedIds = new Set(plan.deletedIds);
+    const previousRecords = store.records;
+    const previousRecentConversation = store.recentRevisionConversation;
+    store.records = store.records
+        .filter(record => !deletedIds.has(record.id))
+        .map(record => {
+            const compressedBy = deletedIds.has(record.compressedBy) ? null : record.compressedBy;
+            const sourceRecordIds = record.compression?.sourceRecordIds.filter(id => !deletedIds.has(id));
+            const compressionChanged = Boolean(record.compression)
+                && sourceRecordIds.length !== record.compression.sourceRecordIds.length;
+            if (compressedBy === record.compressedBy && !compressionChanged) return record;
+            return {
+                ...record,
+                compressedBy,
+                compression: compressionChanged ? { ...record.compression, sourceRecordIds } : record.compression,
+            };
+        });
+    if (deletedIds.has(String(store.recentRevisionConversation?.recordId))) {
+        store.recentRevisionConversation = null;
+    }
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        store.recentRevisionConversation = previousRecentConversation;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return plan;
 }
 
 export async function updateSummaryRecordContent(recordId, content, {

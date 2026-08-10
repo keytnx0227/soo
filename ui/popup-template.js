@@ -171,6 +171,10 @@ export function buildPopup() {
                         <i class="fa-solid fa-arrows-left-right"></i>
                         <span>범위 일괄 교정</span>
                     </button>
+                    <button id="stsm-delete-record-range" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                        <span>범위 삭제</span>
+                    </button>
                 </div>
                 <div class="stsm-records-view-controls">
                     <label class="stsm-field stsm-sort-field">

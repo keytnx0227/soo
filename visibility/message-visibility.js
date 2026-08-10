@@ -3,7 +3,6 @@ import { hideChatMessageRange } from '../../../../../scripts/chats.js';
 import { assertExtensionEnabled, isExtensionEnabled } from '../core/extension-state.js';
 import {
     clearMessageAutoHiddenMarker,
-    isMessageAutoHiddenBySummarizer,
     markMessageAutoHidden,
 } from './message-visibility-state.js';
 import { getCoveredRanges } from '../summary/range-utils.js';
@@ -38,6 +37,10 @@ export function initializeMessageVisibility() {
 
 export function syncSummarizedMessageVisibility() {
     return queueOperation(() => synchronizeVisibilityIfEnabled());
+}
+
+export function releaseUncoveredSummarizedMessages() {
+    return queueOperation(() => releaseUncoveredOwnedMessages());
 }
 
 export function hideAllSummarizedMessages() {
@@ -108,6 +111,27 @@ async function unhideOwnedMessages() {
         await saveChatConditional();
     }
 
+    return { hidden: 0, unhidden: idsToUnhide.length };
+}
+
+async function releaseUncoveredOwnedMessages() {
+    const chat = SillyTavern.getContext().chat;
+    if (!Array.isArray(chat) || !chat.length) return { hidden: 0, unhidden: 0 };
+
+    const coveredIds = getCoveredMessageIds(getSummaryRecords(), chat.length);
+    const idsToUnhide = [];
+    let markerChangedWithoutVisibility = false;
+
+    chat.forEach((message, id) => {
+        if (!message || coveredIds.has(id) || !clearMessageAutoHiddenMarker(message)) return;
+        if (message.is_system) idsToUnhide.push(id);
+        else markerChangedWithoutVisibility = true;
+    });
+
+    await applyVisibilityChanges(chat, idsToUnhide, true);
+    if (markerChangedWithoutVisibility && !idsToUnhide.length && SillyTavern.getContext().chat === chat) {
+        await saveChatConditional();
+    }
     return { hidden: 0, unhidden: idsToUnhide.length };
 }
 
