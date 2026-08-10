@@ -1,3 +1,10 @@
+import {
+    canApplyAtlasReplacement,
+    compareAtlasSourceRecords,
+    getAtlasSourceRange,
+} from './atlas-source-record.js';
+import { getCreatedAtlasEntityId } from './atlas-entity-id.js';
+
 const REPLACE_FIELDS = Object.freeze(['functions']);
 const STATE_FIELDS = Object.freeze(['owner', 'holder', 'location', 'condition', 'status']);
 
@@ -15,21 +22,22 @@ export function buildItemMemoryPromptContext(items) {
 export function deriveItemAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.items)
-        .sort((left, right) => left.startId - right.startId
-            || left.endId - right.endId
-            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
+        .sort(compareAtlasSourceRecords);
     const itemsById = new Map();
     const skippedUpdates = [];
 
     for (const record of sourceRecords) {
-        const range = { startId: Number(record.startId), endId: Number(record.endId) };
+        const range = getAtlasSourceRange(record);
         const updates = record.structuredSummary.data.memoryUpdates.items;
-
         (Array.isArray(updates.created) ? updates.created : []).forEach((proposal, index) => {
-            const id = createStableItemId(record.id, index);
+            const id = getCreatedAtlasEntityId('items', record.id, proposal, index);
             itemsById.set(id, createItemEntry(id, proposal, range, record.id));
         });
+    }
 
+    for (const record of sourceRecords) {
+        const range = getAtlasSourceRange(record);
+        const updates = record.structuredSummary.data.memoryUpdates.items;
         for (const update of Array.isArray(updates.updated) ? updates.updated : []) {
             const item = itemsById.get(String(update.targetId));
             if (!item) {
@@ -111,7 +119,7 @@ function applyItemUpdate(item, update, range, sourceRecordId) {
 
 function canReplace(item, field, range) {
     const previous = item._sources[field];
-    return !previous || range.endId >= previous.endId;
+    return canApplyAtlasReplacement(previous, range);
 }
 
 function appendUnique(target, values) {
@@ -157,16 +165,6 @@ function normalizeKey(value) {
 
 function newerRange(left, right) {
     return right.endId >= left.endId ? { ...right } : { ...left };
-}
-
-function createStableItemId(recordId, index) {
-    const source = `item:${recordId}:${index}`;
-    let hash = 2166136261;
-    for (let position = 0; position < source.length; position += 1) {
-        hash ^= source.charCodeAt(position);
-        hash = Math.imul(hash, 16777619);
-    }
-    return `item-${(hash >>> 0).toString(36)}`;
 }
 
 function toPublicItem(item) {

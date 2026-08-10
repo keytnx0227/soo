@@ -1,3 +1,10 @@
+import {
+    canApplyAtlasReplacement,
+    compareAtlasSourceRecords,
+    getAtlasSourceRange,
+} from './atlas-source-record.js';
+import { getCreatedAtlasEntityId } from './atlas-entity-id.js';
+
 const REPLACE_FIELDS = Object.freeze([
     'provisional',
     'role',
@@ -41,29 +48,31 @@ function compactPersonForPrompt(person) {
 export function derivePeopleAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.people)
-        .sort((left, right) => left.startId - right.startId
-            || left.endId - right.endId
-            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
+        .sort(compareAtlasSourceRecords);
     const peopleById = new Map();
     const skippedUpdates = [];
+    const pendingRelationships = [];
 
     for (const record of sourceRecords) {
-        const range = { startId: Number(record.startId), endId: Number(record.endId) };
+        const range = getAtlasSourceRange(record);
         const updates = record.structuredSummary.data.memoryUpdates.people;
         const created = Array.isArray(updates.created) ? updates.created : [];
-        const pendingRelationships = [];
 
         created.forEach((proposal, index) => {
-            const id = createStablePersonId(record.id, index);
+            const id = getCreatedAtlasEntityId('people', record.id, proposal, index);
             const person = createPersonEntry(id, proposal, range, record.id);
             peopleById.set(id, person);
-            pendingRelationships.push({ person, relationships: proposal.relationships || [] });
+            pendingRelationships.push({ person, relationships: proposal.relationships || [], range });
         });
+    }
 
-        for (const { person, relationships } of pendingRelationships) {
-            applyRelationshipUpdates(person, relationships, range, peopleById);
-        }
+    for (const { person, relationships, range } of pendingRelationships) {
+        applyRelationshipUpdates(person, relationships, range, peopleById);
+    }
 
+    for (const record of sourceRecords) {
+        const range = getAtlasSourceRange(record);
+        const updates = record.structuredSummary.data.memoryUpdates.people;
         for (const update of Array.isArray(updates.updated) ? updates.updated : []) {
             const person = peopleById.get(String(update.targetId));
             if (!person) {
@@ -185,7 +194,7 @@ function applyRelationshipUpdates(person, updates, range, peopleById) {
         const key = resolvedTargetId ? `id:${resolvedTargetId}` : `name:${normalizeKey(update.targetName)}`;
         if (!key || key === 'name:') continue;
         const previousSource = person._relationshipSources[key];
-        if (previousSource && previousSource.endId > range.endId) continue;
+        if (!canApplyAtlasReplacement(previousSource, range)) continue;
 
         const existingIndex = person.relationships.findIndex(item => relationshipKey(item) === key);
         const relationship = {
@@ -217,7 +226,7 @@ function resolveTargetId(update, peopleById) {
 
 function canReplace(person, field, range) {
     const previous = person._sources[field];
-    return !previous || range.endId >= previous.endId;
+    return canApplyAtlasReplacement(previous, range);
 }
 
 function relationshipKey(relationship) {
@@ -281,18 +290,9 @@ function newerRange(left, right) {
     return right.endId >= left.endId ? { ...right } : { ...left };
 }
 
-function createStablePersonId(recordId, index) {
-    const source = `${recordId}:${index}`;
-    let hash = 2166136261;
-    for (let position = 0; position < source.length; position += 1) {
-        hash ^= source.charCodeAt(position);
-        hash = Math.imul(hash, 16777619);
-    }
-    return `person-${(hash >>> 0).toString(36)}`;
-}
-
 function toPublicPerson(person) {
-    const { _sources, _valueSources, _relationshipSources, ...publicPerson } = person;
+    const { _sources, _valueSources, ...publicPerson } = person;
+    delete publicPerson._relationshipSources;
     return structuredClone({
         ...publicPerson,
         provenance: {

@@ -115,11 +115,15 @@ export function getSummaryLanguageInstruction(mode) {
     return 'Write the entire response in English, including quoted dialogue.';
 }
 
-export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMORY_SECTIONS) {
+export function buildSummaryJsonContract(
+    sections,
+    memorySections = DEFAULT_MEMORY_SECTIONS,
+    { includeSummary = true, includeCreatedSourceIds = false } = {},
+) {
     const example = {};
-    if (sections.title) example.title = 'A concise title for this chunk';
+    if (includeSummary && sections.title) example.title = 'A concise title for this chunk';
 
-    if (sections.date || sections.time || sections.location) {
+    if (includeSummary && (sections.date || sections.time || sections.location)) {
         const context = {};
         if (sections.date) {
             context.date = 'An explicit date or a continuous Day N value';
@@ -130,22 +134,22 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         example.contextFlow = [context];
     }
 
-    example.plot = ['A chronological plot beat grounded in the source messages.'];
-    if (sections.continuity) example.continuityChanges = ['A concrete non-emotional state change.'];
-    if (sections.emotions) {
+    if (includeSummary) example.plot = ['A chronological plot beat grounded in the source messages.'];
+    if (includeSummary && sections.continuity) example.continuityChanges = ['A concrete non-emotional state change.'];
+    if (includeSummary && sections.emotions) {
         example.emotions = [{
             subject: 'Character name',
             toward: 'Target name or null',
             states: [{ emotion: 'Emotion', reason: 'Cause grounded in the source messages' }],
         }];
     }
-    if (sections.quotes) {
+    if (includeSummary && sections.quotes) {
         example.quotes = [{
             speaker: 'Speaker name',
             text: 'Important dialogue',
         }];
     }
-    if (sections.tags) {
+    if (includeSummary && sections.tags) {
         example.tags = [{
             canonical: 'Specific retrieval concept',
             matchTerms: ['Distinctive source-language cue', 'Normalized lexical cue'],
@@ -156,55 +160,55 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
     }
     if (memorySections.people) {
         example.memoryUpdates.people = {
-                created: [{
-                    name: 'Canonical character name',
+            created: [{
+                name: 'Canonical character name',
+                provisional: false,
+                aliases: ['Established alias'],
+                role: 'Compact role in the story or null',
+                age: 'Explicit age or concise age description, otherwise null',
+                occupation: 'Current occupation or position, otherwise null',
+                appearance: 'Compact stable identifying appearance or null',
+                affiliations: ['Current affiliation'],
+                traits: ['Stable personality trait'],
+                voice: 'Compact speech pattern without sample dialogue or null',
+                lastKnownState: {
+                    location: 'Last location observed in the target or null',
+                    physicalCondition: 'Last physical condition observed in the target or null',
+                },
+                relationships: [{
+                    targetId: null,
+                    targetName: 'Related character name',
+                    relationship: ['Current relationship description'],
+                    feelings: ['Current durable feeling toward the target'],
+                }],
+            }],
+            updated: [{
+                targetId: 'ID copied exactly from Current People Memory',
+                append: {
+                    aliases: ['Newly established alias'],
+                },
+                replace: {
+                    name: 'New canonical name only when the name changed',
                     provisional: false,
-                    aliases: ['Established alias'],
-                    role: 'Compact role in the story or null',
-                    age: 'Explicit age or concise age description, otherwise null',
-                    occupation: 'Current occupation or position, otherwise null',
-                    appearance: 'Compact stable identifying appearance or null',
-                    affiliations: ['Current affiliation'],
-                    traits: ['Stable personality trait'],
-                    voice: 'Compact speech pattern without sample dialogue or null',
+                    role: 'Complete current story-role snapshot or null',
+                    age: 'Complete current age snapshot or null',
+                    occupation: 'Complete current occupation snapshot or null',
+                    appearance: 'Complete current stable appearance snapshot or null',
+                    affiliations: ['Complete current affiliation snapshot'],
+                    traits: ['Complete concise personality snapshot'],
+                    voice: 'Complete compact speech-pattern snapshot or null',
                     lastKnownState: {
                         location: 'Last location observed in the target or null',
                         physicalCondition: 'Last physical condition observed in the target or null',
                     },
-                    relationships: [{
-                        targetId: null,
-                        targetName: 'Related character name',
-                        relationship: ['Current relationship description'],
-                        feelings: ['Current durable feeling toward the target'],
-                    }],
+                },
+                relationshipUpdates: [{
+                    targetId: 'Existing related-person ID or null',
+                    targetName: 'Related character name',
+                    relationship: ['Complete current relationship snapshot'],
+                    feelings: ['Complete current durable-feeling snapshot'],
                 }],
-                updated: [{
-                    targetId: 'ID copied exactly from Current People Memory',
-                    append: {
-                        aliases: ['Newly established alias'],
-                    },
-                    replace: {
-                        name: 'New canonical name only when the name changed',
-                        provisional: false,
-                        role: 'Complete current story-role snapshot or null',
-                        age: 'Complete current age snapshot or null',
-                        occupation: 'Complete current occupation snapshot or null',
-                        appearance: 'Complete current stable appearance snapshot or null',
-                        affiliations: ['Complete current affiliation snapshot'],
-                        traits: ['Complete concise personality snapshot'],
-                        voice: 'Complete compact speech-pattern snapshot or null',
-                        lastKnownState: {
-                            location: 'Last location observed in the target or null',
-                            physicalCondition: 'Last physical condition observed in the target or null',
-                        },
-                    },
-                    relationshipUpdates: [{
-                        targetId: 'Existing related-person ID or null',
-                        targetName: 'Related character name',
-                        relationship: ['Complete current relationship snapshot'],
-                        feelings: ['Complete current durable-feeling snapshot'],
-                    }],
-                }],
+            }],
         };
     }
     if (memorySections.items) {
@@ -318,6 +322,16 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         };
     }
 
+    if (includeCreatedSourceIds) {
+        for (const updates of Object.values(example.memoryUpdates)) {
+            if (!updates.created?.[0]) continue;
+            updates.created[0] = {
+                sourceId: 'Copy the exact existing sourceId, or null for a genuinely new entry',
+                ...updates.created[0],
+            };
+        }
+    }
+
     return [
         '# JSON Output Contract',
         '',
@@ -340,6 +354,11 @@ export function buildSummaryJsonContract(sections, memorySections = DEFAULT_MEMO
         '',
         JSON.stringify(example, null, 2),
     ].join('\n');
+}
+
+export function buildAtlasReviewJsonContract(category, { includeCreatedSourceIds = false } = {}) {
+    const memorySections = createSingleMemorySectionConfiguration(category);
+    return buildSummaryJsonContract({}, memorySections, { includeSummary: false, includeCreatedSourceIds });
 }
 
 export function parseStructuredSummaryResponse(response, sections, memorySections = DEFAULT_MEMORY_SECTIONS) {
@@ -369,6 +388,29 @@ export function parseStructuredSummaryResponse(response, sections, memorySection
     return normalized;
 }
 
+export function parseAtlasReviewResponse(response, category) {
+    const source = stripJsonFence(String(response || '').trim());
+    if (!source) throw new Error('도감 재검토 응답이 비어 있습니다.');
+
+    let parsed;
+    try {
+        parsed = JSON.parse(source);
+    } catch (error) {
+        throw new Error(`도감 재검토 응답 JSON 파싱에 실패했습니다: ${error.message}`);
+    }
+    if (!isPlainObject(parsed)) throw new Error('도감 재검토 응답은 하나의 JSON 객체여야 합니다.');
+
+    const memorySections = createSingleMemorySectionConfiguration(category);
+    return normalizeMemoryUpdates(parsed.memoryUpdates, memorySections)[category];
+}
+
+function createSingleMemorySectionConfiguration(category) {
+    if (!Object.hasOwn(DEFAULT_MEMORY_SECTIONS, category)) {
+        throw new Error(`지원하지 않는 도감 종류입니다: ${category}`);
+    }
+    return Object.fromEntries(Object.keys(DEFAULT_MEMORY_SECTIONS).map(key => [key, key === category]));
+}
+
 function normalizeMemoryUpdates(value, memorySections) {
     const source = isPlainObject(value) ? value : {};
     return {
@@ -392,7 +434,7 @@ function normalizeCreatedWorldEntry(value) {
     if (!isPlainObject(value)) return null;
     const content = normalizeNullableString(value.content);
     const keys = normalizeStringList(value.keys);
-    return content && keys.length ? { keys, content } : null;
+    return content && keys.length ? withCreatedSourceId(value, { keys, content }) : null;
 }
 
 function normalizeUpdatedWorldEntry(value) {
@@ -421,14 +463,14 @@ function normalizeCreatedEvent(value) {
     if (!title || !summary) return null;
     const importance = normalizeEventImportance(value.importance);
     const shift = normalizeEventShift(value.shift ?? value.shifts, importance);
-    return {
+    return withCreatedSourceId(value, {
         title,
         date: normalizeNullableString(value.date),
         location: normalizeNullableString(value.location),
         summary,
         importance,
         shift,
-    };
+    });
 }
 
 function normalizeUpdatedEvent(value) {
@@ -474,7 +516,7 @@ function normalizeCreatedCommitment(value) {
     const title = normalizeNullableString(value.title);
     const terms = normalizeNullableString(value.terms);
     if (!title || !terms) return null;
-    return {
+    return withCreatedSourceId(value, {
         title,
         terms,
         participants: normalizeCommitmentParticipants(value.participants),
@@ -483,7 +525,7 @@ function normalizeCreatedCommitment(value) {
         facts: normalizeStringList(value.facts),
         status: normalizeCommitmentStatus(value.status),
         statusReason: normalizeNullableString(value.statusReason),
-    };
+    });
 }
 
 function normalizeUpdatedCommitment(value) {
@@ -538,13 +580,13 @@ function normalizeCreatedItem(value) {
     if (!isPlainObject(value)) return null;
     const name = normalizeNullableString(value.name);
     if (!name) return null;
-    return {
+    return withCreatedSourceId(value, {
         name,
         aliases: normalizeStringList(value.aliases),
         facts: normalizeStringList(value.facts),
         functions: normalizeStringList(value.functions),
         lastKnownState: normalizeItemState(value.lastKnownState),
-    };
+    });
 }
 
 function normalizeUpdatedItem(value) {
@@ -592,7 +634,7 @@ function normalizeCreatedPerson(value) {
     if (!isPlainObject(value)) return null;
     const name = normalizeNullableString(value.name);
     if (!name) return null;
-    return {
+    return withCreatedSourceId(value, {
         name,
         provisional: Boolean(value.provisional),
         aliases: normalizeStringList(value.aliases),
@@ -605,7 +647,7 @@ function normalizeCreatedPerson(value) {
         voice: normalizeLegacyScalar(value.voice, value.speechPatterns),
         lastKnownState: normalizeLastKnownState(value.lastKnownState),
         relationships: normalizeRelationships(value.relationships),
-    };
+    });
 }
 
 function normalizeUpdatedPerson(value) {
@@ -749,6 +791,11 @@ function normalizeNullableString(value) {
     if (value === null || value === undefined) return null;
     const normalized = String(value).trim();
     return normalized || null;
+}
+
+function withCreatedSourceId(source, normalized) {
+    const sourceId = normalizeNullableString(source.sourceId);
+    return sourceId ? { sourceId, ...normalized } : normalized;
 }
 
 function stripJsonFence(value) {

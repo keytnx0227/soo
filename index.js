@@ -19,6 +19,7 @@ import { bindCommitmentMemoryView, renderCommitmentMemory } from './memory/commi
 import { bindEventMemoryView, renderEventMemory } from './memory/event-memory-view.js';
 import { bindAtlasFullscreenView } from './memory/atlas-fullscreen-view.js';
 import { bindWorldMemoryView, renderWorldMemory } from './memory/world-memory-view.js';
+import { bindAtlasReview } from './memory/atlas-review-view.js';
 import {
     bindLongTermRetrievalSettings,
     renderLongTermRetrievalSettings,
@@ -203,6 +204,7 @@ function bindEvents(root) {
     bindEventMemoryView(root);
     bindWorldMemoryView(root);
     bindAtlasFullscreenView(root);
+    bindAtlasReview(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {
             synchronizeRevisionSessionRanges(updatedRecords);

@@ -1,3 +1,10 @@
+import {
+    canApplyAtlasReplacement,
+    compareAtlasSourceRecords,
+    getAtlasSourceRange,
+} from './atlas-source-record.js';
+import { getCreatedAtlasEntityId } from './atlas-entity-id.js';
+
 const REPLACE_FIELDS = Object.freeze(['keys', 'content']);
 
 export function buildWorldMemoryPromptContext(entries) {
@@ -12,20 +19,22 @@ export function buildWorldMemoryPromptContext(entries) {
 export function deriveWorldAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.world)
-        .sort((left, right) => left.startId - right.startId
-            || left.endId - right.endId
-            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
+        .sort(compareAtlasSourceRecords);
     const entriesById = new Map();
     const skippedUpdates = [];
 
     for (const record of sourceRecords) {
-        const range = { startId: Number(record.startId), endId: Number(record.endId) };
+        const range = getAtlasSourceRange(record);
         const updates = record.structuredSummary.data.memoryUpdates.world;
         (Array.isArray(updates.created) ? updates.created : []).forEach((proposal, index) => {
-            const id = createStableWorldId(record.id, index);
+            const id = getCreatedAtlasEntityId('world', record.id, proposal, index);
             entriesById.set(id, createWorldEntry(id, proposal, range, record.id));
         });
+    }
 
+    for (const record of sourceRecords) {
+        const range = getAtlasSourceRange(record);
+        const updates = record.structuredSummary.data.memoryUpdates.world;
         for (const update of Array.isArray(updates.updated) ? updates.updated : []) {
             const entry = entriesById.get(String(update.targetId));
             if (!entry) {
@@ -84,7 +93,7 @@ function applyWorldUpdate(entry, update, range, sourceRecordId) {
 
 function canReplace(entry, field, range) {
     const previous = entry._sources[field];
-    return !previous || range.endId >= previous.endId;
+    return canApplyAtlasReplacement(previous, range);
 }
 
 function dedupeStrings(values) {
@@ -110,16 +119,6 @@ function normalizeKey(value) {
 
 function newerRange(left, right) {
     return right.endId >= left.endId ? { ...right } : { ...left };
-}
-
-function createStableWorldId(recordId, index) {
-    const source = `world:${recordId}:${index}`;
-    let hash = 2166136261;
-    for (let position = 0; position < source.length; position += 1) {
-        hash ^= source.charCodeAt(position);
-        hash = Math.imul(hash, 16777619);
-    }
-    return `world-${(hash >>> 0).toString(36)}`;
 }
 
 function toPublicWorldEntry(entry) {

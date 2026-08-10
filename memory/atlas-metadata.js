@@ -110,6 +110,70 @@ export function getManualWorldEntries() {
     return structuredClone(getAtlasStore().manual.world);
 }
 
+export function getAtlasReviewRecords() {
+    return structuredClone(getAtlasStore().reviews);
+}
+
+export async function saveAtlasReviewRecord({
+    id,
+    category,
+    startId,
+    endId,
+    appliedThroughId,
+    batchId,
+    memoryUpdates,
+    prompt,
+}) {
+    assertCategory(category);
+    const store = getAtlasStore();
+    const previous = structuredClone(store.reviews);
+    const existing = store.reviews.find(record => record.category === category
+        && record.startId === Number(startId)
+        && record.endId === Number(endId));
+    const now = new Date().toISOString();
+    const record = normalizeAtlasReviewRecord({
+        id: existing?.id || String(id || createId('atlas-review')),
+        category,
+        startId,
+        endId,
+        appliedThroughId,
+        batchId,
+        memoryUpdates,
+        prompt,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+    });
+    if (!record) throw new Error('저장할 도감 재검토 기록이 올바르지 않습니다.');
+    store.reviews = [
+        ...store.reviews.filter(item => item.id !== record.id),
+        record,
+    ];
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.reviews = previous;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return structuredClone(record);
+}
+
+export async function deleteAtlasReviewRecord(recordId) {
+    const store = getAtlasStore();
+    const id = String(recordId);
+    if (!store.reviews.some(record => record.id === id)) return false;
+    const previous = structuredClone(store.reviews);
+    store.reviews = store.reviews.filter(record => record.id !== id);
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.reviews = previous;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return true;
+}
+
 export async function addManualWorldEntry({ keys, content }) {
     const store = getAtlasStore();
     const previous = structuredClone(store.manual.world);
@@ -192,6 +256,7 @@ function getAtlasStore() {
     if (!root.atlas.translations || typeof root.atlas.translations !== 'object') root.atlas.translations = {};
     if (!root.atlas.retrieval || typeof root.atlas.retrieval !== 'object') root.atlas.retrieval = {};
     if (!root.atlas.manual || typeof root.atlas.manual !== 'object') root.atlas.manual = {};
+    root.atlas.reviews = normalizeAtlasReviewRecords(root.atlas.reviews);
     root.atlas.manual.world = normalizeManualWorldEntries(root.atlas.manual.world);
     root.atlas.retrieval.people = normalizeEntityMap(root.atlas.retrieval.people, normalizePersonRetrieval);
     for (const category of CATEGORIES) {
@@ -202,6 +267,38 @@ function getAtlasStore() {
         root.atlas.translations[category] = normalizeEntityMap(root.atlas.translations[category], normalizeTranslation);
     }
     return root.atlas;
+}
+
+function normalizeAtlasReviewRecords(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    return value.map(normalizeAtlasReviewRecord).filter(record => {
+        if (!record || seen.has(record.id)) return false;
+        seen.add(record.id);
+        return true;
+    });
+}
+
+function normalizeAtlasReviewRecord(value) {
+    if (!value || typeof value !== 'object' || !CATEGORIES.includes(value.category)) return null;
+    const startId = Number(value.startId);
+    const endId = Number(value.endId);
+    if (!Number.isInteger(startId) || !Number.isInteger(endId) || startId < 0 || startId > endId) return null;
+    const updates = value.memoryUpdates && typeof value.memoryUpdates === 'object'
+        ? structuredClone(value.memoryUpdates)
+        : { created: [], updated: [] };
+    return {
+        id: String(value.id || createId('atlas-review')),
+        category: value.category,
+        startId,
+        endId,
+        appliedThroughId: Math.max(endId, Number(value.appliedThroughId) || endId),
+        batchId: String(value.batchId || ''),
+        memoryUpdates: updates,
+        prompt: String(value.prompt || ''),
+        createdAt: String(value.createdAt || new Date().toISOString()),
+        updatedAt: String(value.updatedAt || value.createdAt || new Date().toISOString()),
+    };
 }
 
 function normalizeManualWorldEntries(value) {

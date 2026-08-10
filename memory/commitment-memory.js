@@ -1,3 +1,10 @@
+import {
+    canApplyAtlasReplacement,
+    compareAtlasSourceRecords,
+    getAtlasSourceRange,
+} from './atlas-source-record.js';
+import { getCreatedAtlasEntityId } from './atlas-entity-id.js';
+
 const REPLACE_FIELDS = Object.freeze([
     'title',
     'terms',
@@ -24,20 +31,22 @@ export function buildCommitmentMemoryPromptContext(commitments) {
 export function deriveCommitmentAtlas(records) {
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .filter(record => record?.structuredSummary?.data?.memoryUpdates?.commitments)
-        .sort((left, right) => left.startId - right.startId
-            || left.endId - right.endId
-            || Date.parse(left.createdAt) - Date.parse(right.createdAt));
+        .sort(compareAtlasSourceRecords);
     const commitmentsById = new Map();
     const skippedUpdates = [];
 
     for (const record of sourceRecords) {
-        const range = { startId: Number(record.startId), endId: Number(record.endId) };
+        const range = getAtlasSourceRange(record);
         const updates = record.structuredSummary.data.memoryUpdates.commitments;
         (Array.isArray(updates.created) ? updates.created : []).forEach((proposal, index) => {
-            const id = createStableCommitmentId(record.id, index);
+            const id = getCreatedAtlasEntityId('commitments', record.id, proposal, index);
             commitmentsById.set(id, createCommitmentEntry(id, proposal, range, record.id));
         });
+    }
 
+    for (const record of sourceRecords) {
+        const range = getAtlasSourceRange(record);
+        const updates = record.structuredSummary.data.memoryUpdates.commitments;
         for (const update of Array.isArray(updates.updated) ? updates.updated : []) {
             const commitment = commitmentsById.get(String(update.targetId));
             if (!commitment) {
@@ -142,7 +151,7 @@ function normalizeStatus(value) {
 
 function canReplace(commitment, field, range) {
     const previous = commitment._sources[field];
-    return !previous || range.endId >= previous.endId;
+    return canApplyAtlasReplacement(previous, range);
 }
 
 function appendUniqueTracked(target, sources, values, range) {
@@ -181,16 +190,6 @@ function normalizeKey(value) {
 
 function newerRange(left, right) {
     return right.endId >= left.endId ? { ...right } : { ...left };
-}
-
-function createStableCommitmentId(recordId, index) {
-    const source = `commitment:${recordId}:${index}`;
-    let hash = 2166136261;
-    for (let position = 0; position < source.length; position += 1) {
-        hash ^= source.charCodeAt(position);
-        hash = Math.imul(hash, 16777619);
-    }
-    return `commitment-${(hash >>> 0).toString(36)}`;
 }
 
 function toPublicCommitment(commitment) {

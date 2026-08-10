@@ -205,6 +205,10 @@ export function buildPopup() {
                     <strong>도감</strong>
                     <span>요약 레코드의 변경안을 바탕으로 계산된 장기 기억</span>
                 </div>
+                <button id="stsm-open-atlas-review" class="menu_button interactable" type="button">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <span>도감 재검토</span>
+                </button>
             </div>
             <div class="stsm-atlas-scroll">
                 <section class="stsm-atlas-section">

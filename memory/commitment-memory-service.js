@@ -1,8 +1,8 @@
 import { getAtlasProjection } from './atlas-projection-service.js';
 import { buildCommitmentMemoryPromptContext as serializeCommitmentMemory } from './commitment-memory.js';
 
-export function getCommitmentAtlas() {
-    const atlas = getAtlasProjection();
+export function getCommitmentAtlas(projectionOptions = {}) {
+    const atlas = getAtlasProjection(projectionOptions);
     return {
         commitments: atlas.commitments,
         excluded: atlas.excluded.commitments,
@@ -11,6 +11,6 @@ export function getCommitmentAtlas() {
     };
 }
 
-export function buildCommitmentMemoryPromptContext() {
-    return serializeCommitmentMemory(getCommitmentAtlas().commitments);
+export function buildCommitmentMemoryPromptContext(projectionOptions = {}) {
+    return serializeCommitmentMemory(getCommitmentAtlas(projectionOptions).commitments);
 }

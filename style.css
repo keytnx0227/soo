@@ -540,6 +540,268 @@
     opacity: 0.62;
 }
 
+.stsm-atlas-review-popup {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-popup::-webkit-scrollbar {
+    display: none;
+}
+
+.stsm-atlas-review-help {
+    margin: 0;
+    color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-atlas-review-status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+}
+
+.stsm-atlas-review-status > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 9px 7px;
+    text-align: center;
+}
+
+.stsm-atlas-review-status > div + div {
+    border-left: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-status span,
+.stsm-atlas-review-history-item small {
+    font-size: 0.82rem;
+    opacity: 0.72;
+}
+
+.stsm-atlas-review-mode-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.stsm-atlas-review-mode-tabs .stsm-atlas-review-mode {
+    width: 100%;
+}
+
+.stsm-atlas-review-mode-active {
+    border-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 40%, transparent);
+    color: var(--SmartThemeQuoteColor);
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor) 13%, transparent) !important;
+    filter: none;
+    font-weight: 700;
+}
+
+.stsm-atlas-review-token {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+}
+
+.stsm-atlas-review-token strong {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.stsm-atlas-review-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.stsm-atlas-review-history {
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-overview {
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-overview > summary {
+    padding: 9px 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.stsm-atlas-review-overview-body {
+    display: grid;
+    gap: 8px;
+    padding: 0 10px 10px;
+}
+
+.stsm-atlas-review-overview-body > div {
+    display: grid;
+    grid-template-columns: minmax(135px, auto) minmax(0, 1fr);
+    gap: 10px;
+}
+
+.stsm-atlas-review-overview-body span {
+    overflow-wrap: anywhere;
+}
+
+.stsm-atlas-review-history > summary {
+    padding: 9px 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.stsm-atlas-review-history-list {
+    display: grid;
+    gap: 5px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 0 10px 10px;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-history-list::-webkit-scrollbar {
+    display: none;
+}
+
+.stsm-atlas-review-history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-history-item > span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stsm-atlas-review-history-item small {
+    color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-atlas-review-result {
+    display: grid;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+}
+
+.stsm-atlas-review-result[hidden] {
+    display: none;
+}
+
+.stsm-atlas-review-result-heading,
+.stsm-atlas-review-result-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.stsm-atlas-review-result-heading span {
+    font-size: 0.84rem;
+    opacity: 0.74;
+}
+
+.stsm-atlas-review-result-list {
+    display: grid;
+    gap: 5px;
+    max-height: min(38vh, 360px);
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-result-list::-webkit-scrollbar {
+    display: none;
+}
+
+.stsm-atlas-review-result-list details {
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-result-list summary {
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.stsm-atlas-review-result-list pre {
+    max-height: 260px;
+    overflow: auto;
+    margin: 8px 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.stsm-atlas-review-change-created {
+    color: #63c47c;
+}
+
+.stsm-atlas-review-change-updated {
+    color: #e0b74f;
+}
+
+.stsm-atlas-review-change-removed,
+.stsm-atlas-review-interruption {
+    color: var(--fullred);
+}
+
+.stsm-atlas-review-interruption {
+    margin: 0;
+}
+
+@media (max-width: 600px) {
+    .stsm-atlas-review-status span {
+        font-size: 0.74rem;
+    }
+
+    .stsm-atlas-review-status strong {
+        font-size: 0.9rem;
+    }
+
+    .stsm-atlas-review-token,
+    .stsm-atlas-review-result-heading,
+    .stsm-atlas-review-result-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .stsm-atlas-review-token strong {
+        text-align: left;
+    }
+
+    .stsm-atlas-review-result-actions > button {
+        width: 100%;
+    }
+
+    .stsm-atlas-review-overview-body > div {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+}
+
 .stsm-atlas-scroll {
     display: flex;
     min-height: 0;
@@ -2746,6 +3008,12 @@
     white-space: nowrap;
 }
 
+#stsm-open-atlas-review, .stsm-atlas-review-run, .stsm-atlas-review-cancel {
+    width: auto;
+    gap: 6px;
+    white-space: nowrap;
+}
+
 .stsm-range-deletion-preview-button,
 .stsm-range-deletion-preview .popup-button-ok {
     color: var(--crimson70a);
@@ -3293,6 +3561,10 @@
     .stsm-world-card > header {
         align-items: flex-start;
         flex-direction: column;
+    }
+
+    .stsm-memory-toolbar > .menu_button {
+        width: 100%;
     }
 
     .stsm-atlas-card-side,

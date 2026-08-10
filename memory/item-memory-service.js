@@ -1,8 +1,8 @@
 import { getAtlasProjection } from './atlas-projection-service.js';
 import { buildItemMemoryPromptContext as serializeItemMemory } from './item-memory.js';
 
-export function getItemAtlas() {
-    const atlas = getAtlasProjection();
+export function getItemAtlas(projectionOptions = {}) {
+    const atlas = getAtlasProjection(projectionOptions);
     return {
         items: atlas.items,
         excluded: atlas.excluded.items,
@@ -11,6 +11,6 @@ export function getItemAtlas() {
     };
 }
 
-export function buildItemMemoryPromptContext() {
-    return serializeItemMemory(getItemAtlas().items);
+export function buildItemMemoryPromptContext(projectionOptions = {}) {
+    return serializeItemMemory(getItemAtlas(projectionOptions).items);
 }

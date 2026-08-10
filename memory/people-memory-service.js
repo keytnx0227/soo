@@ -1,8 +1,8 @@
 import { getAtlasProjection } from './atlas-projection-service.js';
 import { buildPeopleMemoryPromptContext as serializePeopleMemory } from './people-memory.js';
 
-export function getPeopleAtlas() {
-    const atlas = getAtlasProjection();
+export function getPeopleAtlas(projectionOptions = {}) {
+    const atlas = getAtlasProjection(projectionOptions);
     return {
         people: atlas.people,
         excluded: atlas.excluded.people,
@@ -11,6 +11,6 @@ export function getPeopleAtlas() {
     };
 }
 
-export function buildPeopleMemoryPromptContext() {
-    return serializePeopleMemory(getPeopleAtlas().people);
+export function buildPeopleMemoryPromptContext(projectionOptions = {}) {
+    return serializePeopleMemory(getPeopleAtlas(projectionOptions).people);
 }

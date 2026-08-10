@@ -19,12 +19,21 @@ import { buildCommitmentMemoryPromptContext } from '../memory/commitment-memory-
 import { buildEventMemoryPromptContext } from '../memory/event-memory-service.js';
 import { buildWorldMemoryPromptContext } from '../memory/world-memory-service.js';
 import {
+    buildAtlasReviewJsonContract,
     buildSummaryJsonContract,
     getEnabledMemorySections,
     getEnabledSummarySections,
     getSummarySectionKeyForKind,
     getSummaryLanguageInstruction,
 } from '../summary/summary-format.js';
+
+const ATLAS_REVIEW_PROMPT_DEFINITIONS = Object.freeze({
+    people: { kind: BLOCK_KINDS.PEOPLE_MEMORY, macro: 'sumiPeopleMemory', buildContext: buildPeopleMemoryPromptContext },
+    items: { kind: BLOCK_KINDS.ITEM_MEMORY, macro: 'sumiItemMemory', buildContext: buildItemMemoryPromptContext },
+    commitments: { kind: BLOCK_KINDS.COMMITMENT_MEMORY, macro: 'sumiCommitmentMemory', buildContext: buildCommitmentMemoryPromptContext },
+    events: { kind: BLOCK_KINDS.EVENT_MEMORY, macro: 'sumiEventMemory', buildContext: buildEventMemoryPromptContext },
+    world: { kind: BLOCK_KINDS.WORLD_MEMORY, macro: 'sumiWorldMemory', buildContext: buildWorldMemoryPromptContext },
+});
 
 export function getSummaryOutputConfiguration() {
     const settings = getSettings().summarization;
@@ -49,6 +58,62 @@ export async function buildSummaryPrompt({ messages, startId, endId }, outputCon
     }
 
     return parts.join('\n\n');
+}
+
+export function buildAtlasReviewPrompt(
+    { messages, startId, endId },
+    category,
+    {
+        mode = 'quick',
+        projectionOptions = {},
+        currentRecordContribution = null,
+    } = {},
+) {
+    const definition = ATLAS_REVIEW_PROMPT_DEFINITIONS[category];
+    if (!definition) throw new Error(`지원하지 않는 도감 종류입니다: ${category}`);
+    const preset = getActivePreset(PROMPT_TYPES.SUMMARY);
+    const mainBlock = preset.blocks.find(block => block.id === 'summary-main')
+        || preset.blocks.find(block => !block.kind);
+    const messageBlock = preset.blocks.find(block => block.kind === BLOCK_KINDS.SUMMARY_MESSAGES);
+    const memoryBlock = preset.blocks.find(block => block.kind === definition.kind);
+    const extractionBlock = preset.blocks.find(block => block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES);
+    if (!messageBlock) throw new Error('현재 요약 프리셋에서 요약 대상 메시지 포맷을 찾지 못했습니다.');
+
+    const values = {
+        sumiStartId: startId,
+        sumiEndId: endId,
+        sumiSummaryLanguageInstruction: getSummaryLanguageInstruction(getSettings().summarization.outputLanguage),
+        sumiAtlasReviewJsonContract: buildAtlasReviewJsonContract(category, {
+            includeCreatedSourceIds: mode === 'record' || Boolean(currentRecordContribution),
+        }),
+    };
+    const target = renderSummaryMessages(messageBlock.content, { messages, startId, endId }, SillyTavern.getContext());
+    const currentMemory = memoryBlock
+        ? renderDataBlock(memoryBlock, definition.macro, definition.buildContext(projectionOptions), values)
+        : '';
+    const rule = String(extractionBlock?.config?.rules?.[category] || '').trim();
+    const parts = [
+        mainBlock ? renderTemplate(mainBlock.content, values) : '',
+        mode === 'record' ? `# Record Atlas Replacement Review
+
+Review only the selected atlas category for this one summary record. Return a complete replacement for this record's category contribution, not an incremental patch to the old contribution. The current atlas is the present-day source of truth. In created entries, copy each retained entry's exact sourceId from <Current Record Atlas Contribution>; use null only for genuinely new entries. Do not reuse a sourceId for a different identity. Updated entries must use exact current-atlas targetId values. Retain every valid created entry from the current record contribution; omit one only when the target messages show that it was incorrectly attributed to this record. Any omission will be shown to the user before approval. Return empty arrays when this record supports no contribution.` : `# Atlas Retrospective Review
+
+Review only the selected atlas category using the messages inside <Atlas Review Target> as evidence. The current atlas is the present-day source of truth and is provided to resolve identity and prevent duplicates. Recover durable information that was previously missed, but never regress a current mutable snapshot to an older historical state merely because it appears in the review target. Create unmatched entries or update an exact existing targetId only when the target supports a useful durable addition or factual correction. Never delete an entry. Return empty created and updated arrays when no proposal is supported.`,
+        values.sumiSummaryLanguageInstruction,
+        `<Atlas Review Target range="#${startId} ~ #${endId}">\n${target}\n</Atlas Review Target>`,
+        currentMemory,
+        mode === 'quick' && currentRecordContribution
+            ? 'This exact review range already has a replaceable prior contribution. Copy its sourceId for every retained created identity; use null only for genuinely new identities.'
+            : '',
+        currentRecordContribution
+            ? mode === 'record'
+                ? `<Current Record Atlas Contribution>\n${currentRecordContribution}\n</Current Record Atlas Contribution>`
+                : `<Previous Review Contribution>\n${currentRecordContribution}\n</Previous Review Contribution>`
+            : '',
+        rule,
+        values.sumiAtlasReviewJsonContract,
+    ];
+    return parts.map(part => String(part || '').trim()).filter(Boolean).join('\n\n');
 }
 
 function isSummaryBlockEnabled(block, sections) {

@@ -19,6 +19,75 @@ export function getSummaryRecord(recordId) {
     return getSummaryRecords().find(record => record.id === String(recordId)) || null;
 }
 
+export async function saveAtlasRecordReviewOverrides(entries) {
+    const normalizedEntries = Array.isArray(entries) ? entries : [];
+    if (!normalizedEntries.length) throw new Error('적용할 레코드별 도감 재검토 결과가 없습니다.');
+    const store = getStore();
+    const previousRecords = store.records;
+    const byRecordId = new Map(normalizedEntries.map(entry => [String(entry.recordId), entry]));
+    const found = new Set();
+    const reviewedAt = new Date().toISOString();
+
+    store.records = store.records.map(record => {
+        const entry = byRecordId.get(record.id);
+        if (!entry) return record;
+        if (record.type !== 'summary' || !record.structuredSummary) {
+            throw new Error(`#${record.startId} ~ #${record.endId} 레코드는 도감 변경안을 교체할 수 없습니다.`);
+        }
+        const category = String(entry.category);
+        if (!['people', 'items', 'commitments', 'events', 'world'].includes(category)) {
+            throw new Error('지원하지 않는 도감 종류입니다.');
+        }
+        found.add(record.id);
+        return {
+            ...record,
+            atlasReviewOverrides: {
+                ...record.atlasReviewOverrides,
+                [category]: {
+                    memoryUpdates: structuredClone(entry.memoryUpdates),
+                    prompt: String(entry.prompt || ''),
+                    reviewedAt,
+                },
+            },
+            updatedAt: reviewedAt,
+        };
+    });
+    if (found.size !== byRecordId.size) {
+        store.records = previousRecords;
+        throw new Error('재검토 결과를 적용할 일부 요약 레코드를 찾지 못했습니다.');
+    }
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return normalizedEntries.length;
+}
+
+export async function clearAtlasRecordReviewOverride(recordId, category) {
+    const store = getStore();
+    const previousRecords = store.records;
+    let changed = false;
+    store.records = store.records.map(record => {
+        if (record.id !== String(recordId) || !record.atlasReviewOverrides?.[category]) return record;
+        const atlasReviewOverrides = { ...record.atlasReviewOverrides };
+        delete atlasReviewOverrides[category];
+        changed = true;
+        return { ...record, atlasReviewOverrides, updatedAt: new Date().toISOString() };
+    });
+    if (!changed) return false;
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return true;
+}
+
 export function getRecentRevisionConversation() {
     const conversation = getStore().recentRevisionConversation;
     return conversation ? structuredClone(conversation) : null;
@@ -513,6 +582,7 @@ function normalizeRecords(records) {
                 contentEdited: Boolean(record.contentEdited),
                 sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
                 structuredSummary: normalizeStructuredSummary(record.structuredSummary),
+                atlasReviewOverrides: normalizeAtlasReviewOverrides(record.atlasReviewOverrides),
                 searchTags: Array.isArray(record.searchTags) ? normalizeRecordTags(record.searchTags) : null,
                 compression: normalizeCompression(record.compression),
                 prompt: String(record.prompt || ''),
@@ -562,6 +632,22 @@ function normalizeStructuredSummary(value) {
         memorySections: value.memorySections && typeof value.memorySections === 'object' ? structuredClone(value.memorySections) : {},
         data: structuredClone(value.data),
     };
+}
+
+function normalizeAtlasReviewOverrides(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const categories = ['people', 'items', 'commitments', 'events', 'world'];
+    return Object.fromEntries(categories.map(category => {
+        const entry = value[category];
+        if (!entry || typeof entry !== 'object' || !entry.memoryUpdates || typeof entry.memoryUpdates !== 'object') {
+            return [category, null];
+        }
+        return [category, {
+            memoryUpdates: structuredClone(entry.memoryUpdates),
+            prompt: String(entry.prompt || ''),
+            reviewedAt: String(entry.reviewedAt || new Date().toISOString()),
+        }];
+    }).filter(([, entry]) => entry));
 }
 
 function normalizeRecordTags(tags) {

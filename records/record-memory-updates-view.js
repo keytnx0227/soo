@@ -14,16 +14,17 @@ const FIELD_LABELS = Object.freeze({
 
 export function renderRecordMemoryUpdateBadge(record) {
     const groups = [
-        ['인물', getPeopleUpdates(record)],
-        ['아이템', getItemUpdates(record)],
-        ['서약', getCommitmentUpdates(record)],
-        ['사건', getEventUpdates(record)],
-        ['세계 설정', getWorldUpdates(record)],
+        ['인물', 'people', getPeopleUpdates(record)],
+        ['아이템', 'items', getItemUpdates(record)],
+        ['서약', 'commitments', getCommitmentUpdates(record)],
+        ['사건', 'events', getEventUpdates(record)],
+        ['세계 설정', 'world', getWorldUpdates(record)],
     ];
-    return groups.map(([label, updates]) => {
+    return groups.map(([label, category, updates]) => {
         const parts = [];
         if (updates.created.length) parts.push(`신규 ${updates.created.length}`);
         if (updates.updated.length) parts.push(`변경 ${updates.updated.length}`);
+        if (record.atlasReviewOverrides?.[category]) parts.push('재검토');
         return parts.length
             ? `<span class="stsm-record-memory-badge" title="${label} 도감 변경안">${label} ${parts.join(' · ')}</span>`
             : '';
@@ -303,7 +304,7 @@ function renderRelationships(label, relationships) {
 }
 
 function getPeopleUpdates(record) {
-    const people = record?.structuredSummary?.data?.memoryUpdates?.people;
+    const people = getEffectiveUpdates(record, 'people');
     return {
         created: Array.isArray(people?.created) ? people.created : [],
         updated: Array.isArray(people?.updated) ? people.updated : [],
@@ -311,7 +312,7 @@ function getPeopleUpdates(record) {
 }
 
 function getItemUpdates(record) {
-    const items = record?.structuredSummary?.data?.memoryUpdates?.items;
+    const items = getEffectiveUpdates(record, 'items');
     return {
         created: Array.isArray(items?.created) ? items.created : [],
         updated: Array.isArray(items?.updated) ? items.updated : [],
@@ -319,7 +320,7 @@ function getItemUpdates(record) {
 }
 
 function getCommitmentUpdates(record) {
-    const commitments = record?.structuredSummary?.data?.memoryUpdates?.commitments;
+    const commitments = getEffectiveUpdates(record, 'commitments');
     return {
         created: Array.isArray(commitments?.created) ? commitments.created : [],
         updated: Array.isArray(commitments?.updated) ? commitments.updated : [],
@@ -327,7 +328,7 @@ function getCommitmentUpdates(record) {
 }
 
 function getEventUpdates(record) {
-    const events = record?.structuredSummary?.data?.memoryUpdates?.events;
+    const events = getEffectiveUpdates(record, 'events');
     return {
         created: Array.isArray(events?.created) ? events.created : [],
         updated: Array.isArray(events?.updated) ? events.updated : [],
@@ -335,9 +336,14 @@ function getEventUpdates(record) {
 }
 
 function getWorldUpdates(record) {
-    const world = record?.structuredSummary?.data?.memoryUpdates?.world;
+    const world = getEffectiveUpdates(record, 'world');
     return {
         created: Array.isArray(world?.created) ? world.created : [],
         updated: Array.isArray(world?.updated) ? world.updated : [],
     };
+}
+
+function getEffectiveUpdates(record, category) {
+    return record?.atlasReviewOverrides?.[category]?.memoryUpdates
+        || record?.structuredSummary?.data?.memoryUpdates?.[category];
 }
