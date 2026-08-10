@@ -33,6 +33,37 @@ export function selectCompressionSources(startRecordId, count) {
     return sources;
 }
 
+export function createCompressionBatchPlan(startRecordId, count, repeatCount) {
+    const normalizedCount = Number(count);
+    const normalizedRepeatCount = Number(repeatCount);
+    if (!Number.isInteger(normalizedCount) || normalizedCount < 2) {
+        throw new Error('압축할 요약 레코드 수는 2개 이상이어야 합니다.');
+    }
+    if (!Number.isInteger(normalizedRepeatCount) || normalizedRepeatCount < 1) {
+        throw new Error('압축 반복 횟수는 1회 이상이어야 합니다.');
+    }
+
+    const candidates = getCompressionCandidates();
+    const startIndex = candidates.findIndex(record => record.id === String(startRecordId));
+    if (startIndex < 0) throw new Error('압축을 시작할 활성 요약 레코드를 찾지 못했습니다.');
+
+    const totalCount = normalizedCount * normalizedRepeatCount;
+    const sources = candidates.slice(startIndex, startIndex + totalCount);
+    if (sources.length !== totalCount) {
+        const possibleRepeats = Math.floor(sources.length / normalizedCount);
+        throw new Error(`선택한 시작점에서는 ${normalizedCount}개씩 최대 ${possibleRepeats}회 압축할 수 있습니다.`);
+    }
+    assertContiguousSources(sources);
+
+    return {
+        batches: Array.from({ length: normalizedRepeatCount }, (_, index) => (
+            sources.slice(index * normalizedCount, (index + 1) * normalizedCount)
+        )),
+        sources,
+        nextRecord: candidates[startIndex + totalCount] || null,
+    };
+}
+
 export async function compressSummaryRecords({ startRecordId, count }) {
     assertExtensionEnabled();
     const sources = selectCompressionSources(startRecordId, count);

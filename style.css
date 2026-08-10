@@ -719,6 +719,10 @@
     display: none !important;
 }
 
+#stsm-cancel-translation[hidden] {
+    display: none !important;
+}
+
 .stsm-atlas-review-result-heading,
 .stsm-atlas-review-result-actions {
     display: flex;

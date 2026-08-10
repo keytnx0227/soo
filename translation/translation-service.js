@@ -34,7 +34,7 @@ export async function translateSummaryRecord(recordId) {
     return updatedRecord;
 }
 
-export async function translateAllSummaryRecords({ onProgress } = {}) {
+export async function translateAllSummaryRecords({ onProgress, signal } = {}) {
     const settings = getSettings().translation;
     const records = getSummaryRecords();
     const targets = records.filter(record => !translationMatches(record.translation, settings));
@@ -42,6 +42,7 @@ export async function translateAllSummaryRecords({ onProgress } = {}) {
     let translated = 0;
 
     for (let index = 0; index < targets.length; index += 1) {
+        if (signal?.aborted) break;
         const record = targets[index];
         onProgress?.({ current: index + 1, total: targets.length, record });
         try {
@@ -57,6 +58,8 @@ export async function translateAllSummaryRecords({ onProgress } = {}) {
         skipped: records.length - targets.length,
         failures,
         total: records.length,
+        cancelled: Boolean(signal?.aborted),
+        remaining: Math.max(0, targets.length - translated - failures.length),
     };
 }
 

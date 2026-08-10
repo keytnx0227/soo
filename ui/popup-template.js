@@ -619,6 +619,10 @@ function renderTranslationSettings() {
                 </div>
                 <div class="stsm-translation-actions">
                     <button id="stsm-translate-all" class="menu_button interactable" type="button">일괄 번역</button>
+                    <button id="stsm-cancel-translation" class="menu_button interactable" type="button" hidden>
+                        <i class="fa-solid fa-stop" aria-hidden="true"></i>
+                        <span>중단</span>
+                    </button>
                     <button id="stsm-delete-all-translations" class="menu_button interactable" type="button">일괄 번역 삭제</button>
                 </div>
             </div>

@@ -83,6 +83,8 @@ let currentRoot = null;
 let isSummarizing = false;
 let isTranslating = false;
 let summaryAbortController = null;
+let translationAbortController = null;
+let translationOperationToken = null;
 let summaryOperationToken = null;
 const busyRecordIds = new Set();
 
@@ -179,6 +181,7 @@ function bindEvents(root) {
     root.querySelector('#stsm-cancel-summary').addEventListener('click', cancelSummarization);
     bindTranslationSettings(root);
     root.querySelector('#stsm-translate-all').addEventListener('click', () => translateAllRecords(root));
+    root.querySelector('#stsm-cancel-translation').addEventListener('click', cancelTranslation);
     root.querySelector('#stsm-delete-all-translations').addEventListener('click', () => deleteAllTranslations(root));
 
     bindConnectionSettings(root);
@@ -919,10 +922,14 @@ async function translateAllRecords(root) {
 
     const button = root.querySelector('#stsm-translate-all');
     let operationToken = null;
+    const abortController = new AbortController();
     try {
         operationToken = beginOperation('translating', '일괄 번역 준비 중');
+        translationAbortController = abortController;
+        translationOperationToken = operationToken;
         setTranslating(root, true);
         const result = await translateAllSummaryRecords({
+            signal: abortController.signal,
             onProgress: ({ current, total, record }) => {
                 updateOperation(operationToken, `#${record.startId} ~ #${record.endId} 번역 중 (${current}/${total})`);
                 button.textContent = `번역 중 ${current}/${total}`;
@@ -930,7 +937,9 @@ async function translateAllRecords(root) {
         });
         renderSummaryRecords(root, bindRecordEvents);
 
-        if (!result.total) {
+        if (result.cancelled) {
+            toastr.info(`${result.translated}개 번역 완료, ${result.remaining}개 미시도`);
+        } else if (!result.total) {
             toastr.info('번역할 요약 기록이 없습니다.');
         } else if (!result.translated && !result.failures.length) {
             toastr.info('모든 요약 기록이 현재 설정으로 이미 번역되어 있습니다.');
@@ -957,10 +966,25 @@ async function translateAllRecords(root) {
         });
         toastr.error('일괄 번역 처리에 실패했습니다.');
     } finally {
+        if (translationAbortController === abortController) translationAbortController = null;
+        if (translationOperationToken === operationToken) translationOperationToken = null;
         if (operationToken) {
             setTranslating(root, false);
             endOperation(operationToken);
         }
+    }
+}
+
+function cancelTranslation() {
+    if (!isTranslating || !translationAbortController || translationAbortController.signal.aborted) return;
+    translationAbortController.abort();
+    if (translationOperationToken) {
+        updateOperation(translationOperationToken, '현재 번역 완료 후 중단', 'cancelling-translation');
+    }
+    const button = currentRoot?.querySelector('#stsm-cancel-translation');
+    if (button) {
+        button.disabled = true;
+        button.querySelector('span').textContent = '중단 중';
     }
 }
 
@@ -993,6 +1017,10 @@ function setTranslating(root, value) {
     root.querySelectorAll('.stsm-record-translate, .stsm-record-translation-toggle, #stsm-translate-all, #stsm-delete-all-translations').forEach(button => {
         button.disabled = value;
     });
+    const cancelButton = root.querySelector('#stsm-cancel-translation');
+    cancelButton.hidden = !value;
+    cancelButton.disabled = false;
+    cancelButton.querySelector('span').textContent = '중단';
     root.querySelector('#stsm-translate-all').textContent = '일괄 번역';
 }
 
