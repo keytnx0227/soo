@@ -23,6 +23,16 @@ import {
     getAtlasReviewRecordCandidates,
 } from './atlas-review-service.js';
 
+const ATLAS_COMPARISON_METADATA_FIELDS = new Set([
+    'sourceRecordIds',
+    'firstSeenRange',
+    'lastUpdatedRange',
+    'lastObservedRange',
+    'provenance',
+    'manualCorrections',
+    'excluded',
+]);
+
 export function bindAtlasReview(root) {
     root.querySelector('#stsm-open-atlas-review')?.addEventListener('click', () => {
         openAtlasReviewPopup().catch(error => logReviewError(error, '도감 재검토 화면 열기 실패'));
@@ -445,8 +455,8 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
 }
 
 function compareAtlas(before, after) {
-    const beforeMap = new Map((before || []).map(item => [item.id, item]));
-    const afterMap = new Map((after || []).map(item => [item.id, item]));
+    const beforeMap = new Map((before || []).map(item => [item.id, toSemanticAtlasValue(item)]));
+    const afterMap = new Map((after || []).map(item => [item.id, toSemanticAtlasValue(item)]));
     const created = [];
     const updated = [];
     const removed = [];
@@ -459,6 +469,14 @@ function compareAtlas(before, after) {
         if (!afterMap.has(id)) removed.push(changeItem('removed', '제외', value));
     }
     return { created, updated, removed };
+}
+
+function toSemanticAtlasValue(value) {
+    if (Array.isArray(value)) return value.map(toSemanticAtlasValue);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value)
+        .filter(([key]) => !ATLAS_COMPARISON_METADATA_FIELDS.has(key))
+        .map(([key, entry]) => [key, toSemanticAtlasValue(entry)]));
 }
 
 function changeItem(type, label, value) {
