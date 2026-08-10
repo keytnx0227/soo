@@ -708,7 +708,15 @@
 }
 
 .stsm-atlas-review-result[hidden] {
-    display: none;
+    display: none !important;
+}
+
+.stsm-atlas-review-cancel[hidden],
+.stsm-atlas-review-quick-fields[hidden],
+.stsm-atlas-review-record-fields[hidden],
+.stsm-atlas-review-result-list[hidden],
+.stsm-atlas-review-result-translation[hidden] {
+    display: none !important;
 }
 
 .stsm-atlas-review-result-heading,
@@ -795,6 +803,35 @@
     margin: 0;
 }
 
+.stsm-atlas-review-no-effect {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-atlas-review-draft-entries {
+    display: grid;
+    gap: 8px;
+    max-height: min(42vh, 420px);
+    overflow-y: auto;
+    padding: 0 10px 10px;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-draft-entries::-webkit-scrollbar {
+    display: none;
+}
+
+.stsm-atlas-review-draft-entries section {
+    min-width: 0;
+}
+
+.stsm-atlas-review-draft-entries pre {
+    max-height: none;
+    padding: 6px 0 0;
+}
+
 .stsm-atlas-review-removal-popup {
     display: flex;
     min-height: 0;
@@ -844,6 +881,12 @@
 
 .stsm-atlas-review-stored-update pre::-webkit-scrollbar {
     display: none;
+}
+
+.stsm-atlas-review-stored-update .stsm-atlas-review-draft-entries pre {
+    max-height: none;
+    overflow: visible;
+    padding: 6px 0 0;
 }
 
 @media (max-width: 600px) {
@@ -3088,11 +3131,13 @@
     white-space: nowrap;
 }
 
-#stsm-open-atlas-review, .stsm-atlas-review-run, .stsm-atlas-review-cancel {
+#stsm-open-atlas-review, .stsm-atlas-review-run, .stsm-atlas-review-cancel,
+.stsm-atlas-review-apply, .stsm-atlas-review-discard {
     width: auto;
     gap: 6px;
     white-space: nowrap;
 }
+
 
 .stsm-range-deletion-preview-button,
 .stsm-range-deletion-preview .popup-button-ok {

@@ -447,6 +447,18 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
             `).join('') || '<div class="stsm-empty">도감 계산 결과에 달라지는 항목이 없습니다.</div>'}
         </div>
         ${translation ? `<pre class="stsm-atlas-review-result-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.content)}</pre>` : ''}
+        ${changeCount === 0 && draft.entries.length ? '<p class="stsm-atlas-review-no-effect">재검토 변경안은 생성됐지만 현재 최종 도감에는 영향을 주지 않습니다. 같은 값이 이미 반영됐거나 이후 레코드·사용자 수정이 해당 값을 덮고 있을 수 있습니다.</p>' : ''}
+        <details class="stsm-atlas-review-stored-update">
+            <summary>생성된 재검토 변경안 원문</summary>
+            <div class="stsm-atlas-review-draft-entries">
+                ${draft.entries.map(entry => `
+                    <section>
+                        <strong>#${entry.startId} ~ #${entry.endId}</strong>
+                        <pre>${escapeHtml(JSON.stringify(entry.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre>
+                    </section>
+                `).join('')}
+            </div>
+        </details>
         <div class="stsm-atlas-review-result-actions">
             <button class="stsm-atlas-review-apply menu_button interactable" type="button">${draft.completed ? '전체 적용' : '완료된 결과 적용'}</button>
             <button class="stsm-atlas-review-discard menu_button interactable" type="button">폐기</button>
