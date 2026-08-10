@@ -8,6 +8,7 @@ const ENABLED_EXECUTION_CONTROL_SELECTOR = [
     '#stsm-summarize',
     '#stsm-open-compression',
     '#stsm-open-atlas-review',
+    '.stsm-atlas-review-translate',
     '#stsm-hide-all-summarized',
     '.stsm-record-reroll',
 ].join(', ');

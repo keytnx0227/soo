@@ -1,4 +1,4 @@
-import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation, updateOperation } from '../core/extension-state.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
@@ -11,6 +11,8 @@ import {
     deleteAtlasReviewRecord,
     getAtlasReviewRecords,
 } from './atlas-metadata.js';
+import { getAtlasProjection } from './atlas-projection-service.js';
+import { translateAtlasReviewChanges } from '../translation/atlas-review-translation-service.js';
 import {
     applyAtlasReviewDraft,
     ATLAS_REVIEW_CATEGORIES,
@@ -36,6 +38,10 @@ async function openAtlasReviewPopup() {
     let operationToken = null;
     let draft = null;
     let applied = false;
+    let reviewTranslation = null;
+    let showingTranslation = false;
+    let draftInterruptionMessage = '';
+    let applyingDraft = false;
     let tokenTimer = null;
     let tokenRun = 0;
 
@@ -45,6 +51,10 @@ async function openAtlasReviewPopup() {
         large: true,
         allowVerticalScrolling: true,
         onClosing: async () => {
+            if (applyingDraft) {
+                toastr.info('재검토 결과를 저장하고 있습니다. 잠시만 기다려주세요.');
+                return false;
+            }
             if (abortController) abortController.abort();
             if (!draft || applied) return true;
             return await Popup.show.confirm('적용하지 않은 재검토 결과가 있습니다.', '결과를 폐기하고 닫을까요?');
@@ -92,6 +102,9 @@ async function openAtlasReviewPopup() {
             mode = button.dataset.mode;
             draft = null;
             applied = false;
+            reviewTranslation = null;
+            showingTranslation = false;
+            draftInterruptionMessage = '';
             clearDraftResult(content);
             render();
         });
@@ -105,6 +118,9 @@ async function openAtlasReviewPopup() {
         abortController = new AbortController();
         applied = false;
         draft = null;
+        reviewTranslation = null;
+        showingTranslation = false;
+        draftInterruptionMessage = '';
         clearDraftResult(content);
         try {
             operationToken = beginOperation('reviewing-atlas', `${ATLAS_REVIEW_CATEGORIES[input.category]} 재검토 준비 중`);
@@ -120,11 +136,12 @@ async function openAtlasReviewPopup() {
                     content.querySelector('.stsm-atlas-review-run').textContent = `재검토 중 ${current}/${total}`;
                 },
             });
-            renderDraftResult(content, draft);
+            renderDraftResult(content, draft, draftInterruptionMessage, reviewTranslation, showingTranslation);
             toastr.success('재검토 초안을 생성했습니다. 결과를 확인한 뒤 적용해주세요.');
         } catch (error) {
             draft = error?.atlasReviewDraft?.entries?.length ? error.atlasReviewDraft : null;
-            if (draft) renderDraftResult(content, draft, error.message);
+            draftInterruptionMessage = draft ? error.message : '';
+            if (draft) renderDraftResult(content, draft, draftInterruptionMessage, reviewTranslation, showingTranslation);
             if (error?.code === 'STSM_ATLAS_REVIEW_CANCELLED') toastr.info(error.message);
             else logReviewError(error, '도감 재검토 실패');
         } finally {
@@ -136,24 +153,67 @@ async function openAtlasReviewPopup() {
         }
     });
     content.querySelector('.stsm-atlas-review-result').addEventListener('click', async event => {
+        if (event.target.closest('.stsm-atlas-review-toggle-translation') && reviewTranslation && draft) {
+            showingTranslation = !showingTranslation;
+            renderDraftResult(content, draft, draftInterruptionMessage, reviewTranslation, showingTranslation);
+            return;
+        }
+        if (event.target.closest('.stsm-atlas-review-translate') && draft) {
+            if (reviewTranslation && !await Popup.show.confirm(
+                '검토 결과 번역을 재생성할까요?',
+                '현재 번역은 덮어씌워집니다.',
+            )) return;
+            const draftId = draft.id;
+            const changes = compareAtlas(draft.before, draft.after);
+            const translationToken = beginOperation('translating', '도감 재검토 결과 번역 중');
+            setDraftResultBusy(content, true);
+            try {
+                const translated = await translateAtlasReviewChanges(changes);
+                if (!draft || draft.id !== draftId) return;
+                reviewTranslation = translated;
+                showingTranslation = true;
+                renderDraftResult(content, draft, draftInterruptionMessage, reviewTranslation, showingTranslation);
+                toastr.success('재검토 결과를 번역했습니다.');
+            } catch (error) {
+                logReviewError(error, '도감 재검토 결과 번역 실패', 'atlas-review-translation');
+            } finally {
+                endOperation(translationToken);
+                setDraftResultBusy(content, false);
+            }
+            return;
+        }
         if (event.target.closest('.stsm-atlas-review-discard')) {
             draft = null;
             applied = false;
+            reviewTranslation = null;
+            showingTranslation = false;
+            draftInterruptionMessage = '';
             clearDraftResult(content);
             setDraftPendingState(content, false);
             return;
         }
-        if (!event.target.closest('.stsm-atlas-review-apply') || !draft) return;
+        if (!event.target.closest('.stsm-atlas-review-apply') || !draft || applyingDraft) return;
+        applyingDraft = true;
+        let applyToken = null;
+        setDraftApplyState(content, true);
         try {
+            applyToken = beginOperation('saving-atlas-review', '도감 재검토 결과 저장 중');
             await applyAtlasReviewDraft(draft);
             applied = true;
             draft = null;
+            reviewTranslation = null;
+            showingTranslation = false;
+            draftInterruptionMessage = '';
             clearDraftResult(content);
             setDraftPendingState(content, false);
             render();
             toastr.success('도감 재검토 결과를 적용했습니다.');
         } catch (error) {
             logReviewError(error, '도감 재검토 결과 적용 실패');
+        } finally {
+            applyingDraft = false;
+            if (applyToken) endOperation(applyToken);
+            if (draft) setDraftApplyState(content, false, draft.completed);
         }
     });
 
@@ -269,23 +329,84 @@ function renderHistory(content, { onChanged }) {
         })),
     ].join('') || '<div class="stsm-empty">적용된 재검토 기록이 없습니다.</div>';
     list.querySelectorAll('[data-review-id] button').forEach(button => {
-        button.addEventListener('click', async event => {
-            const row = event.currentTarget.closest('[data-review-id]');
+        button.addEventListener('click', async () => {
+            const row = button.closest('[data-review-id]');
             const isQuick = row.dataset.reviewType === 'quick';
-            const confirmed = await Popup.show.confirm(
-                isQuick ? '이 일괄 재검토 기록을 삭제할까요?' : '이 레코드의 재검토판을 초기화할까요?',
-                isQuick ? '해당 변경안이 도감 계산에서 제거됩니다.' : '원래 요약 당시의 도감 변경안으로 돌아갑니다.',
-            );
+            const record = isQuick
+                ? quick.find(item => item.id === row.dataset.reviewId)
+                : recordOverrides.find(item => item.id === row.dataset.reviewId);
+            if (!record) {
+                toastr.warning('초기화할 재검토 기록을 찾지 못했습니다.');
+                return;
+            }
+            const confirmed = await showReviewRemovalConfirmation({ record, category, isQuick });
             if (!confirmed) return;
+            button.disabled = true;
             try {
                 if (isQuick) await deleteAtlasReviewRecord(row.dataset.reviewId);
                 else await clearAtlasRecordReviewOverride(row.dataset.reviewId, category);
                 onChanged();
             } catch (error) {
                 logReviewError(error, '도감 재검토 기록 초기화 실패');
+                button.disabled = false;
             }
         });
     });
+}
+
+async function showReviewRemovalConfirmation({ record, category, isQuick }) {
+    const before = getAtlasProjection()[category];
+    const originalUpdates = record.structuredSummary?.data?.memoryUpdates?.[category]
+        || { created: [], updated: [] };
+    const storedUpdates = isQuick
+        ? record.memoryUpdates
+        : record.atlasReviewOverrides?.[category]?.memoryUpdates;
+    const after = getAtlasProjection(isQuick
+        ? { excludeReviewIds: [record.id] }
+        : { draftRecordOverrides: [{ recordId: record.id, category, memoryUpdates: originalUpdates }] })[category];
+    const changes = compareAtlas(before, after);
+    const content = document.createElement('div');
+    content.className = 'stsm-atlas-review-removal-popup';
+    content.innerHTML = `
+        <strong class="stsm-section-title">${isQuick ? '일괄 재검토 기록 삭제' : '레코드별 재검토판 초기화'}</strong>
+        <p>${isQuick
+        ? `#${record.startId} ~ #${record.endId} 재검토 변경안을 도감 계산에서 제거합니다.`
+        : `#${record.startId} ~ #${record.endId} 레코드를 요약 당시의 도감 변경안으로 되돌립니다.`}</p>
+        <div class="stsm-atlas-review-removal-summary">
+            <span>복원 ${changes.created.length}</span>
+            <span>변경 ${changes.updated.length}</span>
+            <span>제거 ${changes.removed.length}</span>
+        </div>
+        <div class="stsm-atlas-review-result-list">
+            ${renderRemovalChanges(changes)}
+        </div>
+        <details class="stsm-atlas-review-stored-update">
+            <summary>저장된 재검토 변경안 원문</summary>
+            <pre>${escapeHtml(JSON.stringify(storedUpdates || { created: [], updated: [] }, null, 2))}</pre>
+        </details>
+    `;
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
+        okButton: isQuick ? '기록 삭제' : '재검토판 초기화',
+        cancelButton: '취소',
+        wide: true,
+        large: true,
+        allowVerticalScrolling: true,
+    });
+    return await popup.show() === POPUP_RESULT.AFFIRMATIVE;
+}
+
+function renderRemovalChanges(changes) {
+    const entries = [
+        ...changes.created.map(change => ({ ...change, label: '복원' })),
+        ...changes.updated.map(change => ({ ...change, label: '변경' })),
+        ...changes.removed.map(change => ({ ...change, label: '제거' })),
+    ];
+    return entries.map(change => `
+        <details>
+            <summary><span class="stsm-atlas-review-change-${change.type}">${change.label}</span> ${escapeHtml(change.name)}</summary>
+            <pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre>
+        </details>
+    `).join('') || '<div class="stsm-empty">현재 계산된 도감에는 달라지는 항목이 없습니다.</div>';
 }
 
 function historyItem({ id, type, title, detail }) {
@@ -295,18 +416,27 @@ function historyItem({ id, type, title, detail }) {
     </div>`;
 }
 
-function renderDraftResult(content, draft, interruptionMessage = '') {
+function renderDraftResult(content, draft, interruptionMessage = '', translation = null, showingTranslation = false) {
     const result = content.querySelector('.stsm-atlas-review-result');
     const changes = compareAtlas(draft.before, draft.after);
+    const changeCount = changes.created.length + changes.updated.length + changes.removed.length;
     result.hidden = false;
     result.innerHTML = `
-        <div class="stsm-atlas-review-result-heading"><strong>적용 전 검토 결과</strong><span>신규 ${changes.created.length} · 변경 ${changes.updated.length} · 제외 ${changes.removed.length}</span></div>
+        <div class="stsm-atlas-review-result-heading">
+            <strong>적용 전 검토 결과</strong>
+            <div class="stsm-atlas-review-result-tools">
+                <span>신규 ${changes.created.length} · 변경 ${changes.updated.length} · 제외 ${changes.removed.length}</span>
+                ${changeCount ? `<button class="stsm-atlas-review-translate menu_button menu_button_icon interactable" type="button" title="${translation ? '번역 재생성' : '검토 결과 번역'}" aria-label="${translation ? '번역 재생성' : '검토 결과 번역'}"><i class="fa-solid fa-language" aria-hidden="true"></i></button>` : ''}
+                ${translation ? `<button class="stsm-atlas-review-toggle-translation menu_button menu_button_icon interactable" type="button" title="원문/번역 전환" aria-label="원문/번역 전환"><i class="fa-solid fa-right-left" aria-hidden="true"></i></button>` : ''}
+            </div>
+        </div>
         ${interruptionMessage ? `<p class="stsm-atlas-review-interruption">${escapeHtml(interruptionMessage)}</p>` : ''}
-        <div class="stsm-atlas-review-result-list">
+        <div class="stsm-atlas-review-result-list"${showingTranslation && translation ? ' hidden' : ''}>
             ${[...changes.created, ...changes.updated, ...changes.removed].map(change => `
                 <details><summary><span class="stsm-atlas-review-change-${change.type}">${escapeHtml(change.label)}</span> ${escapeHtml(change.name)}</summary><pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre></details>
             `).join('') || '<div class="stsm-empty">도감 계산 결과에 달라지는 항목이 없습니다.</div>'}
         </div>
+        ${translation ? `<pre class="stsm-atlas-review-result-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.content)}</pre>` : ''}
         <div class="stsm-atlas-review-result-actions">
             <button class="stsm-atlas-review-apply menu_button interactable" type="button">${draft.completed ? '전체 적용' : '완료된 결과 적용'}</button>
             <button class="stsm-atlas-review-discard menu_button interactable" type="button">폐기</button>
@@ -372,10 +502,23 @@ function clearDraftResult(content) {
     result.innerHTML = '';
 }
 
-function logReviewError(error, title) {
+function setDraftResultBusy(content, busy) {
+    content.querySelectorAll('.stsm-atlas-review-result button').forEach(button => { button.disabled = busy; });
+}
+
+function setDraftApplyState(content, saving, completed = true) {
+    setDraftResultBusy(content, saving);
+    const button = content.querySelector('.stsm-atlas-review-apply');
+    if (!button) return;
+    button.innerHTML = saving
+        ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>저장 중</span>'
+        : completed ? '전체 적용' : '완료된 결과 적용';
+}
+
+function logReviewError(error, title, operation = 'atlas-review') {
     console.error(`[Chat Summarizer] ${title}:`, error);
     addExtensionErrorLog(error, {
-        operation: 'atlas-review',
+        operation,
         title,
         message: error.message || title,
     });

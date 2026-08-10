@@ -724,6 +724,14 @@
     opacity: 0.74;
 }
 
+.stsm-atlas-review-result-tools {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
 .stsm-atlas-review-result-list {
     display: grid;
     gap: 5px;
@@ -755,6 +763,21 @@
     overflow-wrap: anywhere;
 }
 
+.stsm-atlas-review-result-translation {
+    max-height: min(42vh, 420px);
+    overflow: auto;
+    margin: 0;
+    padding: 9px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-result-translation::-webkit-scrollbar {
+    display: none;
+}
+
 .stsm-atlas-review-change-created {
     color: #63c47c;
 }
@@ -770,6 +793,57 @@
 
 .stsm-atlas-review-interruption {
     margin: 0;
+}
+
+.stsm-atlas-review-removal-popup {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-removal-popup::-webkit-scrollbar {
+    display: none;
+}
+
+.stsm-atlas-review-removal-popup > p {
+    margin: 0;
+}
+
+.stsm-atlas-review-removal-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-stored-update {
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-atlas-review-stored-update > summary {
+    padding: 8px 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.stsm-atlas-review-stored-update pre {
+    max-height: min(38vh, 360px);
+    overflow: auto;
+    margin: 0;
+    padding: 0 10px 10px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-width: none;
+}
+
+.stsm-atlas-review-stored-update pre::-webkit-scrollbar {
+    display: none;
 }
 
 @media (max-width: 600px) {
@@ -790,6 +864,12 @@
 
     .stsm-atlas-review-token strong {
         text-align: left;
+    }
+
+    .stsm-atlas-review-result-tools {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
     }
 
     .stsm-atlas-review-result-actions > button {
