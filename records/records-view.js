@@ -42,14 +42,42 @@ export function bindRecordsView(root, bindRecordEvents) {
             logRecordViewError(error, '요약 기록 전체 화면 열기 실패', '요약 기록 전체 화면을 열지 못했습니다.');
         });
     });
+    const renderContextUsage = () => renderSummaryContextTokenUsage(root);
+    const unsubscribeExtensionState = subscribeExtensionState(renderContextUsage);
+    window.addEventListener('stsm:long-term-retrieval-changed', renderContextUsage);
     renderSummaryRecords(root, bindRecordEvents);
+    return () => {
+        unsubscribeExtensionState();
+        window.removeEventListener('stsm:long-term-retrieval-changed', renderContextUsage);
+    };
 }
 
 export function renderSummaryRecords(root, bindRecordEvents) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
     renderRecordList(list, direction, getSelectedMemoryView(root), getRecordSearchState(root), bindRecordEvents);
+    renderSummaryContextTokenUsage(root);
     root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
+}
+
+export function renderSummaryContextTokenUsage(root) {
+    const host = root.querySelector('#stsm-summary-context-token-usage');
+    if (!host) return;
+    try {
+        const details = buildSummaryContextDetails();
+        host.innerHTML = `
+            ${renderTokenUsageBar({
+                label: '{{sumiSummary}} 합본',
+                used: details.outputTokenCount,
+                max: details.budget,
+                enabled: details.enabled,
+            })}
+            ${details.truncated ? `<div class="stsm-summary-context-token-note"><i class="fa-solid fa-scissors" aria-hidden="true"></i><span>원본 ${details.originalTokenCount.toLocaleString()} tokens에서 일부 항목이 제외됐어요.</span></div>` : ''}
+        `;
+    } catch (error) {
+        host.innerHTML = '<div class="stsm-summary-context-token-note stsm-summary-context-token-error">합본 토큰을 계산하지 못했어요.</div>';
+        console.error('[Chat Summarizer] Failed to render summary context token usage:', error);
+    }
 }
 
 function renderRecordList(list, direction, memoryView, searchState, bindRecordEvents) {

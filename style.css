@@ -381,6 +381,24 @@
     flex-wrap: wrap;
 }
 
+.stsm-summary-context-token-usage {
+    flex: 0 0 auto;
+}
+
+.stsm-summary-context-token-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    font-size: 0.84em;
+    opacity: 0.72;
+}
+
+.stsm-summary-context-token-error {
+    color: #f05c5c;
+    opacity: 1;
+}
+
 #stsm-adjust-record-ranges {
     width: auto;
     gap: 6px;

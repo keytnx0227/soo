@@ -188,6 +188,7 @@ export function buildPopup() {
                     </button>
                 </div>
             </div>
+            <div id="stsm-summary-context-token-usage" class="stsm-summary-context-token-usage"></div>
             <div class="stsm-record-memory-browser">
                 <div class="stsm-record-memory-tabs" role="tablist" aria-label="기억 종류">
                     <button class="stsm-record-memory-tab stsm-record-memory-tab-active menu_button interactable" type="button" data-memory-view="active" role="tab" aria-selected="true">상시기억</button>

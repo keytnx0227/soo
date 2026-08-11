@@ -187,7 +187,7 @@ function bindEvents(root) {
     bindConnectionSettings(root);
     bindPromptSettings(root);
     bindPromptInspector(root);
-    bindRecordsView(root, bindRecordEvents);
+    const unbindRecordsView = bindRecordsView(root, bindRecordEvents);
     bindCompressionView(root, {
         onCreated: () => {
             renderSummaryRecords(root, bindRecordEvents);
@@ -229,6 +229,7 @@ function bindEvents(root) {
     });
     renderSummaryStatus(root);
     return () => {
+        unbindRecordsView?.();
         unbindLongTermRetrieval?.();
         unbindSummaryErrorView();
         unbindExtensionStatus();
