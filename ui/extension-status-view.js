@@ -34,6 +34,8 @@ const IDLE_CONTROL_SELECTOR = [
     '#stsm-reset-chat-data',
     '#stsm-export-global-settings',
     '#stsm-import-global-settings',
+    '[data-summary-output-section]',
+    '[data-compression-output-section]',
 ].join(', ');
 
 export function bindExtensionStatus(root, onEnabledChanged) {

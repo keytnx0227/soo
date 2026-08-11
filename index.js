@@ -36,6 +36,7 @@ import { bindPromptInspector } from './prompts/prompt-inspector.js';
 import { bindRangeAdjustment } from './records/range-adjustment-view.js';
 import { bindRangeDeletion } from './records/range-deletion-view.js';
 import { openStructuredSummaryEditor } from './records/structured-summary-editor.js';
+import { openStructuredCompressionEditor } from './records/structured-compression-editor.js';
 import {
     bindRecordsView,
     refreshSummaryRecordSourceStates,
@@ -51,6 +52,7 @@ import {
     setAutoHideSummarizedMessages,
     setChunkSize,
     setCompressionGroupSize,
+    setCompressionOutputSectionEnabled,
     setMemorySectionEnabled,
     setSummaryOutputSectionEnabled,
     setSummarySectionEnabled,
@@ -68,9 +70,12 @@ import {
     renderCompressionTemplateSettings,
 } from './summary/compression-template-view.js';
 import { bindCompressionView } from './summary/compression-view.js';
+import { migrateEditedCompressionContents } from './summary/compression-content-migration.js';
+import { showCompressionContentMigrationReport } from './summary/compression-content-migration-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import {
     applySummaryOutputSectionsToRecords,
+    applyCompressionOutputSectionsToRecords,
     deleteSummaryRecord,
     getSummaryRecord,
     getSummaryRecords,
@@ -95,6 +100,7 @@ let summaryAbortController = null;
 let translationAbortController = null;
 let translationOperationToken = null;
 let summaryOperationToken = null;
+let isApplyingRecordOutput = false;
 const busyRecordIds = new Set();
 
 function addMenuItem() {
@@ -128,6 +134,18 @@ async function openSummarizerPopup() {
     if (popup) return;
 
     getSettings();
+    try {
+        const migration = await migrateEditedCompressionContents();
+        await showCompressionContentMigrationReport(migration);
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to migrate edited compression contents:', error);
+        addExtensionErrorLog(error, {
+            operation: 'compression-content-migration',
+            title: '편집된 압축 요약 동기화 실패',
+            message: '기존 압축 요약 원문은 변경하지 않았습니다.',
+        });
+        toastr.warning('편집된 압축 요약을 구조화 데이터로 동기화하지 못했습니다. 기존 원문은 유지됩니다.');
+    }
     const root = buildPopup();
     currentRoot = root;
     const cleanup = bindEvents(root);
@@ -267,6 +285,7 @@ function bindSummarizationSettings(root) {
     const compressionGroupSize = root.querySelector('#stsm-compression-group-size');
     const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
     const summaryOutputSectionToggles = root.querySelectorAll('[data-summary-output-section]');
+    const compressionOutputSectionToggles = root.querySelectorAll('[data-compression-output-section]');
     const memorySectionToggles = root.querySelectorAll('[data-memory-section]');
 
     renderSummarizationSettings(root);
@@ -283,6 +302,9 @@ function bindSummarizationSettings(root) {
     });
     summaryOutputSectionToggles.forEach(toggle => {
         toggle.addEventListener('change', event => updateSummaryOutputSection(root, event.target));
+    });
+    compressionOutputSectionToggles.forEach(toggle => {
+        toggle.addEventListener('change', event => updateCompressionOutputSection(root, event.target));
     });
     memorySectionToggles.forEach(toggle => {
         toggle.addEventListener('change', event => {
@@ -374,6 +396,9 @@ function renderSummarizationSettings(root) {
     root.querySelectorAll('[data-summary-output-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.summaryOutputSections[toggle.dataset.summaryOutputSection]);
     });
+    root.querySelectorAll('[data-compression-output-section]').forEach(toggle => {
+        toggle.checked = Boolean(settings.compressionOutputSections[toggle.dataset.compressionOutputSection]);
+    });
     root.querySelectorAll('[data-memory-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
     });
@@ -383,10 +408,22 @@ function renderSummarizationSettings(root) {
 
 async function updateSummaryOutputSection(root, toggle) {
     const section = toggle.dataset.summaryOutputSection;
-    const previous = !toggle.checked;
+    const next = toggle.checked;
+    const previous = !next;
+    if (isApplyingRecordOutput) {
+        toggle.checked = Boolean(getSettings().summarization.summaryOutputSections[section]);
+        return;
+    }
+
+    let operationToken = null;
+    isApplyingRecordOutput = true;
     toggle.disabled = true;
     try {
-        setSummaryOutputSectionEnabled(section, toggle.checked);
+        operationToken = beginOperation('applying-summary-output', '요약 출력 항목 반영 중', {
+            requiresEnabled: false,
+        });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        setSummaryOutputSectionEnabled(section, next);
         const settings = getSettings().summarization;
         const result = await applySummaryOutputSectionsToRecords(
             settings.summaryContentTemplate,
@@ -408,6 +445,53 @@ async function updateSummaryOutputSection(root, toggle) {
         });
         toastr.error(error.message || '요약 출력 항목 적용에 실패했습니다.');
     } finally {
+        if (operationToken) endOperation(operationToken);
+        isApplyingRecordOutput = false;
+        toggle.disabled = false;
+    }
+}
+
+async function updateCompressionOutputSection(root, toggle) {
+    const section = toggle.dataset.compressionOutputSection;
+    const next = toggle.checked;
+    const previous = !next;
+    if (isApplyingRecordOutput) {
+        toggle.checked = Boolean(getSettings().summarization.compressionOutputSections[section]);
+        return;
+    }
+
+    let operationToken = null;
+    isApplyingRecordOutput = true;
+    toggle.disabled = true;
+    try {
+        operationToken = beginOperation('applying-compression-output', '압축 요약 출력 항목 반영 중', {
+            requiresEnabled: false,
+        });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        setCompressionOutputSectionEnabled(section, next);
+        const settings = getSettings().summarization;
+        const result = await applyCompressionOutputSectionsToRecords(
+            settings.compressionContentTemplate,
+            settings.compressionOutputSections,
+        );
+        renderSummaryRecords(root, bindRecordEvents);
+        const skipped = result.skippedEditedCount
+            ? ` 이전 문자열 편집 레코드 ${result.skippedEditedCount}개는 보호를 위해 유지했습니다.`
+            : '';
+        toastr.success(`압축 요약 출력 항목을 변경했습니다.${skipped}`);
+    } catch (error) {
+        setCompressionOutputSectionEnabled(section, previous);
+        toggle.checked = previous;
+        console.error('[Chat Summarizer] Failed to apply compression output sections:', error);
+        addExtensionErrorLog(error, {
+            operation: 'compression-output-settings',
+            title: '압축 요약 출력 항목 적용 실패',
+            message: '압축 요약 출력 항목을 기존 레코드에 적용하지 못했습니다.',
+        });
+        toastr.error(error.message || '압축 요약 출력 항목 적용에 실패했습니다.');
+    } finally {
+        if (operationToken) endOperation(operationToken);
+        isApplyingRecordOutput = false;
         toggle.disabled = false;
     }
 }
@@ -434,6 +518,10 @@ async function applyImportedGlobalSettings(root) {
         await applySummaryOutputSectionsToRecords(
             settings.summaryContentTemplate,
             settings.summaryOutputSections,
+        );
+        await applyCompressionOutputSectionsToRecords(
+            settings.compressionContentTemplate,
+            settings.compressionOutputSections,
         );
         renderSummaryRecords(root, bindRecordEvents);
         await syncSummarizedMessageVisibility();
@@ -716,6 +804,23 @@ function bindRecordEvents(record) {
 
 async function editRecord(recordElement) {
     const record = getSummaryRecord(recordElement.dataset.recordId);
+    if (record?.type === 'compressed' && record.compression?.data && !record.contentEdited) {
+        try {
+            const updated = await openStructuredCompressionEditor(record.id);
+            if (!updated) return;
+            if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
+            toastr.success('압축 요약을 수정했습니다.');
+        } catch (error) {
+            console.error('[Chat Summarizer] Failed to update structured compression:', error);
+            addExtensionErrorLog(error, {
+                operation: 'record-update',
+                title: '구조화 압축 요약 수정 실패',
+                message: '구조화 압축 요약 수정 내용을 저장하지 못했습니다.',
+            });
+            toastr.error(error.message || '구조화 압축 요약 수정에 실패했습니다.');
+        }
+        return;
+    }
     if (record?.type !== 'summary' || !record.structuredSummary?.data) {
         enterRecordEditMode(recordElement);
         return;

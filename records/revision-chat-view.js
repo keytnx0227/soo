@@ -450,6 +450,7 @@ function renderRevisionResult(session, result) {
             startId: session.startId,
             endId: session.endId,
             template: settings.compressionContentTemplate,
+            outputSections: settings.compressionOutputSections,
         });
     }
     return renderStructuredSummary(result.data, {

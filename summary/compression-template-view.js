@@ -2,6 +2,7 @@ import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import {
     getCompressionContentTemplate,
     getCompressionContentTemplatePreset,
+    getSettings,
     resetCompressionContentTemplate,
     setCompressionContentTemplate,
     setCompressionContentTemplatePreset,
@@ -129,11 +130,11 @@ async function applyTemplateToRecords() {
         <p>현재 선택된 내용 형식으로 구조화 압축 레코드를 다시 렌더링합니다.</p>
         <label class="stsm-summary-template-apply-option">
             <input type="radio" name="stsm-compression-template-apply-scope" value="unedited" checked>
-            <span><strong>수정되지 않은 레코드만</strong><small>직접 수정하거나 수정 대화를 적용한 압축 레코드는 유지합니다.</small></span>
+            <span><strong>구조화 레코드만</strong><small>동기화되지 않은 이전 문자열 편집 레코드는 유지합니다.</small></span>
         </label>
         <label class="stsm-summary-template-apply-option">
             <input type="radio" name="stsm-compression-template-apply-scope" value="all">
-            <span><strong>모든 레코드</strong><small>직접 수정한 본문도 구조화 압축 데이터에서 다시 만들어 덮어씁니다.</small></span>
+            <span><strong>모든 레코드</strong><small>동기화되지 않은 문자열 편집 내용도 기존 구조화 데이터에서 다시 만들어 덮어씁니다.</small></span>
         </label>
     `;
     const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
@@ -144,12 +145,15 @@ async function applyTemplateToRecords() {
 
     const includeEdited = form.querySelector('input[name="stsm-compression-template-apply-scope"]:checked')?.value === 'all';
     if (includeEdited && !await Popup.show.confirm(
-        '직접 수정한 압축 레코드도 덮어쓸까요?',
-        '사용자가 수정한 본문이 구조화 압축 데이터에서 다시 생성되며, 기존 수정 내용은 복구할 수 없습니다.',
+        '이전 문자열 편집 레코드도 덮어쓸까요?',
+        '동기화되지 않은 문자열 수정 내용이 사라지며 복구할 수 없습니다.',
     )) return;
 
     try {
-        const result = await applyCompressionContentTemplateToRecords(getCompressionContentTemplate(), { includeEdited });
+        const result = await applyCompressionContentTemplateToRecords(getCompressionContentTemplate(), {
+            includeEdited,
+            outputSections: getSettings().summarization.compressionOutputSections,
+        });
         window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
         const skipped = result.skippedEditedCount ? ` 수정된 압축 레코드 ${result.skippedEditedCount}개는 유지했습니다.` : '';
         if (result.appliedCount) {

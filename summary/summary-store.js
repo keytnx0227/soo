@@ -6,6 +6,7 @@ import { renderCompressionSummary } from './compression-format.js';
 import { createRecordDeletionPlan } from './range-deletion.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
+const COMPRESSION_CONTENT_MIGRATION_VERSION = 1;
 
 export function getSummaryRecords() {
     return getStore().records;
@@ -17,6 +18,53 @@ export function getActiveSummaryRecords() {
 
 export function getSummaryRecord(recordId) {
     return getSummaryRecords().find(record => record.id === String(recordId)) || null;
+}
+
+export function needsCompressionContentMigration() {
+    return Number(getStore().compressionContentMigrationVersion || 0) < COMPRESSION_CONTENT_MIGRATION_VERSION;
+}
+
+export async function saveCompressionContentMigrationResults(updates) {
+    const normalizedUpdates = new Map((Array.isArray(updates) ? updates : []).map(update => [
+        String(update.recordId),
+        update.data,
+    ]));
+    const store = getStore();
+    const previousRecords = store.records;
+    const previousVersion = store.compressionContentMigrationVersion;
+    const editedIds = new Set(store.records
+        .filter(record => record.type === 'compressed' && record.contentEdited && record.compression?.data)
+        .map(record => record.id));
+    if ([...normalizedUpdates.keys()].some(id => !editedIds.has(id))) {
+        throw new Error('동기화할 편집된 압축 요약 레코드를 찾지 못했습니다.');
+    }
+
+    const updatedAt = new Date().toISOString();
+    store.records = store.records.map(record => {
+        const data = normalizedUpdates.get(record.id);
+        if (!data) return record;
+        return {
+            ...record,
+            contentEdited: false,
+            compression: {
+                ...record.compression,
+                data: structuredClone(data),
+            },
+            updatedAt,
+        };
+    });
+    store.compressionContentMigrationVersion = COMPRESSION_CONTENT_MIGRATION_VERSION;
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        if (previousVersion === undefined) delete store.compressionContentMigrationVersion;
+        else store.compressionContentMigrationVersion = previousVersion;
+        throw error;
+    }
+    if (normalizedUpdates.size) notifyRecordsChanged();
+    return normalizedUpdates.size;
 }
 
 export async function saveAtlasRecordReviewOverrides(entries) {
@@ -373,7 +421,7 @@ export async function applySummaryOutputSectionsToRecords(template, outputSectio
     return applySummaryContentTemplateToRecords(template, { includeEdited: true, outputSections });
 }
 
-export async function applyCompressionContentTemplateToRecords(template, { includeEdited = false } = {}) {
+export async function applyCompressionContentTemplateToRecords(template, { includeEdited = false, outputSections } = {}) {
     return applyContentTemplateToRecords({
         template,
         includeEdited,
@@ -383,8 +431,13 @@ export async function applyCompressionContentTemplateToRecords(template, { inclu
             startId: record.startId,
             endId: record.endId,
             template,
+            outputSections,
         }),
     });
+}
+
+export async function applyCompressionOutputSectionsToRecords(template, outputSections) {
+    return applyCompressionContentTemplateToRecords(template, { includeEdited: false, outputSections });
 }
 
 async function applyContentTemplateToRecords({ template, includeEdited, emptyTemplateMessage, matches, render }) {

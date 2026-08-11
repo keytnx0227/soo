@@ -68,7 +68,7 @@ export async function compressSummaryRecords({ startRecordId, count }) {
     assertExtensionEnabled();
     const sources = selectCompressionSources(startRecordId, count);
     const snapshot = createSourceSnapshot(sources);
-    const { outputLanguage, compressionContentTemplate } = getSettings().summarization;
+    const { outputLanguage, compressionContentTemplate, compressionOutputSections } = getSettings().summarization;
     const prompt = buildCompressionPrompt(sources, outputLanguage);
     if (!prompt.trim()) throw new Error('조립된 압축 요약 프롬프트가 비어 있습니다.');
 
@@ -80,6 +80,7 @@ export async function compressSummaryRecords({ startRecordId, count }) {
         startId: sources[0].startId,
         endId: sources.at(-1).endId,
         template: compressionContentTemplate,
+        outputSections: compressionOutputSections,
     });
     return addCompressedSummaryRecord({
         sourceRecordIds: sources.map(record => record.id),
@@ -96,7 +97,7 @@ export async function regenerateCompressedSummary(recordId) {
     const sources = record.compression.sourceRecordIds.map(getSummaryRecord);
     if (sources.some(source => !source)) throw new Error('압축 요약의 원본 레코드 일부를 찾지 못했습니다.');
     const snapshot = createSourceSnapshot(sources);
-    const { outputLanguage, compressionContentTemplate } = getSettings().summarization;
+    const { outputLanguage, compressionContentTemplate, compressionOutputSections } = getSettings().summarization;
     const prompt = buildCompressionPrompt(sources, outputLanguage);
     if (!prompt.trim()) throw new Error('조립된 압축 재생성 프롬프트가 비어 있습니다.');
 
@@ -108,6 +109,7 @@ export async function regenerateCompressedSummary(recordId) {
         startId: record.startId,
         endId: record.endId,
         template: compressionContentTemplate,
+        outputSections: compressionOutputSections,
     });
     const updated = await updateSummaryRecordContent(record.id, content, {
         contentEdited: false,

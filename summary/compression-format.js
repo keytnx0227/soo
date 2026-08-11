@@ -2,6 +2,15 @@ import { renderTemplateData } from './summary-record-template.js';
 
 export const COMPRESSION_FORMAT_VERSION = 2;
 
+export const DEFAULT_COMPRESSION_OUTPUT_SECTIONS = Object.freeze({
+    date: true,
+    time: true,
+    location: true,
+    plot: true,
+    emotions: true,
+    quotes: true,
+});
+
 export const LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS = `[#{{sumiCompressionStartId}}-{{sumiCompressionEndId}}{{#sumiCompressionContext}} | {{value}}{{/sumiCompressionContext}}]
 {{#sumiCompressionPlot}}- {{value}}
 {{/sumiCompressionPlot}}
@@ -96,16 +105,39 @@ export function parseCompressionResponse(response) {
     return result;
 }
 
-export function renderCompressionSummary(summary, { startId, endId, template = DEFAULT_COMPRESSION_CONTENT_TEMPLATE }) {
+export function renderCompressionSummary(summary, {
+    startId,
+    endId,
+    template = DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
+    outputSections = DEFAULT_COMPRESSION_OUTPUT_SECTIONS,
+}) {
+    const visible = applyOutputSections(summary, outputSections);
     return renderTemplateData(template, {
         sumiCompressionStartId: startId,
         sumiCompressionEndId: endId,
-        sumiCompressionContext: renderContextFlow(summary.contextFlow),
-        sumiCompressionContextFlow: summary.contextFlow,
-        sumiCompressionPlot: summary.plot,
-        sumiCompressionEmotions: summary.emotions,
-        sumiCompressionQuotes: summary.quotes,
+        sumiCompressionContext: renderContextFlow(visible.contextFlow),
+        sumiCompressionContextFlow: visible.contextFlow,
+        sumiCompressionPlot: visible.plot,
+        sumiCompressionEmotions: visible.emotions,
+        sumiCompressionQuotes: visible.quotes,
     });
+}
+
+function applyOutputSections(summary, outputSections) {
+    const enabled = { ...DEFAULT_COMPRESSION_OUTPUT_SECTIONS, ...(outputSections || {}) };
+    const contextFlow = (Array.isArray(summary.contextFlow) ? summary.contextFlow : [])
+        .map(item => ({
+            date: enabled.date ? item?.date || null : null,
+            time: enabled.time ? item?.time || null : null,
+            location: enabled.location ? item?.location || null : null,
+        }))
+        .filter(item => item.date || item.time || item.location);
+    return {
+        contextFlow,
+        plot: enabled.plot ? summary.plot : [],
+        emotions: enabled.emotions ? summary.emotions : [],
+        quotes: enabled.quotes ? summary.quotes : [],
+    };
 }
 
 function renderContextFlow(flow) {

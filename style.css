@@ -1982,6 +1982,17 @@
     align-items: start;
 }
 
+.stsm-structured-compression-context-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 36px;
+}
+
+.stsm-structured-compression-emotion-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 36px;
+    gap: 6px;
+    align-items: start;
+}
+
 .stsm-structured-string-row,
 .stsm-structured-quote-row,
 .stsm-structured-emotion-state {
@@ -2079,6 +2090,14 @@
 
     .stsm-structured-context-row {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px;
+    }
+
+    .stsm-structured-compression-context-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px;
+    }
+
+    .stsm-structured-compression-context-row [data-context-field="location"] {
+        grid-column: 1 / 3;
     }
 
     .stsm-structured-context-row [data-context-field="location"] {

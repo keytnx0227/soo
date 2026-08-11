@@ -15,6 +15,7 @@ import {
 import {
     COMPRESSION_CONTENT_TEMPLATE_PRESETS,
     DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
+    DEFAULT_COMPRESSION_OUTPUT_SECTIONS,
     getCompressionContentTemplatePresetId,
     LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS,
 } from '../summary/compression-format.js';
@@ -708,6 +709,7 @@ export const defaultSettings = Object.freeze({
         outputLanguage: SUMMARY_LANGUAGE_MODES.ENGLISH,
         summarySections: DEFAULT_SUMMARY_SECTIONS,
         summaryOutputSections: DEFAULT_SUMMARY_OUTPUT_SECTIONS,
+        compressionOutputSections: DEFAULT_COMPRESSION_OUTPUT_SECTIONS,
         memorySections: DEFAULT_MEMORY_SECTIONS,
         injectionMaxTokens: 24000,
         eventInjectionMaxTokens: 4000,
@@ -852,6 +854,14 @@ export function setSummaryOutputSectionEnabled(section, enabled) {
     settings.summarization.summaryOutputSections[section] = Boolean(enabled);
     saveSettings();
     return settings.summarization.summaryOutputSections[section];
+}
+
+export function setCompressionOutputSectionEnabled(section, enabled) {
+    if (!Object.hasOwn(DEFAULT_COMPRESSION_OUTPUT_SECTIONS, section)) return false;
+    const settings = getSettings();
+    settings.summarization.compressionOutputSections[section] = Boolean(enabled);
+    saveSettings();
+    return settings.summarization.compressionOutputSections[section];
 }
 
 export function getSummaryContentTemplate() {
@@ -1476,6 +1486,7 @@ function normalizeSettings(settings, {
         : defaultSettings.summarization.outputLanguage;
     settings.summarization.summarySections = normalizeSummarySections(settings.summarization.summarySections);
     settings.summarization.summaryOutputSections = normalizeSummaryOutputSections(settings.summarization.summaryOutputSections);
+    settings.summarization.compressionOutputSections = normalizeCompressionOutputSections(settings.summarization.compressionOutputSections);
     settings.summarization.memorySections = normalizeMemorySections(settings.summarization.memorySections);
     delete settings.summarization.autoStartFromLastSummary;
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
@@ -1651,6 +1662,14 @@ function normalizeSummarySections(value) {
 function normalizeSummaryOutputSections(value) {
     const source = value && typeof value === 'object' ? value : {};
     return Object.fromEntries(Object.entries(DEFAULT_SUMMARY_OUTPUT_SECTIONS).map(([key, fallback]) => [
+        key,
+        source[key] === undefined ? fallback : Boolean(source[key]),
+    ]));
+}
+
+function normalizeCompressionOutputSections(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return Object.fromEntries(Object.entries(DEFAULT_COMPRESSION_OUTPUT_SECTIONS).map(([key, fallback]) => [
         key,
         source[key] === undefined ? fallback : Boolean(source[key]),
     ]));

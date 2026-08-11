@@ -440,6 +440,22 @@ export function buildPopup() {
                 <p class="stsm-settings-note">출력을 꺼도 저장된 데이터는 유지되며, 다시 켜면 복원됩니다.</p>
             </details>
 
+            <details class="stsm-settings-section stsm-mobile-collapsible">
+                <summary class="stsm-mobile-collapsible-summary stsm-section-title">
+                    <span>압축 요약 출력 항목</span>
+                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </summary>
+                <div class="stsm-summary-section-grid">
+                    ${renderCompressionOutputToggle('plot', '플롯')}
+                    ${renderCompressionOutputToggle('date', '날짜')}
+                    ${renderCompressionOutputToggle('time', '시간')}
+                    ${renderCompressionOutputToggle('location', '장소')}
+                    ${renderCompressionOutputToggle('emotions', '감정')}
+                    ${renderCompressionOutputToggle('quotes', '주요 대사')}
+                </div>
+                <p class="stsm-settings-note">출력을 꺼도 압축 데이터는 유지되며, 다시 켜면 복원됩니다.</p>
+            </details>
+
             <div class="stsm-settings-section">
                 <div class="stsm-section-title">요약 레코드 내용 형식</div>
                 <div id="stsm-summary-content-template"></div>
@@ -566,6 +582,18 @@ function renderSummaryOutputToggle(section, label) {
             <span class="stsm-summary-section-label"><span>${label}</span></span>
             <label class="stsm-switch" title="${label} 출력 켜기/끄기">
                 <input type="checkbox" data-summary-output-section="${section}" />
+                <span></span>
+            </label>
+        </div>
+    `;
+}
+
+function renderCompressionOutputToggle(section, label) {
+    return `
+        <div class="stsm-summary-section-toggle">
+            <span class="stsm-summary-section-label"><span>${label}</span></span>
+            <label class="stsm-switch" title="${label} 출력 켜기/끄기">
+                <input type="checkbox" data-compression-output-section="${section}" />
                 <span></span>
             </label>
         </div>
