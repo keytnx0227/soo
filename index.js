@@ -69,6 +69,8 @@ import { bindCompressionView } from './summary/compression-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
+import { migrateEditedSummaryContents } from './summary/summary-content-migration.js';
+import { showSummaryContentMigrationReport } from './summary/summary-content-migration-view.js';
 import { addExtensionErrorLog } from './diagnostics/summary-error-state.js';
 import { bindSummaryErrorView } from './diagnostics/summary-error-view.js';
 import {
@@ -120,6 +122,32 @@ async function openSummarizerPopup() {
     if (popup) return;
 
     getSettings();
+    try {
+        const migration = await migrateEditedSummaryContents();
+        if (migration.migrated.length) {
+            toastr.success(`편집된 요약 ${migration.migrated.length}개를 구조화 데이터에 반영했습니다.`);
+        }
+        if (migration.failed.length) {
+            const ranges = migration.failed.map(item => item.range).join(', ');
+            console.warn('[Chat Summarizer] Summary content migration skipped records:', migration.failed);
+            addExtensionErrorLog(new Error(migration.failed.map(item => `${item.range}: ${item.reason}`).join('\n')), {
+                operation: 'summary-content-migration',
+                title: '일부 편집된 요약 동기화 제외',
+                message: `편집된 요약 ${migration.failed.length}개를 자동 반영하지 못했습니다.`,
+                context: { ranges },
+            });
+            toastr.warning(`편집된 요약 ${migration.failed.length}개를 자동 반영하지 못했습니다: ${ranges}`);
+        }
+        await showSummaryContentMigrationReport(migration);
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to migrate edited summary contents:', error);
+        addExtensionErrorLog(error, {
+            operation: 'summary-content-migration',
+            title: '편집된 요약 동기화 실패',
+            message: '편집된 요약을 구조화 데이터에 반영하지 못했습니다.',
+        });
+        toastr.error(error.message || '편집된 요약 동기화에 실패했습니다.');
+    }
     const root = buildPopup();
     currentRoot = root;
     const cleanup = bindEvents(root);

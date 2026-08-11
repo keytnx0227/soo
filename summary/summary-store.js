@@ -318,6 +318,47 @@ export async function updateSummaryRecordContent(recordId, content, {
     return updatedRecord;
 }
 
+export async function saveSummaryContentMigrationResults(updates) {
+    const normalizedUpdates = new Map((Array.isArray(updates) ? updates : []).map(update => [
+        String(update.recordId),
+        update.data,
+    ]));
+    if (!normalizedUpdates.size) return 0;
+
+    const store = getStore();
+    const previousRecords = store.records;
+    const existingIds = new Set(store.records
+        .filter(record => record.type === 'summary' && record.contentEdited && record.structuredSummary?.data)
+        .map(record => record.id));
+    if ([...normalizedUpdates.keys()].some(id => !existingIds.has(id))) {
+        throw new Error('동기화할 편집된 요약 레코드를 찾지 못했습니다.');
+    }
+
+    const updatedAt = new Date().toISOString();
+    store.records = store.records.map(record => {
+        const data = normalizedUpdates.get(record.id);
+        if (!data) return record;
+        return {
+            ...record,
+            contentEdited: false,
+            structuredSummary: normalizeStructuredSummary({
+                ...record.structuredSummary,
+                data,
+            }),
+            updatedAt,
+        };
+    });
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return normalizedUpdates.size;
+}
+
 export async function applySummaryContentTemplateToRecords(template, { includeEdited = false } = {}) {
     return applyContentTemplateToRecords({
         template,
