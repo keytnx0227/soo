@@ -96,7 +96,6 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord, sig
                 startId: chunk.startId,
                 endId: chunk.endId,
                 content,
-                prompt,
                 sourceFingerprint: createSourceFingerprint(chunk.messages),
                 structuredSummary: {
                     version: SUMMARY_FORMAT_VERSION,
@@ -200,7 +199,6 @@ export async function regenerateSummaryRecord(recordId) {
     });
 
     const updatedRecord = await updateSummaryRecordContent(record.id, content, {
-        prompt,
         contentEdited: false,
         sourceFingerprint: createSourceFingerprint(chunk.messages),
         structuredSummary: {

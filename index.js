@@ -71,6 +71,7 @@ import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummary
 import { renderSummaryStatus } from './summary/summary-status-view.js';
 import { migrateEditedSummaryContents } from './summary/summary-content-migration.js';
 import { showSummaryContentMigrationReport } from './summary/summary-content-migration-view.js';
+import { removeLegacyStoredPrompts } from './summary/storage-cleanup.js';
 import { addExtensionErrorLog } from './diagnostics/summary-error-state.js';
 import { bindSummaryErrorView } from './diagnostics/summary-error-view.js';
 import {
@@ -123,6 +124,20 @@ async function openSummarizerPopup() {
 
     getSettings();
     try {
+        const storageCleanup = await removeLegacyStoredPrompts();
+        if (storageCleanup.removedCount) {
+            toastr.success(`저장된 불필요 프롬프트 ${storageCleanup.removedCount}개를 제거했습니다. 약 ${formatByteSize(storageCleanup.removedBytes)}를 정리했어요.`);
+        }
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to remove stored prompts:', error);
+        addExtensionErrorLog(error, {
+            operation: 'storage-cleanup',
+            title: '저장 데이터 최적화 실패',
+            message: '기존 레코드에 저장된 불필요한 프롬프트를 제거하지 못했습니다.',
+        });
+        toastr.error(error.message || '저장 데이터 최적화에 실패했습니다.');
+    }
+    try {
         const migration = await migrateEditedSummaryContents();
         if (migration.migrated.length) {
             toastr.success(`편집된 요약 ${migration.migrated.length}개를 구조화 데이터에 반영했습니다.`);
@@ -165,6 +180,12 @@ async function openSummarizerPopup() {
         currentRoot = null;
         popup = null;
     }
+}
+
+function formatByteSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
 function bindEvents(root) {

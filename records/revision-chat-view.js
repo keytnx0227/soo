@@ -169,7 +169,7 @@ async function sendFeedback() {
         const text = await generateSummary(prompt);
         if (!text) throw new Error('수정 대화 응답이 비어 있습니다.');
         if (activeSession !== session || SillyTavern.getContext().chat !== session.chatRef) return;
-        session.messages.push({ role: 'assistant', text, prompt });
+        session.messages.push({ role: 'assistant', text });
         await persistSession(session);
     } catch (error) {
         console.error('[Chat Summarizer] Revision generation failed:', error);
@@ -248,7 +248,6 @@ async function applyLatestRevision(onApplied) {
     try {
         await persistActiveSession();
         const updatedRecord = await updateSummaryRecordContent(activeSession.recordId, latest.text, {
-            prompt: latest.prompt,
             contentEdited: true,
         });
         if (!updatedRecord) throw new Error('수정안을 적용할 요약 기록을 찾지 못했습니다.');

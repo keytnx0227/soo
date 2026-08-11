@@ -122,7 +122,6 @@ export async function saveAtlasReviewRecord({
     appliedThroughId,
     batchId,
     memoryUpdates,
-    prompt,
 }) {
     assertCategory(category);
     const store = getAtlasStore();
@@ -139,7 +138,6 @@ export async function saveAtlasReviewRecord({
         appliedThroughId,
         batchId,
         memoryUpdates,
-        prompt,
         createdAt: existing?.createdAt || now,
         updatedAt: now,
     });
@@ -295,7 +293,6 @@ function normalizeAtlasReviewRecord(value) {
         appliedThroughId: Math.max(endId, Number(value.appliedThroughId) || endId),
         batchId: String(value.batchId || ''),
         memoryUpdates: updates,
-        prompt: String(value.prompt || ''),
         createdAt: String(value.createdAt || new Date().toISOString()),
         updatedAt: String(value.updatedAt || value.createdAt || new Date().toISOString()),
     };

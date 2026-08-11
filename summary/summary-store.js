@@ -45,7 +45,6 @@ export async function saveAtlasRecordReviewOverrides(entries) {
                 ...record.atlasReviewOverrides,
                 [category]: {
                     memoryUpdates: structuredClone(entry.memoryUpdates),
-                    prompt: String(entry.prompt || ''),
                     reviewedAt,
                 },
             },
@@ -109,7 +108,7 @@ export async function setRecentRevisionConversation(conversation) {
     return structuredClone(normalized);
 }
 
-export async function addSummaryRecord({ batchId, startId, endId, content, prompt, sourceFingerprint, structuredSummary }) {
+export async function addSummaryRecord({ batchId, startId, endId, content, sourceFingerprint, structuredSummary }) {
     const record = {
         id: createId('summary'),
         type: 'summary',
@@ -124,7 +123,6 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
         sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
         structuredSummary: normalizeStructuredSummary(structuredSummary),
         searchTags: null,
-        prompt: String(prompt || ''),
         createdAt: new Date().toISOString(),
     };
     const store = getStore();
@@ -140,7 +138,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, promp
     return record;
 }
 
-export async function addCompressedSummaryRecord({ sourceRecordIds, content, prompt, compressionData, languageMode }) {
+export async function addCompressedSummaryRecord({ sourceRecordIds, content, compressionData, languageMode }) {
     const store = getStore();
     const normalizedSourceIds = [...new Set((Array.isArray(sourceRecordIds) ? sourceRecordIds : []).map(String))];
     const sources = normalizedSourceIds.map(id => store.records.find(record => record.id === id));
@@ -168,7 +166,6 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, pro
         sourceFingerprint: null,
         structuredSummary: null,
         searchTags: null,
-        prompt: String(prompt || ''),
         compression: {
             version: 1,
             level: Math.max(...sortedSources.map(source => Number(source.compression?.level) || 0)) + 1,
@@ -264,7 +261,6 @@ export async function deleteSummaryRecords(recordIds) {
 }
 
 export async function updateSummaryRecordContent(recordId, content, {
-    prompt,
     sourceFingerprint,
     structuredSummary,
     compressionData,
@@ -299,7 +295,6 @@ export async function updateSummaryRecordContent(recordId, content, {
                     ...record.compression,
                     data: compressionData && typeof compressionData === 'object' ? structuredClone(compressionData) : {},
                 },
-            prompt: prompt === undefined ? record.prompt : String(prompt),
             translation: contentHash === record.contentHash ? record.translation : null,
             updatedAt: new Date().toISOString(),
         };
@@ -626,7 +621,6 @@ function normalizeRecords(records) {
                 atlasReviewOverrides: normalizeAtlasReviewOverrides(record.atlasReviewOverrides),
                 searchTags: Array.isArray(record.searchTags) ? normalizeRecordTags(record.searchTags) : null,
                 compression: normalizeCompression(record.compression),
-                prompt: String(record.prompt || ''),
                 createdAt: String(record.createdAt || new Date().toISOString()),
                 updatedAt: record.updatedAt ? String(record.updatedAt) : null,
                 translation: normalizeTranslation(record.translation, contentHash, record.contentHash),
@@ -685,7 +679,6 @@ function normalizeAtlasReviewOverrides(value) {
         }
         return [category, {
             memoryUpdates: structuredClone(entry.memoryUpdates),
-            prompt: String(entry.prompt || ''),
             reviewedAt: String(entry.reviewedAt || new Date().toISOString()),
         }];
     }).filter(([, entry]) => entry));
@@ -752,7 +745,6 @@ function normalizeRevisionConversation(conversation) {
         .map(message => ({
             role: message.role,
             text: String(message.text).trim(),
-            ...(message.role === 'assistant' ? { prompt: String(message.prompt || '') } : {}),
         }));
     if (!messages.length) return null;
 

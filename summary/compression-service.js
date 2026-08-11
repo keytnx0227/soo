@@ -84,7 +84,6 @@ export async function compressSummaryRecords({ startRecordId, count }) {
     return addCompressedSummaryRecord({
         sourceRecordIds: sources.map(record => record.id),
         content,
-        prompt,
         compressionData: { formatVersion: COMPRESSION_FORMAT_VERSION, ...data },
         languageMode: outputLanguage,
     });
@@ -111,7 +110,6 @@ export async function regenerateCompressedSummary(recordId) {
         template: compressionContentTemplate,
     });
     const updated = await updateSummaryRecordContent(record.id, content, {
-        prompt,
         contentEdited: false,
         compressionData: { formatVersion: COMPRESSION_FORMAT_VERSION, ...data },
     });

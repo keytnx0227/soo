@@ -154,7 +154,6 @@ export async function applyAtlasReviewDraft(draft) {
             recordId: entry.recordId,
             category: draft.category,
             memoryUpdates: entry.memoryUpdates,
-            prompt: entry.prompt,
         })));
         return;
     }
@@ -168,7 +167,6 @@ export async function applyAtlasReviewDraft(draft) {
         appliedThroughId: draft.appliedThroughId,
         batchId: draft.id,
         memoryUpdates: entry.memoryUpdates,
-        prompt: entry.prompt,
     });
 }
 
@@ -198,7 +196,6 @@ async function createQuickReviewEntry(draft, { startId, endId, onProgress, signa
         reviewId,
         startId: start,
         endId: end,
-        prompt,
         memoryUpdates: stabilizeCreatedSourceIds(parsed, previousUpdates, draft.category),
     });
 }
@@ -243,7 +240,6 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
                 recordId: record.id,
                 startId: record.startId,
                 endId: record.endId,
-                prompt,
                 memoryUpdates,
             };
             draft.entries.push(entry);
@@ -272,7 +268,6 @@ function finalizeDraft(draft) {
                 endId: entry.endId,
                 appliedThroughId: draft.appliedThroughId,
                 memoryUpdates: entry.memoryUpdates,
-                prompt: entry.prompt,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             })),
