@@ -5,6 +5,14 @@ import { getSettings } from '../core/settings.js';
 import { getAtlasTranslation, saveAtlasTranslation } from '../memory/atlas-metadata.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
 
+const CATEGORY_COLLECTIONS = Object.freeze({
+    people: 'people',
+    items: 'items',
+    commitments: 'commitments',
+    events: 'events',
+    world: 'world',
+});
+
 export async function translateAtlasEntity(category, entityId) {
     assertExtensionEnabled();
     const sourceChat = SillyTavern.getContext().chat;
@@ -32,6 +40,46 @@ export function getValidAtlasTranslation(category, entity, cachedTranslation = u
     const translation = cachedTranslation === undefined ? getAtlasTranslation(category, entity.id) : cachedTranslation;
     if (!translation || translation.sourceHash !== createAtlasSourceHash(category, entity)) return null;
     return translation;
+}
+
+export async function translateAllAtlasEntities({ onProgress, signal } = {}) {
+    assertExtensionEnabled();
+    const settings = getSettings().translation;
+    const projection = getAtlasProjection();
+    const allEntities = Object.entries(CATEGORY_COLLECTIONS).flatMap(([category, collection]) => (
+        (projection[collection] || []).map(entity => ({ category, entity }))
+    ));
+    const targets = allEntities.filter(({ category, entity }) => {
+        const translation = getAtlasTranslation(category, entity.id);
+        return !translation
+            || translation.sourceHash !== createAtlasSourceHash(category, entity)
+            || translation.provider !== settings.provider
+            || translation.targetLanguage !== settings.targetLanguage;
+    });
+    const failures = [];
+    let translated = 0;
+
+    for (let index = 0; index < targets.length; index += 1) {
+        if (signal?.aborted) break;
+        const target = targets[index];
+        onProgress?.({ current: index + 1, total: targets.length, ...target });
+        try {
+            await translateAtlasEntity(target.category, target.entity.id);
+            translated += 1;
+        } catch (error) {
+            failures.push({ ...target, error });
+        }
+    }
+
+    return {
+        translated,
+        skipped: allEntities.length - targets.length,
+        failures,
+        total: allEntities.length,
+        targetCount: targets.length,
+        remaining: Math.max(0, targets.length - translated - failures.length),
+        cancelled: Boolean(signal?.aborted),
+    };
 }
 
 export function createAtlasSourceHash(category, entity) {

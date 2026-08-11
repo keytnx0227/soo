@@ -76,6 +76,7 @@ import {
     translateAllSummaryRecords,
     translateSummaryRecord,
 } from './translation/translation-service.js';
+import { translateAllAtlasEntities } from './translation/atlas-translation-service.js';
 
 let isMenuReady = false;
 let popup = null;
@@ -183,6 +184,8 @@ function bindEvents(root) {
     root.querySelector('#stsm-translate-all').addEventListener('click', () => translateAllRecords(root));
     root.querySelector('#stsm-cancel-translation').addEventListener('click', cancelTranslation);
     root.querySelector('#stsm-delete-all-translations').addEventListener('click', () => deleteAllTranslations(root));
+    root.querySelector('#stsm-translate-all-atlas').addEventListener('click', () => translateAllAtlas(root));
+    root.querySelector('#stsm-cancel-atlas-translation').addEventListener('click', cancelTranslation);
 
     bindConnectionSettings(root);
     bindPromptSettings(root);
@@ -866,6 +869,7 @@ async function autoTranslateRecord(record, operationToken) {
         });
         toastr.warning(`#${record.startId} ~ #${record.endId} 요약의 자동 번역에 실패했습니다.`);
     }
+
 }
 
 function setRecordBusy(record, value) {
@@ -982,10 +986,70 @@ function cancelTranslation() {
     if (translationOperationToken) {
         updateOperation(translationOperationToken, '현재 번역 완료 후 중단', 'cancelling-translation');
     }
-    const button = currentRoot?.querySelector('#stsm-cancel-translation');
-    if (button) {
+    currentRoot?.querySelectorAll('#stsm-cancel-translation, #stsm-cancel-atlas-translation').forEach(button => {
         button.disabled = true;
         button.querySelector('span').textContent = '중단 중';
+    });
+}
+
+async function translateAllAtlas(root) {
+    if (isTranslating) return;
+    const confirmed = await showConfirmation('현재 설정으로 번역되지 않은 모든 도감 항목을 일괄 번역하시겠습니까?', '번역');
+    if (!confirmed) return;
+
+    const button = root.querySelector('#stsm-translate-all-atlas');
+    const abortController = new AbortController();
+    let operationToken = null;
+    try {
+        operationToken = beginOperation('translating', '도감 일괄 번역 준비 중');
+        translationAbortController = abortController;
+        translationOperationToken = operationToken;
+        setTranslating(root, true);
+        const result = await translateAllAtlasEntities({
+            signal: abortController.signal,
+            onProgress: ({ current, total, entity }) => {
+                const label = entity.name || entity.title || entity.keys?.[0] || entity.id;
+                updateOperation(operationToken, `${label} 도감 번역 중 (${current}/${total})`);
+                button.querySelector('span').textContent = `번역 중 ${current}/${total}`;
+            },
+        });
+
+        if (result.cancelled) {
+            toastr.info(`${result.translated}개 도감 번역 완료, ${result.remaining}개 미시도`);
+        } else if (!result.total) {
+            toastr.info('번역할 도감 항목이 없습니다.');
+        } else if (!result.targetCount) {
+            toastr.info('모든 도감 항목이 현재 설정으로 이미 번역되어 있습니다.');
+        } else if (result.failures.length) {
+            toastr.warning(`${result.translated}개 번역 완료, ${result.failures.length}개 번역 실패`);
+        } else {
+            toastr.success(`${result.translated}개의 도감 항목을 번역했습니다.`);
+        }
+
+        for (const { category, entity, error } of result.failures) {
+            console.error(`[Chat Summarizer] Failed to translate atlas entity ${category}:${entity.id}:`, error);
+            addExtensionErrorLog(error, {
+                operation: 'translation',
+                title: '도감 일괄 번역 중 항목 번역 실패',
+                message: '일괄 번역 중 일부 도감 항목을 번역하지 못했습니다.',
+                context: { category, entityId: entity.id },
+            });
+        }
+    } catch (error) {
+        console.error('[Chat Summarizer] Bulk atlas translation failed:', error);
+        addExtensionErrorLog(error, {
+            operation: 'translation',
+            title: '도감 일괄 번역 실패',
+            message: '도감 일괄 번역 작업을 진행하지 못했습니다.',
+        });
+        toastr.error('도감 일괄 번역에 실패했습니다.');
+    } finally {
+        if (translationAbortController === abortController) translationAbortController = null;
+        if (translationOperationToken === operationToken) translationOperationToken = null;
+        if (operationToken) {
+            setTranslating(root, false);
+            endOperation(operationToken);
+        }
     }
 }
 
@@ -1015,14 +1079,16 @@ async function deleteAllTranslations(root) {
 
 function setTranslating(root, value) {
     isTranslating = value;
-    root.querySelectorAll('.stsm-record-translate, .stsm-record-translation-toggle, #stsm-translate-all, #stsm-delete-all-translations').forEach(button => {
+    root.querySelectorAll('.stsm-record-translate, .stsm-record-translation-toggle, #stsm-translate-all, #stsm-translate-all-atlas, #stsm-delete-all-translations').forEach(button => {
         button.disabled = value;
     });
-    const cancelButton = root.querySelector('#stsm-cancel-translation');
-    cancelButton.hidden = !value;
-    cancelButton.disabled = false;
-    cancelButton.querySelector('span').textContent = '중단';
+    root.querySelectorAll('#stsm-cancel-translation, #stsm-cancel-atlas-translation').forEach(cancelButton => {
+        cancelButton.hidden = !value;
+        cancelButton.disabled = false;
+        cancelButton.querySelector('span').textContent = '중단';
+    });
     root.querySelector('#stsm-translate-all').textContent = '일괄 번역';
+    root.querySelector('#stsm-translate-all-atlas span').textContent = '도감 일괄 번역';
 }
 
 async function showConfirmation(message, okButton) {

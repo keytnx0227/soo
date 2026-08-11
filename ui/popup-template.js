@@ -202,14 +202,24 @@ export function buildPopup() {
 
         <section id="stsm-panel-memory" class="stsm-panel" role="tabpanel" hidden>
             <div class="stsm-memory-toolbar">
-                <div>
+                <div class="stsm-memory-toolbar-copy">
                     <strong>도감</strong>
                     <span>요약 레코드의 변경안을 바탕으로 계산된 장기 기억</span>
                 </div>
-                <button id="stsm-open-atlas-review" class="menu_button interactable" type="button">
-                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                    <span>도감 재검토</span>
-                </button>
+                <div class="stsm-memory-toolbar-actions">
+                    <button id="stsm-translate-all-atlas" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-language" aria-hidden="true"></i>
+                        <span>도감 일괄 번역</span>
+                    </button>
+                    <button id="stsm-cancel-atlas-translation" class="menu_button interactable" type="button" hidden>
+                        <i class="fa-solid fa-stop" aria-hidden="true"></i>
+                        <span>중단</span>
+                    </button>
+                    <button id="stsm-open-atlas-review" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <span>도감 재검토</span>
+                    </button>
+                </div>
             </div>
             <div class="stsm-atlas-scroll">
                 <section class="stsm-atlas-section">

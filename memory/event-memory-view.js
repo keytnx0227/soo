@@ -92,13 +92,13 @@ function renderEvent(event, cachedTranslation, omitted) {
                     </div>
                 </div>
             </header>
-            <div class="stsm-event-fields stsm-atlas-original">
+            <div class="stsm-event-fields stsm-atlas-original"${translation ? ' hidden' : ''}>
                 ${renderField('날짜', event.date ? [event.date] : [])}
                 ${renderField('장소', event.location ? [event.location] : [])}
                 ${renderTextField('사건', event.summary)}
                 ${major && event.shift ? renderTextField('SHIFT', event.shift, true) : ''}
             </div>
-            ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
+            ${translation ? `<div class="stsm-atlas-translation">${escapeHtml(translation.content)}</div>` : ''}
         </article>
     `;
 }
@@ -172,17 +172,23 @@ function toggleTranslation(card, button) {
     const original = card.querySelector('.stsm-atlas-original');
     const translation = card.querySelector('.stsm-atlas-translation');
     if (!original || !translation) return;
-    const showTranslation = translation.hidden;
-    translation.hidden = !showTranslation;
-    original.hidden = showTranslation;
-    button.setAttribute('aria-pressed', String(showTranslation));
+    setTranslationVisibility(card, button, translation.hidden);
 }
 
 function showTranslatedCard(list, entityId) {
     const refreshedCard = [...(list?.querySelectorAll('[data-entity-id]') || [])]
         .find(element => element.dataset.entityId === entityId);
     const toggle = refreshedCard?.querySelector('[data-atlas-action="toggle-translation"]');
-    if (refreshedCard && toggle) toggleTranslation(refreshedCard, toggle);
+    if (refreshedCard && toggle) setTranslationVisibility(refreshedCard, toggle, true);
+}
+
+function setTranslationVisibility(card, button, showTranslation) {
+    const original = card.querySelector('.stsm-atlas-original');
+    const translation = card.querySelector('.stsm-atlas-translation');
+    if (!original || !translation) return;
+    translation.hidden = !showTranslation;
+    original.hidden = showTranslation;
+    button.setAttribute('aria-pressed', String(showTranslation));
 }
 
 function renderTextField(label, value, emphasized = false) {
@@ -195,7 +201,8 @@ function renderField(label, values, emphasized = false) {
 }
 
 function renderAction(action, icon, title) {
-    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"><i class="fa-solid ${icon}"></i></button>`;
+    const pressed = action === 'toggle-translation' ? ' aria-pressed="true"' : '';
+    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"${pressed}><i class="fa-solid ${icon}"></i></button>`;
 }
 
 function renderCorrectionState(corrections) {

@@ -74,12 +74,12 @@ function renderItem(item, cachedTranslation) {
                     </div>
                 </div>
             </header>
-            <div class="stsm-item-fields stsm-atlas-original">
+            <div class="stsm-item-fields stsm-atlas-original"${translation ? ' hidden' : ''}>
                 ${renderField('객관 정보', item.facts)}
                 ${renderField('기능', item.functions)}
                 ${renderLastKnownState(item.lastKnownState)}
             </div>
-            ${translation ? `<div class="stsm-atlas-translation" hidden>${escapeHtml(translation.content)}</div>` : ''}
+            ${translation ? `<div class="stsm-atlas-translation">${escapeHtml(translation.content)}</div>` : ''}
         </article>
     `;
 }
@@ -147,21 +147,28 @@ function toggleTranslation(card, button) {
     const original = card.querySelector('.stsm-atlas-original');
     const translation = card.querySelector('.stsm-atlas-translation');
     if (!original || !translation) return;
-    const showTranslation = translation.hidden;
-    translation.hidden = !showTranslation;
-    original.hidden = showTranslation;
-    button.setAttribute('aria-pressed', String(showTranslation));
+    setTranslationVisibility(card, button, translation.hidden);
 }
 
 function showTranslatedCard(list, entityId) {
     const refreshedCard = [...(list?.querySelectorAll('[data-entity-id]') || [])]
         .find(element => element.dataset.entityId === entityId);
     const toggle = refreshedCard?.querySelector('[data-atlas-action="toggle-translation"]');
-    if (refreshedCard && toggle) toggleTranslation(refreshedCard, toggle);
+    if (refreshedCard && toggle) setTranslationVisibility(refreshedCard, toggle, true);
+}
+
+function setTranslationVisibility(card, button, showTranslation) {
+    const original = card.querySelector('.stsm-atlas-original');
+    const translation = card.querySelector('.stsm-atlas-translation');
+    if (!original || !translation) return;
+    translation.hidden = !showTranslation;
+    original.hidden = showTranslation;
+    button.setAttribute('aria-pressed', String(showTranslation));
 }
 
 function renderAction(action, icon, title) {
-    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"><i class="fa-solid ${icon}"></i></button>`;
+    const pressed = action === 'toggle-translation' ? ' aria-pressed="true"' : '';
+    return `<button class="menu_button menu_button_icon interactable" data-atlas-action="${action}" type="button" title="${title}" aria-label="${title}"${pressed}><i class="fa-solid ${icon}"></i></button>`;
 }
 
 function renderCorrectionState(corrections) {

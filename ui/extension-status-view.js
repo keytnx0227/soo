@@ -15,6 +15,7 @@ const ENABLED_EXECUTION_CONTROL_SELECTOR = [
 
 const TRANSLATION_CONTROL_SELECTOR = [
     '#stsm-translate-all',
+    '#stsm-translate-all-atlas',
     '.stsm-record-translate',
 ].join(', ');
 
