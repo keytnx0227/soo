@@ -70,8 +70,6 @@ import {
     renderCompressionTemplateSettings,
 } from './summary/compression-template-view.js';
 import { bindCompressionView } from './summary/compression-view.js';
-import { migrateEditedCompressionContents } from './summary/compression-content-migration.js';
-import { showCompressionContentMigrationReport } from './summary/compression-content-migration-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import {
     applySummaryOutputSectionsToRecords,
@@ -134,18 +132,6 @@ async function openSummarizerPopup() {
     if (popup) return;
 
     getSettings();
-    try {
-        const migration = await migrateEditedCompressionContents();
-        await showCompressionContentMigrationReport(migration);
-    } catch (error) {
-        console.error('[Chat Summarizer] Failed to migrate edited compression contents:', error);
-        addExtensionErrorLog(error, {
-            operation: 'compression-content-migration',
-            title: '편집된 압축 요약 동기화 실패',
-            message: '기존 압축 요약 원문은 변경하지 않았습니다.',
-        });
-        toastr.warning('편집된 압축 요약을 구조화 데이터로 동기화하지 못했습니다. 기존 원문은 유지됩니다.');
-    }
     const root = buildPopup();
     currentRoot = root;
     const cleanup = bindEvents(root);
