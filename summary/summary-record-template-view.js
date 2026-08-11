@@ -2,6 +2,7 @@ import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import {
     getSummaryContentTemplate,
     getSummaryContentTemplatePreset,
+    getSettings,
     resetSummaryContentTemplate,
     setSummaryContentTemplate,
     setSummaryContentTemplatePreset,
@@ -150,7 +151,10 @@ async function applyTemplateToRecords() {
     )) return;
 
     try {
-        const result = await applySummaryContentTemplateToRecords(getSummaryContentTemplate(), { includeEdited });
+        const result = await applySummaryContentTemplateToRecords(getSummaryContentTemplate(), {
+            includeEdited,
+            outputSections: getSettings().summarization.summaryOutputSections,
+        });
         window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
         const skipped = result.skippedEditedCount ? ` 수정된 레코드 ${result.skippedEditedCount}개는 유지했습니다.` : '';
         if (result.appliedCount) {

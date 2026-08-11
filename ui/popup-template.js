@@ -404,8 +404,11 @@ export function buildPopup() {
                 </details>
             </div>
 
-            <div class="stsm-settings-section">
-                <div class="stsm-section-title">요약 항목 설정</div>
+            <details class="stsm-settings-section stsm-mobile-collapsible">
+                <summary class="stsm-mobile-collapsible-summary stsm-section-title">
+                    <span>요약 추출 항목</span>
+                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </summary>
                 <div class="stsm-summary-section-grid">
                     ${renderSummarySectionToggle('plot', '플롯', true)}
                     ${renderSummarySectionToggle('title', '제목')}
@@ -417,7 +420,25 @@ export function buildPopup() {
                     ${renderSummarySectionToggle('quotes', '주요 대사')}
                     ${renderSummarySectionToggle('tags', '검색 태그')}
                 </div>
-            </div>
+            </details>
+
+            <details class="stsm-settings-section stsm-mobile-collapsible">
+                <summary class="stsm-mobile-collapsible-summary stsm-section-title">
+                    <span>요약 출력 항목</span>
+                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </summary>
+                <div class="stsm-summary-section-grid">
+                    ${renderSummaryOutputToggle('plot', '플롯')}
+                    ${renderSummaryOutputToggle('title', '제목')}
+                    ${renderSummaryOutputToggle('date', '날짜')}
+                    ${renderSummaryOutputToggle('time', '시간')}
+                    ${renderSummaryOutputToggle('location', '장소')}
+                    ${renderSummaryOutputToggle('continuity', '연속성 변화')}
+                    ${renderSummaryOutputToggle('emotions', '감정')}
+                    ${renderSummaryOutputToggle('quotes', '주요 대사')}
+                </div>
+                <p class="stsm-settings-note">출력을 꺼도 저장된 데이터는 유지되며, 다시 켜면 복원됩니다.</p>
+            </details>
 
             <div class="stsm-settings-section">
                 <div class="stsm-section-title">요약 레코드 내용 형식</div>
@@ -533,6 +554,18 @@ function renderSummarySectionToggle(section, label, required = false) {
             </span>
             <label class="stsm-switch" title="${title}">
                 <input type="checkbox" data-summary-section="${section}" ${required ? 'checked disabled' : ''} />
+                <span></span>
+            </label>
+        </div>
+    `;
+}
+
+function renderSummaryOutputToggle(section, label) {
+    return `
+        <div class="stsm-summary-section-toggle">
+            <span class="stsm-summary-section-label"><span>${label}</span></span>
+            <label class="stsm-switch" title="${label} 출력 켜기/끄기">
+                <input type="checkbox" data-summary-output-section="${section}" />
                 <span></span>
             </label>
         </div>

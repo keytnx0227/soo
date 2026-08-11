@@ -136,7 +136,14 @@ function isSummaryBlockEnabled(block, sections) {
     return sectionKey ? Boolean(sections[sectionKey]) : block.enabled;
 }
 
-export async function buildRevisionPrompt({ baseContent, summarySource = null, compressionSourceContent = '', messages }) {
+export async function buildRevisionPrompt({
+    baseContent,
+    structuredSourceContent = '',
+    revisionOutputContract = '',
+    summarySource = null,
+    compressionSourceContent = '',
+    messages,
+}) {
     const preset = getActivePreset(PROMPT_TYPES.REVISION);
     const parts = [];
     const includeCompressionSources = Boolean(
@@ -151,6 +158,8 @@ export async function buildRevisionPrompt({ baseContent, summarySource = null, c
     for (const block of preset.blocks.filter(block => block.enabled)) {
         const content = renderRevisionBlock(block, {
             baseContent,
+            structuredSourceContent,
+            revisionOutputContract,
             summarySource,
             includeSummarySource,
             compressionSourceContent,
@@ -258,6 +267,8 @@ function buildRecentSummaryContent(block, startId) {
 
 function renderRevisionBlock(block, {
     baseContent,
+    structuredSourceContent,
+    revisionOutputContract,
     summarySource,
     includeSummarySource,
     compressionSourceContent,
@@ -265,14 +276,18 @@ function renderRevisionBlock(block, {
     messages,
 }) {
     const commonValues = {
-        sumiCurrentSummary: baseContent,
+        sumiCurrentSummary: structuredSourceContent || baseContent,
+        sumiRevisionJsonContract: revisionOutputContract,
         sumiStartId: summarySource?.startId ?? '',
         sumiEndId: summarySource?.endId ?? '',
         sumiCompressionRevisionSources: compressionSourceContent,
     };
 
     if (block.kind === BLOCK_KINDS.CURRENT_SUMMARY) {
-        return renderDataBlock(block, 'sumiCurrentSummary', baseContent);
+        return renderDataBlock(block, 'sumiCurrentSummary', structuredSourceContent || baseContent, commonValues);
+    }
+    if (block.kind === BLOCK_KINDS.REVISION_OUTPUT_CONTRACT) {
+        return renderDataBlock(block, 'sumiRevisionJsonContract', revisionOutputContract, commonValues);
     }
     if (block.kind === BLOCK_KINDS.REVISION_SUMMARY_MESSAGES) {
         return includeSummarySource

@@ -2,6 +2,7 @@ import { saveSettings as saveSillyTavernSettings, saveSettingsDebounced } from '
 import { createId } from './utils.js';
 import {
     DEFAULT_MEMORY_SECTIONS,
+    DEFAULT_SUMMARY_OUTPUT_SECTIONS,
     DEFAULT_SUMMARY_SECTIONS,
     SUMMARY_LANGUAGE_MODES,
     SUMMARY_SECTION_KINDS,
@@ -26,7 +27,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 23;
+const PROMPT_SCHEMA_VERSION = 24;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -44,6 +45,7 @@ export const BLOCK_KINDS = Object.freeze({
     REVISION_COMPRESSION_SOURCES: 'revisionCompressionSources',
     REVISION_COMPRESSION_SOURCE_SEPARATOR: 'revisionCompressionSourceSeparator',
     REVISION_MESSAGES: 'revisionMessages',
+    REVISION_OUTPUT_CONTRACT: 'revisionOutputContract',
     LEGACY_CHARACTER: 'character',
     LEGACY_SUMMARY_TARGET: 'summaryTarget',
     LEGACY_REVISION_HISTORY: 'revisionHistory',
@@ -489,7 +491,8 @@ const DEFAULT_REVISION_MAIN_PROMPT = `# Summary Revision
 
 You are revising an existing conversation summary. Apply the user's feedback accurately while preserving useful facts and chronology from the current summary. When source messages or compression source records are provided, use them to verify or recover details requested by the user; do not restore omitted detail unless it serves the feedback.`;
 
-const DEFAULT_REVISION_TEMPLATE = 'Return only the revised summary without a preface, explanation, or commentary.';
+const V23_DEFAULT_REVISION_TEMPLATE = 'Return only the revised summary without a preface, explanation, or commentary.';
+const DEFAULT_REVISION_TEMPLATE = 'Return only one valid JSON object matching the revision output contract. Do not add a preface, explanation, commentary, Markdown fence, or properties outside the contract.';
 
 const V15_DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
 
@@ -704,6 +707,7 @@ export const defaultSettings = Object.freeze({
         chunkSize: 30,
         outputLanguage: SUMMARY_LANGUAGE_MODES.ENGLISH,
         summarySections: DEFAULT_SUMMARY_SECTIONS,
+        summaryOutputSections: DEFAULT_SUMMARY_OUTPUT_SECTIONS,
         memorySections: DEFAULT_MEMORY_SECTIONS,
         injectionMaxTokens: 24000,
         eventInjectionMaxTokens: 4000,
@@ -840,6 +844,14 @@ export function setSummarySectionEnabled(section, enabled) {
     settings.summarization.summarySections[section] = Boolean(enabled);
     saveSettings();
     return settings.summarization.summarySections[section];
+}
+
+export function setSummaryOutputSectionEnabled(section, enabled) {
+    if (!Object.hasOwn(DEFAULT_SUMMARY_OUTPUT_SECTIONS, section)) return false;
+    const settings = getSettings();
+    settings.summarization.summaryOutputSections[section] = Boolean(enabled);
+    saveSettings();
+    return settings.summarization.summaryOutputSections[section];
 }
 
 export function getSummaryContentTemplate() {
@@ -1065,6 +1077,7 @@ export function isRequiredPromptBlock(block) {
         BLOCK_KINDS.WORLD_MEMORY,
         BLOCK_KINDS.COMPRESSION_SOURCES,
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
+        BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
     ].includes(block?.kind);
 }
 
@@ -1180,6 +1193,13 @@ function getDefaultPreset(type) {
                 ...createRevisionCompressionSourceBlocks(),
                 ...createRevisionConversationBlocks(),
                 createPromptBlock({ id: 'revision-template', name: '수정 결과 템플릿', content: DEFAULT_REVISION_TEMPLATE, locked: true }),
+                createPromptBlock({
+                    id: 'revision-output-contract',
+                    name: '수정 JSON 출력 형식 · 자동 생성',
+                    content: '{{sumiRevisionJsonContract}}',
+                    locked: true,
+                    kind: BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
+                }),
             ],
         });
     }
@@ -1455,6 +1475,7 @@ function normalizeSettings(settings, {
         ? settings.summarization.outputLanguage
         : defaultSettings.summarization.outputLanguage;
     settings.summarization.summarySections = normalizeSummarySections(settings.summarization.summarySections);
+    settings.summarization.summaryOutputSections = normalizeSummaryOutputSections(settings.summarization.summaryOutputSections);
     settings.summarization.memorySections = normalizeMemorySections(settings.summarization.memorySections);
     delete settings.summarization.autoStartFromLastSummary;
     settings.summarization.injectionMaxTokens = clampInteger(settings.summarization.injectionMaxTokens, 100, 200000, defaultSettings.summarization.injectionMaxTokens);
@@ -1624,6 +1645,14 @@ function normalizeSummarySections(value) {
     return Object.fromEntries(Object.entries(DEFAULT_SUMMARY_SECTIONS).map(([key, fallback]) => [
         key,
         key === 'plot' ? true : source[key] === undefined ? fallback : Boolean(source[key]),
+    ]));
+}
+
+function normalizeSummaryOutputSections(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return Object.fromEntries(Object.entries(DEFAULT_SUMMARY_OUTPUT_SECTIONS).map(([key, fallback]) => [
+        key,
+        source[key] === undefined ? fallback : Boolean(source[key]),
     ]));
 }
 
@@ -2103,6 +2132,24 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 config: { ...block.config, rules },
             };
         });
+    }
+
+    if (type === PROMPT_TYPES.REVISION && sourceSchemaVersion < 24) {
+        migratedBlocks = migratedBlocks.map(block => (
+            block.id === 'revision-template'
+                && String(block.content || '').trim() === V23_DEFAULT_REVISION_TEMPLATE.trim()
+                ? { ...block, content: DEFAULT_REVISION_TEMPLATE }
+                : block
+        ));
+        if (!migratedBlocks.some(block => block.kind === BLOCK_KINDS.REVISION_OUTPUT_CONTRACT)) {
+            migratedBlocks.push(createPromptBlock({
+                id: 'revision-output-contract',
+                name: '수정 JSON 출력 형식 · 자동 생성',
+                content: '{{sumiRevisionJsonContract}}',
+                locked: true,
+                kind: BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
+            }));
+        }
     }
 
     return {

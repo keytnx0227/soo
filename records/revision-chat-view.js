@@ -6,8 +6,20 @@ import {
     subscribeExtensionState,
 } from '../core/extension-state.js';
 import { generateSummary } from '../connection/generation.js';
+import { getSettings } from '../core/settings.js';
 import { buildRevisionPrompt } from '../prompts/prompt-builder.js';
 import { createSummaryChunks } from '../summary/chunking.js';
+import {
+    buildCompressionJsonContract,
+    parseCompressionResponse,
+    renderCompressionSummary,
+} from '../summary/compression-format.js';
+import {
+    buildSummaryJsonContract,
+    getEnabledSummarySections,
+    parseStructuredSummaryResponse,
+    renderStructuredSummary,
+} from '../summary/summary-format.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import {
     getRecentRevisionConversation,
@@ -21,6 +33,14 @@ let activeSession = null;
 let revisionPopup = null;
 let revisionRoot = null;
 let unsubscribeRevisionState = null;
+
+const NO_MEMORY_SECTIONS = Object.freeze({
+    people: false,
+    items: false,
+    commitments: false,
+    events: false,
+    world: false,
+});
 
 export async function openRevisionChat(recordId, { onApplied } = {}) {
     if (revisionPopup) return;
@@ -97,17 +117,20 @@ export async function buildCurrentRevisionPromptPreview() {
         : { baseContent: '', messages: [] };
     const pendingFeedback = revisionRoot?.querySelector('.stsm-revision-input')?.value?.trim();
     if (pendingFeedback) session.messages.push({ role: 'user', text: pendingFeedback });
-    return await buildRevisionPrompt(session);
+    return await buildRevisionPrompt(createRevisionPromptInput(session));
 }
 
 function createSession(record) {
     return {
         chatRef: SillyTavern.getContext().chat,
         recordId: record.id,
+        recordType: record.type,
         startId: record.startId,
         endId: record.endId,
         baseContent: record.content,
         baseHash: record.contentHash,
+        baseStructuredData: getRecordStructuredData(record),
+        structuredSections: record.structuredSummary?.sections || null,
         summarySource: buildSummarySource(record),
         compressionSourceContent: buildCompressionSourceContent(record),
         messages: [],
@@ -164,12 +187,14 @@ async function sendFeedback() {
         session.isGenerating = true;
         renderRevisionSession();
         await persistSession(session);
-        const prompt = await buildRevisionPrompt(session);
+        const prompt = await buildRevisionPrompt(createRevisionPromptInput(session));
         if (!prompt.trim()) throw new Error('현재 설정으로 조립된 수정 프롬프트가 비어 있습니다.');
-        const text = await generateSummary(prompt);
-        if (!text) throw new Error('수정 대화 응답이 비어 있습니다.');
+        const response = await generateSummary(prompt);
+        if (!response) throw new Error('수정 대화 응답이 비어 있습니다.');
+        const result = parseRevisionResult(session, response);
+        const text = renderRevisionResult(session, result);
         if (activeSession !== session || SillyTavern.getContext().chat !== session.chatRef) return;
-        session.messages.push({ role: 'assistant', text });
+        session.messages.push({ role: 'assistant', text, result });
         await persistSession(session);
     } catch (error) {
         console.error('[Chat Summarizer] Revision generation failed:', error);
@@ -232,14 +257,14 @@ function updateApplyControl() {
     if (!revisionPopup) return;
     const control = revisionPopup.dlg.querySelector(`[data-result="${POPUP_RESULT.CUSTOM1}"]`);
     if (!control) return;
-    const disabled = Boolean(getExtensionState().operation) || activeSession.isGenerating || !getLatestAssistantMessage();
+    const disabled = Boolean(getExtensionState().operation) || activeSession.isGenerating || !getLatestStructuredAssistantMessage();
     control.classList.toggle('disabled', disabled);
     control.setAttribute('aria-disabled', String(disabled));
 }
 
 async function applyLatestRevision(onApplied) {
     if (activeSession?.isGenerating) return false;
-    const latest = getLatestAssistantMessage();
+    const latest = getLatestStructuredAssistantMessage();
     if (!latest) {
         toastr.info('적용할 수정안이 없습니다.');
         return false;
@@ -247,9 +272,22 @@ async function applyLatestRevision(onApplied) {
 
     try {
         await persistActiveSession();
-        const updatedRecord = await updateSummaryRecordContent(activeSession.recordId, latest.text, {
-            contentEdited: true,
-        });
+        const record = getSummaryRecord(activeSession.recordId);
+        if (!record) throw new Error('수정안을 적용할 요약 기록을 찾지 못했습니다.');
+        const content = renderRevisionResult(activeSession, latest.result);
+        const update = latest.result.type === 'compressed'
+            ? {
+                contentEdited: false,
+                compressionData: latest.result.data,
+            }
+            : {
+                contentEdited: false,
+                structuredSummary: {
+                    ...record.structuredSummary,
+                    data: latest.result.data,
+                },
+            };
+        const updatedRecord = await updateSummaryRecordContent(activeSession.recordId, content, update);
         if (!updatedRecord) throw new Error('수정안을 적용할 요약 기록을 찾지 못했습니다.');
         activeSession = null;
         onApplied?.(updatedRecord);
@@ -301,6 +339,9 @@ async function restoreRecentConversation() {
 
     activeSession = {
         ...structuredClone(recent),
+        recordType: sourceRecord.type,
+        baseStructuredData: getRecordStructuredData(sourceRecord),
+        structuredSections: sourceRecord.structuredSummary?.sections || null,
         summarySource: buildSummarySource(sourceRecord),
         compressionSourceContent: buildCompressionSourceContent(sourceRecord),
         chatRef: SillyTavern.getContext().chat,
@@ -361,6 +402,86 @@ function getSessionRange(session) {
 
 function getLatestAssistantMessage() {
     return activeSession?.messages.findLast(message => message.role === 'assistant') || null;
+}
+
+function getLatestStructuredAssistantMessage() {
+    const message = getLatestAssistantMessage();
+    return isRevisionResultCompatible(message?.result, activeSession?.recordType) ? message : null;
+}
+
+function createRevisionPromptInput(session) {
+    if (!session?.recordType || !session.baseStructuredData) return session;
+    const currentData = getCurrentStructuredData(session);
+    const isCompressed = session.recordType === 'compressed';
+    const sections = isCompressed ? null : getRevisionSections(session);
+    const sourceData = isCompressed
+        ? currentData
+        : parseStructuredSummaryResponse(JSON.stringify(currentData), sections, NO_MEMORY_SECTIONS);
+    return {
+        ...session,
+        structuredSourceContent: JSON.stringify(sourceData, null, 2),
+        revisionOutputContract: isCompressed
+            ? buildCompressionJsonContract()
+            : buildSummaryJsonContract(sections, NO_MEMORY_SECTIONS),
+    };
+}
+
+function parseRevisionResult(session, response) {
+    if (session.recordType === 'compressed') {
+        return { type: 'compressed', data: parseCompressionResponse(response) };
+    }
+
+    const currentData = getCurrentStructuredData(session);
+    const parsed = parseStructuredSummaryResponse(response, getRevisionSections(session), NO_MEMORY_SECTIONS);
+    return {
+        type: 'summary',
+        data: {
+            ...parsed,
+            tags: structuredClone(currentData.tags || []),
+            memoryUpdates: structuredClone(currentData.memoryUpdates || {}),
+        },
+    };
+}
+
+function renderRevisionResult(session, result) {
+    const settings = getSettings().summarization;
+    if (result.type === 'compressed') {
+        return renderCompressionSummary(result.data, {
+            startId: session.startId,
+            endId: session.endId,
+            template: settings.compressionContentTemplate,
+        });
+    }
+    return renderStructuredSummary(result.data, {
+        startId: session.startId,
+        endId: session.endId,
+        template: settings.summaryContentTemplate,
+        outputSections: settings.summaryOutputSections,
+    });
+}
+
+function getCurrentStructuredData(session) {
+    const latest = session.messages.findLast(message => (
+        message.role === 'assistant' && isRevisionResultCompatible(message.result, session.recordType)
+    ));
+    return structuredClone(latest?.result?.data || session.baseStructuredData);
+}
+
+function getRevisionSections(session) {
+    return {
+        ...getEnabledSummarySections(session.structuredSections || {}),
+        tags: false,
+    };
+}
+
+function getRecordStructuredData(record) {
+    if (record?.type === 'compressed') return structuredClone(record.compression?.data || null);
+    return structuredClone(record?.structuredSummary?.data || null);
+}
+
+function isRevisionResultCompatible(result, recordType) {
+    const expectedType = recordType === 'compressed' ? 'compressed' : 'summary';
+    return Boolean(result && result.type === expectedType && result.data && typeof result.data === 'object');
 }
 
 function isSessionValidForRecord(session, record) {

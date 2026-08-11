@@ -35,6 +35,17 @@ export const DEFAULT_SUMMARY_SECTIONS = Object.freeze({
     tags: true,
 });
 
+export const DEFAULT_SUMMARY_OUTPUT_SECTIONS = Object.freeze({
+    title: true,
+    date: true,
+    time: true,
+    location: true,
+    plot: true,
+    continuity: true,
+    emotions: true,
+    quotes: true,
+});
+
 export const DEFAULT_MEMORY_SECTIONS = Object.freeze({
     people: true,
     items: true,
@@ -388,6 +399,15 @@ export function parseStructuredSummaryResponse(response, sections, memorySection
     return normalized;
 }
 
+export function normalizeStructuredSummaryData(value) {
+    if (!isPlainObject(value)) throw new Error('구조화 요약 데이터가 올바르지 않습니다.');
+    return parseStructuredSummaryResponse(
+        JSON.stringify(value),
+        DEFAULT_SUMMARY_SECTIONS,
+        DEFAULT_MEMORY_SECTIONS,
+    );
+}
+
 export function parseAtlasReviewResponse(response, category) {
     const source = stripJsonFence(String(response || '').trim());
     if (!source) throw new Error('도감 재검토 응답이 비어 있습니다.');
@@ -722,8 +742,36 @@ function normalizeRelationships(value) {
     }).filter(Boolean);
 }
 
-export function renderStructuredSummary(summary, { startId, endId, template = DEFAULT_SUMMARY_CONTENT_TEMPLATE }) {
-    return renderSummaryContentTemplate(template, summary, { startId, endId });
+export function renderStructuredSummary(summary, {
+    startId,
+    endId,
+    template = DEFAULT_SUMMARY_CONTENT_TEMPLATE,
+    outputSections = DEFAULT_SUMMARY_OUTPUT_SECTIONS,
+}) {
+    return renderSummaryContentTemplate(template, applyOutputSections(summary, outputSections), { startId, endId });
+}
+
+function applyOutputSections(summary, outputSections) {
+    const enabled = { ...DEFAULT_SUMMARY_OUTPUT_SECTIONS, ...(outputSections || {}) };
+    const contextFlow = (Array.isArray(summary?.contextFlow) ? summary.contextFlow : []).map(item => {
+        const next = { ...item };
+        if (!enabled.date) {
+            delete next.date;
+            delete next.relativeDate;
+        }
+        if (!enabled.time) delete next.time;
+        if (!enabled.location) delete next.location;
+        return next;
+    }).filter(item => Object.values(item).some(Boolean));
+    return {
+        ...summary,
+        title: enabled.title ? summary?.title : null,
+        contextFlow,
+        plot: enabled.plot ? summary?.plot : [],
+        continuityChanges: enabled.continuity ? summary?.continuityChanges : [],
+        emotions: enabled.emotions ? summary?.emotions : [],
+        quotes: enabled.quotes ? summary?.quotes : [],
+    };
 }
 
 function normalizeContextFlow(value, sections) {

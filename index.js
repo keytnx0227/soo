@@ -35,6 +35,7 @@ import { bindPromptSettings, renderPromptEditor } from './prompts/prompt-setting
 import { bindPromptInspector } from './prompts/prompt-inspector.js';
 import { bindRangeAdjustment } from './records/range-adjustment-view.js';
 import { bindRangeDeletion } from './records/range-deletion-view.js';
+import { openStructuredSummaryEditor } from './records/structured-summary-editor.js';
 import {
     bindRecordsView,
     refreshSummaryRecordSourceStates,
@@ -51,6 +52,7 @@ import {
     setChunkSize,
     setCompressionGroupSize,
     setMemorySectionEnabled,
+    setSummaryOutputSectionEnabled,
     setSummarySectionEnabled,
     setSummarizationSettings,
     setTranslationSettings,
@@ -67,11 +69,14 @@ import {
 } from './summary/compression-template-view.js';
 import { bindCompressionView } from './summary/compression-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
-import { deleteSummaryRecord, getSummaryRecord, getSummaryRecords, updateSummaryRecordContent } from './summary/summary-store.js';
+import {
+    applySummaryOutputSectionsToRecords,
+    deleteSummaryRecord,
+    getSummaryRecord,
+    getSummaryRecords,
+    updateSummaryRecordContent,
+} from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
-import { migrateEditedSummaryContents } from './summary/summary-content-migration.js';
-import { showSummaryContentMigrationReport } from './summary/summary-content-migration-view.js';
-import { removeLegacyStoredPrompts } from './summary/storage-cleanup.js';
 import { addExtensionErrorLog } from './diagnostics/summary-error-state.js';
 import { bindSummaryErrorView } from './diagnostics/summary-error-view.js';
 import {
@@ -123,46 +128,6 @@ async function openSummarizerPopup() {
     if (popup) return;
 
     getSettings();
-    try {
-        const storageCleanup = await removeLegacyStoredPrompts();
-        if (storageCleanup.removedCount) {
-            toastr.success(`저장된 불필요 프롬프트 ${storageCleanup.removedCount}개를 제거했습니다. 약 ${formatByteSize(storageCleanup.removedBytes)}를 정리했어요.`);
-        }
-    } catch (error) {
-        console.error('[Chat Summarizer] Failed to remove stored prompts:', error);
-        addExtensionErrorLog(error, {
-            operation: 'storage-cleanup',
-            title: '저장 데이터 최적화 실패',
-            message: '기존 레코드에 저장된 불필요한 프롬프트를 제거하지 못했습니다.',
-        });
-        toastr.error(error.message || '저장 데이터 최적화에 실패했습니다.');
-    }
-    try {
-        const migration = await migrateEditedSummaryContents();
-        if (migration.migrated.length) {
-            toastr.success(`편집된 요약 ${migration.migrated.length}개를 구조화 데이터에 반영했습니다.`);
-        }
-        if (migration.failed.length) {
-            const ranges = migration.failed.map(item => item.range).join(', ');
-            console.warn('[Chat Summarizer] Summary content migration skipped records:', migration.failed);
-            addExtensionErrorLog(new Error(migration.failed.map(item => `${item.range}: ${item.reason}`).join('\n')), {
-                operation: 'summary-content-migration',
-                title: '일부 편집된 요약 동기화 제외',
-                message: `편집된 요약 ${migration.failed.length}개를 자동 반영하지 못했습니다.`,
-                context: { ranges },
-            });
-            toastr.warning(`편집된 요약 ${migration.failed.length}개를 자동 반영하지 못했습니다: ${ranges}`);
-        }
-        await showSummaryContentMigrationReport(migration);
-    } catch (error) {
-        console.error('[Chat Summarizer] Failed to migrate edited summary contents:', error);
-        addExtensionErrorLog(error, {
-            operation: 'summary-content-migration',
-            title: '편집된 요약 동기화 실패',
-            message: '편집된 요약을 구조화 데이터에 반영하지 못했습니다.',
-        });
-        toastr.error(error.message || '편집된 요약 동기화에 실패했습니다.');
-    }
     const root = buildPopup();
     currentRoot = root;
     const cleanup = bindEvents(root);
@@ -180,12 +145,6 @@ async function openSummarizerPopup() {
         currentRoot = null;
         popup = null;
     }
-}
-
-function formatByteSize(bytes) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
 function bindEvents(root) {
@@ -307,6 +266,7 @@ function bindSummarizationSettings(root) {
     const autoHide = root.querySelector('#stsm-auto-hide-summarized');
     const compressionGroupSize = root.querySelector('#stsm-compression-group-size');
     const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
+    const summaryOutputSectionToggles = root.querySelectorAll('[data-summary-output-section]');
     const memorySectionToggles = root.querySelectorAll('[data-memory-section]');
 
     renderSummarizationSettings(root);
@@ -320,6 +280,9 @@ function bindSummarizationSettings(root) {
             renderPromptEditor(root, 'summary');
             root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
         });
+    });
+    summaryOutputSectionToggles.forEach(toggle => {
+        toggle.addEventListener('change', event => updateSummaryOutputSection(root, event.target));
     });
     memorySectionToggles.forEach(toggle => {
         toggle.addEventListener('change', event => {
@@ -408,11 +371,45 @@ function renderSummarizationSettings(root) {
     root.querySelectorAll('[data-summary-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
     });
+    root.querySelectorAll('[data-summary-output-section]').forEach(toggle => {
+        toggle.checked = Boolean(settings.summaryOutputSections[toggle.dataset.summaryOutputSection]);
+    });
     root.querySelectorAll('[data-memory-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
     });
     renderInjectionFields(root);
     renderWorldOutputFields(root);
+}
+
+async function updateSummaryOutputSection(root, toggle) {
+    const section = toggle.dataset.summaryOutputSection;
+    const previous = !toggle.checked;
+    toggle.disabled = true;
+    try {
+        setSummaryOutputSectionEnabled(section, toggle.checked);
+        const settings = getSettings().summarization;
+        const result = await applySummaryOutputSectionsToRecords(
+            settings.summaryContentTemplate,
+            settings.summaryOutputSections,
+        );
+        renderSummaryRecords(root, bindRecordEvents);
+        const skipped = result.skippedEditedCount
+            ? ` 수정 대화로 직접 수정된 레코드 ${result.skippedEditedCount}개는 유지했습니다.`
+            : '';
+        toastr.success(`요약 출력 항목을 변경했습니다.${skipped}`);
+    } catch (error) {
+        setSummaryOutputSectionEnabled(section, previous);
+        toggle.checked = previous;
+        console.error('[Chat Summarizer] Failed to apply summary output sections:', error);
+        addExtensionErrorLog(error, {
+            operation: 'summary-output-settings',
+            title: '요약 출력 항목 적용 실패',
+            message: '요약 출력 항목을 기존 레코드에 적용하지 못했습니다.',
+        });
+        toastr.error(error.message || '요약 출력 항목 적용에 실패했습니다.');
+    } finally {
+        toggle.disabled = false;
+    }
 }
 
 async function applyImportedGlobalSettings(root) {
@@ -433,15 +430,21 @@ async function applyImportedGlobalSettings(root) {
     refreshSummaryInjection();
 
     try {
+        const settings = getSettings().summarization;
+        await applySummaryOutputSectionsToRecords(
+            settings.summaryContentTemplate,
+            settings.summaryOutputSections,
+        );
+        renderSummaryRecords(root, bindRecordEvents);
         await syncSummarizedMessageVisibility();
     } catch (error) {
-        console.error('[Chat Summarizer] Failed to synchronize message visibility after settings import:', error);
+        console.error('[Chat Summarizer] Failed to apply imported summary settings:', error);
         addExtensionErrorLog(error, {
             operation: 'settings-import',
-            title: '전역 설정 가져오기 후 자동 숨김 동기화 실패',
-            message: '전역 설정은 가져왔지만 요약 메시지 자동 숨김 상태를 동기화하지 못했습니다.',
+            title: '전역 설정 가져오기 후 요약 상태 적용 실패',
+            message: '전역 설정은 가져왔지만 기존 요약 출력 또는 자동 숨김 상태를 적용하지 못했습니다.',
         });
-        toastr.warning('전역 설정은 가져왔지만 자동 숨김 상태를 동기화하지 못했습니다.');
+        toastr.warning('전역 설정은 가져왔지만 일부 요약 상태를 적용하지 못했습니다.');
     }
 }
 
@@ -686,7 +689,7 @@ function setActiveTab(root, tabName) {
 
 function bindRecordEvents(record) {
     record.querySelector('.stsm-record-copy').addEventListener('click', () => copyRecordContent(record));
-    record.querySelector('.stsm-record-edit').addEventListener('click', () => enterRecordEditMode(record));
+    record.querySelector('.stsm-record-edit').addEventListener('click', () => editRecord(record));
     record.querySelector('.stsm-record-translate').addEventListener('click', () => translateRecord(record));
     record.querySelector('.stsm-record-translation-toggle')?.addEventListener('click', () => toggleRecordTranslation(record));
     record.querySelector('.stsm-record-cancel').addEventListener('click', () => cancelRecordEdit(record));
@@ -709,6 +712,29 @@ function bindRecordEvents(record) {
         });
     });
     record.querySelector('.stsm-record-delete')?.addEventListener('click', () => showDeleteConfirmation(record));
+}
+
+async function editRecord(recordElement) {
+    const record = getSummaryRecord(recordElement.dataset.recordId);
+    if (record?.type !== 'summary' || !record.structuredSummary?.data) {
+        enterRecordEditMode(recordElement);
+        return;
+    }
+    try {
+        const updated = await openStructuredSummaryEditor(record.id);
+        if (!updated) return;
+        if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
+        toastr.success('요약을 수정했습니다.');
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to update structured summary:', error);
+        addExtensionErrorLog(error, {
+            operation: 'record-update',
+            title: '구조화 요약 수정 실패',
+            message: '구조화 요약 수정 내용을 저장하지 못했습니다.',
+            context: { range: getRecordRange(record) },
+        });
+        toastr.error(error.message || '요약 수정에 실패했습니다.');
+    }
 }
 
 async function copyRecordContent(record) {

@@ -89,6 +89,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord, sig
                 startId: chunk.startId,
                 endId: chunk.endId,
                 template: getSettings().summarization.summaryContentTemplate,
+                outputSections: getSettings().summarization.summaryOutputSections,
             });
 
             record = await addSummaryRecord({
@@ -196,6 +197,7 @@ export async function regenerateSummaryRecord(recordId) {
         startId: chunk.startId,
         endId: chunk.endId,
         template: getSettings().summarization.summaryContentTemplate,
+        outputSections: getSettings().summarization.summaryOutputSections,
     });
 
     const updatedRecord = await updateSummaryRecordContent(record.id, content, {

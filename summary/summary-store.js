@@ -354,7 +354,7 @@ export async function saveSummaryContentMigrationResults(updates) {
     return normalizedUpdates.size;
 }
 
-export async function applySummaryContentTemplateToRecords(template, { includeEdited = false } = {}) {
+export async function applySummaryContentTemplateToRecords(template, { includeEdited = false, outputSections } = {}) {
     return applyContentTemplateToRecords({
         template,
         includeEdited,
@@ -364,8 +364,13 @@ export async function applySummaryContentTemplateToRecords(template, { includeEd
             startId: record.startId,
             endId: record.endId,
             template,
+            outputSections,
         }),
     });
+}
+
+export async function applySummaryOutputSectionsToRecords(template, outputSections) {
+    return applySummaryContentTemplateToRecords(template, { includeEdited: true, outputSections });
 }
 
 export async function applyCompressionContentTemplateToRecords(template, { includeEdited = false } = {}) {
@@ -742,10 +747,17 @@ function normalizeRevisionConversation(conversation) {
 
     const messages = conversation.messages
         .filter(message => message && ['user', 'assistant'].includes(message.role) && String(message.text || '').trim())
-        .map(message => ({
-            role: message.role,
-            text: String(message.text).trim(),
-        }));
+        .map(message => {
+            const normalized = {
+                role: message.role,
+                text: String(message.text).trim(),
+            };
+            if (message.role === 'assistant') {
+                const result = normalizeRevisionResult(message.result);
+                if (result) normalized.result = result;
+            }
+            return normalized;
+        });
     if (!messages.length) return null;
 
     return {
@@ -756,5 +768,15 @@ function normalizeRevisionConversation(conversation) {
         baseContent: String(conversation.baseContent || ''),
         baseHash: String(conversation.baseHash || ''),
         messages,
+    };
+}
+
+function normalizeRevisionResult(result) {
+    if (!result || !['summary', 'compressed'].includes(result.type) || !result.data || typeof result.data !== 'object') {
+        return null;
+    }
+    return {
+        type: result.type,
+        data: structuredClone(result.data),
     };
 }

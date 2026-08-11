@@ -1919,6 +1919,192 @@
     resize: vertical;
 }
 
+.stsm-structured-summary-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.stsm-structured-editor-header,
+.stsm-structured-editor-section-heading,
+.stsm-structured-emotion-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+
+.stsm-structured-editor-header span {
+    color: var(--SmartThemeEmColor);
+    font-size: 0.9em;
+}
+
+.stsm-structured-editor-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid rgb(128 128 128 / 28%);
+}
+
+.stsm-structured-editor-section:first-of-type {
+    padding-top: 0;
+    border-top: 0;
+}
+
+.stsm-structured-editor-title {
+    font-weight: 700;
+}
+
+.stsm-structured-editor-section-heading .menu_button,
+.stsm-structured-add-subitem {
+    display: inline-flex;
+    width: auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.stsm-structured-editor-list,
+.stsm-structured-emotion-states {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.stsm-structured-context-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) 36px;
+    gap: 6px;
+    align-items: start;
+}
+
+.stsm-structured-string-row,
+.stsm-structured-quote-row,
+.stsm-structured-emotion-state {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 36px;
+    gap: 6px;
+    align-items: start;
+}
+
+.stsm-structured-quote-row,
+.stsm-structured-emotion-state {
+    grid-template-columns: minmax(110px, 0.3fr) minmax(0, 1fr) 36px;
+}
+
+.stsm-structured-emotion-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+}
+
+.stsm-structured-emotion-header {
+    display: grid;
+    grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr) 36px;
+}
+
+.stsm-structured-remove {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+}
+
+.stsm-structured-summary-editor textarea {
+    resize: vertical;
+}
+
+.stsm-settings-note {
+    margin: 8px 0 0;
+    color: var(--SmartThemeEmColor);
+    font-size: 0.86em;
+}
+
+.stsm-mobile-collapsible-summary {
+    display: none;
+}
+
+@media (min-width: 701px) {
+    .stsm-mobile-collapsible-summary {
+        display: flex;
+        pointer-events: none;
+    }
+
+    .stsm-mobile-collapsible-summary i {
+        display: none;
+    }
+
+    .stsm-mobile-collapsible:not([open]) > .stsm-summary-section-grid {
+        display: grid !important;
+    }
+
+    .stsm-mobile-collapsible:not([open]) > .stsm-settings-note {
+        display: block !important;
+    }
+}
+
+@media (max-width: 700px) {
+    .stsm-mobile-collapsible-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        cursor: pointer;
+        font-weight: 700;
+        list-style: none;
+    }
+
+    .stsm-mobile-collapsible-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .stsm-mobile-collapsible-summary i {
+        transition: transform 160ms ease;
+    }
+
+    .stsm-mobile-collapsible[open] > .stsm-mobile-collapsible-summary i {
+        transform: rotate(180deg);
+    }
+
+    .stsm-mobile-collapsible > .stsm-summary-section-grid {
+        margin-top: 10px;
+    }
+
+    .stsm-structured-context-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 36px;
+    }
+
+    .stsm-structured-context-row [data-context-field="location"] {
+        grid-column: 1 / 3;
+    }
+
+    .stsm-structured-quote-row,
+    .stsm-structured-emotion-state,
+    .stsm-structured-emotion-header {
+        grid-template-columns: minmax(0, 1fr) 36px;
+    }
+
+    .stsm-structured-quote-row textarea,
+    .stsm-structured-emotion-state textarea,
+    .stsm-structured-emotion-header [data-emotion-toward] {
+        grid-column: 1 / 2;
+    }
+
+    .stsm-structured-quote-row .stsm-structured-remove,
+    .stsm-structured-emotion-state .stsm-structured-remove,
+    .stsm-structured-emotion-header .stsm-structured-remove {
+        grid-column: 2;
+        grid-row: 1;
+    }
+}
+
 .stsm-record-edit-actions {
     display: flex;
     justify-content: flex-end;

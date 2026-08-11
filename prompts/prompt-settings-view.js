@@ -112,8 +112,13 @@ function renderPromptBlock(block, summarySections) {
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
         BLOCK_KINDS.REVISION_SUMMARY_MESSAGES,
         BLOCK_KINDS.REVISION_COMPRESSION_SOURCES,
+        BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
     ].includes(block.kind);
-    const detailOnly = [BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT, BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT].includes(block.kind);
+    const detailOnly = [
+        BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT,
+        BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
+        BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
+    ].includes(block.kind);
     return `
         <div class="stsm-block${block.separator ? ' stsm-block-separator' : ''}${controlledBySection && !enabled ? ' stsm-block-section-disabled' : ''}${generatedBlock ? ' stsm-block-generated' : ''}" data-block-id="${escapeHtml(block.id)}" draggable="true">
             <div class="stsm-block-grip" title="드래그로 이동">
@@ -148,6 +153,7 @@ function getBlockPreview(block) {
     if (block.kind === BLOCK_KINDS.REVISION_SUMMARY_MESSAGES) return '일반 요약 레코드 범위의 실제 채팅 메시지로 자동 구성됩니다.';
     if (block.kind === BLOCK_KINDS.REVISION_COMPRESSION_SOURCES) return '압축 레코드의 원본 요약 레코드로 자동 구성됩니다.';
     if (block.kind === BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT) return '압축 스키마에 따라 자동 생성됩니다.';
+    if (block.kind === BLOCK_KINDS.REVISION_OUTPUT_CONTRACT) return '수정 중인 레코드 종류에 따라 자동 생성됩니다.';
     return block.content || '';
 }
 
@@ -190,6 +196,10 @@ async function handleEditorClick(root, type, event) {
         }
         if (block.kind === BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT) {
             await showCompressionOutputContractPopup();
+            return;
+        }
+        if (block.kind === BLOCK_KINDS.REVISION_OUTPUT_CONTRACT) {
+            await showRevisionOutputContractPopup();
             return;
         }
         if (block.kind === BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) {
@@ -313,6 +323,31 @@ async function showCompressionOutputContractPopup() {
     `;
     form.querySelector('textarea').value = buildCompressionJsonContract();
     await new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기' }).show();
+}
+
+async function showRevisionOutputContractPopup() {
+    const sections = {
+        ...getEnabledSummarySections(getSettings().summarization.summarySections),
+        tags: false,
+    };
+    const noMemorySections = { people: false, items: false, commitments: false, events: false, world: false };
+    const form = document.createElement('div');
+    form.className = 'stsm-prompt-form';
+    form.innerHTML = `
+        <div class="stsm-section-title">수정 JSON 출력 형식 · 자동 생성</div>
+        <div class="stsm-muted">일반 요약과 압축 요약은 각각의 기존 구조를 유지합니다. 태그와 도감 변경안은 수정 대화에서 변경하지 않습니다.</div>
+        <label class="stsm-field">
+            <span>일반 요약</span>
+            <textarea class="text_pole monospace stsm-revision-summary-contract" rows="12" readonly></textarea>
+        </label>
+        <label class="stsm-field">
+            <span>압축 요약</span>
+            <textarea class="text_pole monospace stsm-revision-compression-contract" rows="12" readonly></textarea>
+        </label>
+    `;
+    form.querySelector('.stsm-revision-summary-contract').value = buildSummaryJsonContract(sections, noMemorySections);
+    form.querySelector('.stsm-revision-compression-contract').value = buildCompressionJsonContract();
+    await new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기', wide: true, large: true }).show();
 }
 
 function handleEditorChange(root, type, event) {
