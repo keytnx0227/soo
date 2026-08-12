@@ -112,7 +112,11 @@ async function openCompressionPopup(button, onCreated) {
                 count: batch.length,
                 notifyChanges: false,
             });
-            completedRecords.push(record);
+            completedRecords.push({
+                id: record.id,
+                startId: record.startId,
+                endId: record.endId,
+            });
 
             if (getSettings().translation.autoTranslate) {
                 updateOperation(
@@ -131,6 +135,8 @@ async function openCompressionPopup(button, onCreated) {
                     toastr.warning(`#${record.startId} ~ #${record.endId} 압축본 자동 번역에 실패했습니다.`);
                 }
             }
+
+            await yieldToBrowser();
         }
         publishCompletedChanges();
         await onCreated?.(completedRecords.at(-1));
@@ -165,4 +171,8 @@ async function openCompressionPopup(button, onCreated) {
         if (summarizeButton) summarizeButton.disabled = Boolean(summarizeWasDisabled);
         if (operationToken) endOperation(operationToken);
     }
+}
+
+function yieldToBrowser() {
+    return new Promise(resolve => setTimeout(resolve, 0));
 }

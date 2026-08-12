@@ -12,14 +12,15 @@ import {
     addCompressedSummaryRecord,
     COMPRESSION_MODES,
     getCompressionMode,
-    getActiveSummaryRecords,
     getSummaryRecord,
+    getSummaryRecordIndex,
     getSummaryRecordsByIds,
     updateSummaryRecordContent,
 } from './summary-store.js';
 
 export function getCompressionCandidates() {
-    return getActiveSummaryRecords()
+    return getSummaryRecordIndex()
+        .filter(record => !record.compressedBy)
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
 }
 
@@ -31,9 +32,11 @@ export function selectCompressionSources(startRecordId, count) {
     const candidates = getCompressionCandidates();
     const startIndex = candidates.findIndex(record => record.id === String(startRecordId));
     if (startIndex < 0) throw new Error('압축을 시작할 활성 요약 레코드를 찾지 못했습니다.');
-    const sources = candidates.slice(startIndex, startIndex + normalizedCount);
-    if (sources.length !== normalizedCount) throw new Error('선택한 시작점 이후에 압축할 요약 레코드가 부족합니다.');
-    assertContiguousSources(sources);
+    const sourceIndexes = candidates.slice(startIndex, startIndex + normalizedCount);
+    if (sourceIndexes.length !== normalizedCount) throw new Error('선택한 시작점 이후에 압축할 요약 레코드가 부족합니다.');
+    assertContiguousSources(sourceIndexes);
+    const sources = getSummaryRecordsByIds(sourceIndexes.map(record => record.id));
+    if (sources.some(source => !source)) throw new Error('압축할 원본 요약 레코드 일부를 찾지 못했습니다.');
     return sources;
 }
 
