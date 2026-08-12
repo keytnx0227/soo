@@ -2,7 +2,6 @@ import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import {
     getCompressionContentTemplate,
     getCompressionContentTemplatePreset,
-    getSettings,
     resetCompressionContentTemplate,
     setCompressionContentTemplate,
     setCompressionContentTemplatePreset,
@@ -14,8 +13,6 @@ import {
     getCompressionContentTemplatePresetId,
     renderCompressionSummary,
 } from './compression-format.js';
-import { applyCompressionContentTemplateToRecords } from './summary-store.js';
-import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 
 export function bindCompressionTemplateSettings(root) {
     const container = root.querySelector('#stsm-compression-content-template');
@@ -39,7 +36,6 @@ export function renderCompressionTemplateSettings(root) {
                 <span>${escapeHtml(preview)}</span>
             </div>
             <div class="stsm-summary-template-actions">
-                <button class="menu_button interactable" data-compression-template-action="apply" type="button" title="선택한 형식을 기존 압축 레코드에 적용">일괄 적용</button>
                 <button class="menu_button menu_button_icon interactable" data-compression-template-action="edit" type="button" title="압축 레코드 내용 형식 수정" aria-label="압축 레코드 내용 형식 수정">
                     <i class="fa-solid fa-pen"></i>
                 </button>
@@ -56,12 +52,12 @@ function handlePresetChange(root, event) {
     if (!select || select.value === 'custom') return;
     setCompressionContentTemplatePreset(select.value);
     renderCompressionTemplateSettings(root);
-    toastr.success(`앞으로 생성할 압축 레코드의 기본 형식을 ${COMPRESSION_CONTENT_TEMPLATE_PRESETS[select.value].label}으로 변경했습니다.`);
+    notifyRenderingChanged();
+    toastr.success(`압축 레코드 형식을 ${COMPRESSION_CONTENT_TEMPLATE_PRESETS[select.value].label}으로 변경했습니다.`);
 }
 
 async function handleClick(root, event) {
     const action = event.target.closest('[data-compression-template-action]')?.dataset.compressionTemplateAction;
-    if (action === 'apply') await applyTemplateToRecords();
     if (action === 'edit') await editTemplate(root);
     if (action === 'reset') await resetTemplate(root);
 }
@@ -109,7 +105,8 @@ async function editTemplate(root) {
         validateTemplate(textarea.value);
         setCompressionContentTemplate(textarea.value);
         renderCompressionTemplateSettings(root);
-        toastr.success('앞으로 생성할 압축 레코드의 기본 내용 형식을 수정했습니다.');
+        notifyRenderingChanged();
+        toastr.success('압축 레코드 내용 형식을 수정했습니다.');
     } catch (error) {
         toastr.error(error.message || '압축 레코드 내용 형식이 올바르지 않습니다.');
     }
@@ -119,57 +116,12 @@ async function resetTemplate(root) {
     if (!await Popup.show.confirm('압축 레코드 내용 형식을 초기화할까요?', '기본 압축 형식으로 복원합니다.')) return;
     resetCompressionContentTemplate();
     renderCompressionTemplateSettings(root);
-    toastr.success('앞으로 생성할 압축 레코드의 기본 내용 형식을 초기화했습니다.');
+    notifyRenderingChanged();
+    toastr.success('압축 레코드 내용 형식을 초기화했습니다.');
 }
 
-async function applyTemplateToRecords() {
-    const form = document.createElement('div');
-    form.className = 'stsm-summary-template-apply-options';
-    form.innerHTML = `
-        <div class="stsm-section-title">기존 압축 레코드에 일괄 적용</div>
-        <p>현재 선택된 내용 형식으로 구조화 압축 레코드를 다시 렌더링합니다.</p>
-        <label class="stsm-summary-template-apply-option">
-            <input type="radio" name="stsm-compression-template-apply-scope" value="unedited" checked>
-            <span><strong>구조화 레코드만</strong><small>동기화되지 않은 이전 문자열 편집 레코드는 유지합니다.</small></span>
-        </label>
-        <label class="stsm-summary-template-apply-option">
-            <input type="radio" name="stsm-compression-template-apply-scope" value="all">
-            <span><strong>모든 레코드</strong><small>동기화되지 않은 문자열 편집 내용도 기존 구조화 데이터에서 다시 만들어 덮어씁니다.</small></span>
-        </label>
-    `;
-    const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
-        okButton: '일괄 적용',
-        cancelButton: '취소',
-    });
-    if (await popup.show() !== 1) return;
-
-    const includeEdited = form.querySelector('input[name="stsm-compression-template-apply-scope"]:checked')?.value === 'all';
-    if (includeEdited && !await Popup.show.confirm(
-        '이전 문자열 편집 레코드도 덮어쓸까요?',
-        '동기화되지 않은 문자열 수정 내용이 사라지며 복구할 수 없습니다.',
-    )) return;
-
-    try {
-        const result = await applyCompressionContentTemplateToRecords(getCompressionContentTemplate(), {
-            includeEdited,
-            outputSections: getSettings().summarization.compressionOutputSections,
-        });
-        window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
-        const skipped = result.skippedEditedCount ? ` 수정된 압축 레코드 ${result.skippedEditedCount}개는 유지했습니다.` : '';
-        if (result.appliedCount) {
-            toastr.success(`압축 레코드 ${result.appliedCount}개에 내용 형식을 적용했습니다.${skipped}`);
-        } else {
-            toastr.info(`적용할 압축 레코드가 없습니다.${skipped}`);
-        }
-    } catch (error) {
-        console.error('[Chat Summarizer] Failed to apply compression content template:', error);
-        addExtensionErrorLog(error, {
-            operation: 'compression-template-apply',
-            title: '압축 레코드 형식 일괄 적용 실패',
-            message: '기존 압축 레코드에 선택한 내용 형식을 적용하지 못했습니다.',
-        });
-        toastr.error(error.message || '기존 압축 레코드에 내용 형식을 적용하지 못했습니다.');
-    }
+function notifyRenderingChanged() {
+    window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
 }
 
 function renderPresetSelect(selectedId, attribute) {

@@ -1,4 +1,5 @@
 import { createId } from '../core/utils.js';
+import { getSettings } from '../core/settings.js';
 import { getStringHash } from '../../../../../scripts/utils.js';
 import { normalizeSourceFingerprint } from './source-tracking.js';
 import { renderStructuredSummary } from './summary-format.js';
@@ -7,9 +8,10 @@ import { createRecordDeletionPlan } from './range-deletion.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 const COMPRESSION_CONTENT_MIGRATION_VERSION = 1;
+const RECORD_STORAGE_VERSION = 1;
 
 export function getSummaryRecords() {
-    return getStore().records;
+    return getStore().records.map(hydrateRecord);
 }
 
 export function getActiveSummaryRecords() {
@@ -17,7 +19,24 @@ export function getActiveSummaryRecords() {
 }
 
 export function getSummaryRecord(recordId) {
-    return getSummaryRecords().find(record => record.id === String(recordId)) || null;
+    const record = getStore().records.find(item => item.id === String(recordId));
+    return record ? hydrateRecord(record) : null;
+}
+
+export async function initializeSummaryRecordStorage() {
+    const store = getStore();
+    if (Number(store.recordStorageVersion || 0) >= RECORD_STORAGE_VERSION) return false;
+
+    const previousVersion = store.recordStorageVersion;
+    store.recordStorageVersion = RECORD_STORAGE_VERSION;
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        if (previousVersion === undefined) delete store.recordStorageVersion;
+        else store.recordStorageVersion = previousVersion;
+        throw error;
+    }
+    return true;
 }
 
 export function needsCompressionContentMigration() {
@@ -33,7 +52,7 @@ export async function saveCompressionContentMigrationResults(updates) {
     const previousRecords = store.records;
     const previousVersion = store.compressionContentMigrationVersion;
     const editedIds = new Set(store.records
-        .filter(record => record.type === 'compressed' && record.contentEdited && record.compression?.data)
+        .filter(record => record.type === 'compressed' && record.legacyContent && record.compression?.data)
         .map(record => record.id));
     if ([...normalizedUpdates.keys()].some(id => !editedIds.has(id))) {
         throw new Error('동기화할 편집된 압축 요약 레코드를 찾지 못했습니다.');
@@ -43,15 +62,16 @@ export async function saveCompressionContentMigrationResults(updates) {
     store.records = store.records.map(record => {
         const data = normalizedUpdates.get(record.id);
         if (!data) return record;
-        return {
+        const updated = {
             ...record,
-            contentEdited: false,
             compression: {
                 ...record.compression,
                 data: structuredClone(data),
             },
             updatedAt,
         };
+        delete updated.legacyContent;
+        return updated;
     });
     store.compressionContentMigrationVersion = COMPRESSION_CONTENT_MIGRATION_VERSION;
 
@@ -157,6 +177,9 @@ export async function setRecentRevisionConversation(conversation) {
 }
 
 export async function addSummaryRecord({ batchId, startId, endId, content, sourceFingerprint, structuredSummary }) {
+    const normalizedStructuredSummary = normalizeStructuredSummary(structuredSummary);
+    const legacyContent = normalizedStructuredSummary ? null : String(content || '').trim();
+    if (!normalizedStructuredSummary && !legacyContent) throw new Error('요약 내용은 비워둘 수 없습니다.');
     const record = {
         id: createId('summary'),
         type: 'summary',
@@ -165,11 +188,9 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
         batchId: normalizeOptionalId(batchId),
         startId: Number(startId),
         endId: Number(endId),
-        content: String(content || '').trim(),
-        contentHash: createContentHash(content),
-        contentEdited: false,
+        ...(legacyContent ? { legacyContent } : {}),
         sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
-        structuredSummary: normalizeStructuredSummary(structuredSummary),
+        structuredSummary: normalizedStructuredSummary,
         searchTags: null,
         createdAt: new Date().toISOString(),
     };
@@ -183,7 +204,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
         throw error;
     }
     notifyRecordsChanged();
-    return record;
+    return hydrateRecord(record);
 }
 
 export async function addCompressedSummaryRecord({ sourceRecordIds, content, compressionData, languageMode }) {
@@ -198,8 +219,11 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
     }
 
     const sortedSources = [...sources].sort((left, right) => left.startId - right.startId || left.endId - right.endId);
-    const normalizedContent = String(content || '').trim();
-    if (!normalizedContent) throw new Error('압축 요약 내용은 비워둘 수 없습니다.');
+    const normalizedCompressionData = compressionData && typeof compressionData === 'object'
+        ? structuredClone(compressionData)
+        : null;
+    const legacyContent = normalizedCompressionData ? null : String(content || '').trim();
+    if (!normalizedCompressionData && !legacyContent) throw new Error('압축 요약 내용은 비워둘 수 없습니다.');
     const record = {
         id: createId('compression'),
         type: 'compressed',
@@ -208,9 +232,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
         batchId: null,
         startId: sortedSources[0].startId,
         endId: sortedSources.at(-1).endId,
-        content: normalizedContent,
-        contentHash: createContentHash(normalizedContent),
-        contentEdited: false,
+        ...(legacyContent ? { legacyContent } : {}),
         sourceFingerprint: null,
         structuredSummary: null,
         searchTags: null,
@@ -219,7 +241,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
             level: Math.max(...sortedSources.map(source => Number(source.compression?.level) || 0)) + 1,
             sourceRecordIds: sortedSources.map(source => source.id),
             languageMode: String(languageMode || 'english'),
-            data: compressionData && typeof compressionData === 'object' ? structuredClone(compressionData) : {},
+            data: normalizedCompressionData || {},
         },
         createdAt: new Date().toISOString(),
     };
@@ -238,7 +260,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
         throw error;
     }
     notifyRecordsChanged();
-    return structuredClone(record);
+    return hydrateRecord(record);
 }
 
 export async function deleteSummaryRecord(recordId) {
@@ -325,12 +347,9 @@ export async function updateSummaryRecordContent(recordId, content, {
     store.records = store.records.map(record => {
         if (record.id !== normalizedId) return record;
 
-        const contentHash = createContentHash(normalizedContent);
-        updatedRecord = {
+        const previousRuntimeRecord = hydrateRecord(record);
+        const nextRecord = {
             ...record,
-            content: normalizedContent,
-            contentHash,
-            contentEdited: contentEdited === undefined ? record.contentEdited : Boolean(contentEdited),
             sourceFingerprint: sourceFingerprint === undefined
                 ? record.sourceFingerprint
                 : normalizeSourceFingerprint(sourceFingerprint),
@@ -343,10 +362,20 @@ export async function updateSummaryRecordContent(recordId, content, {
                     ...record.compression,
                     data: compressionData && typeof compressionData === 'object' ? structuredClone(compressionData) : {},
                 },
-            translation: contentHash === record.contentHash ? record.translation : null,
             updatedAt: new Date().toISOString(),
         };
-        return updatedRecord;
+        const keepLegacyContent = contentEdited === undefined
+            ? Boolean(record.legacyContent)
+            : Boolean(contentEdited);
+        if (keepLegacyContent) nextRecord.legacyContent = normalizedContent;
+        else delete nextRecord.legacyContent;
+
+        const nextRuntimeRecord = hydrateRecord(nextRecord);
+        nextRecord.translation = nextRuntimeRecord.contentHash === previousRuntimeRecord.contentHash
+            ? record.translation
+            : null;
+        updatedRecord = hydrateRecord(nextRecord);
+        return nextRecord;
     });
 
     if (!updatedRecord) return null;
@@ -371,7 +400,7 @@ export async function saveSummaryContentMigrationResults(updates) {
     const store = getStore();
     const previousRecords = store.records;
     const existingIds = new Set(store.records
-        .filter(record => record.type === 'summary' && record.contentEdited && record.structuredSummary?.data)
+        .filter(record => record.type === 'summary' && record.legacyContent && record.structuredSummary?.data)
         .map(record => record.id));
     if ([...normalizedUpdates.keys()].some(id => !existingIds.has(id))) {
         throw new Error('동기화할 편집된 요약 레코드를 찾지 못했습니다.');
@@ -381,15 +410,16 @@ export async function saveSummaryContentMigrationResults(updates) {
     store.records = store.records.map(record => {
         const data = normalizedUpdates.get(record.id);
         if (!data) return record;
-        return {
+        const updated = {
             ...record,
-            contentEdited: false,
             structuredSummary: normalizeStructuredSummary({
                 ...record.structuredSummary,
                 data,
             }),
             updatedAt,
         };
+        delete updated.legacyContent;
+        return updated;
     });
 
     try {
@@ -400,87 +430,6 @@ export async function saveSummaryContentMigrationResults(updates) {
     }
     notifyRecordsChanged();
     return normalizedUpdates.size;
-}
-
-export async function applySummaryContentTemplateToRecords(template, { includeEdited = false, outputSections } = {}) {
-    return applyContentTemplateToRecords({
-        template,
-        includeEdited,
-        emptyTemplateMessage: '적용할 요약 레코드 내용 템플릿이 비어 있습니다.',
-        matches: record => record.type === 'summary' && Boolean(record.structuredSummary?.data),
-        render: record => renderStructuredSummary(record.structuredSummary.data, {
-            startId: record.startId,
-            endId: record.endId,
-            template,
-            outputSections,
-        }),
-    });
-}
-
-export async function applySummaryOutputSectionsToRecords(template, outputSections) {
-    return applySummaryContentTemplateToRecords(template, { includeEdited: true, outputSections });
-}
-
-export async function applyCompressionContentTemplateToRecords(template, { includeEdited = false, outputSections } = {}) {
-    return applyContentTemplateToRecords({
-        template,
-        includeEdited,
-        emptyTemplateMessage: '적용할 압축 레코드 내용 템플릿이 비어 있습니다.',
-        matches: record => record.type === 'compressed' && Boolean(record.compression?.data),
-        render: record => renderCompressionSummary(record.compression.data, {
-            startId: record.startId,
-            endId: record.endId,
-            template,
-            outputSections,
-        }),
-    });
-}
-
-export async function applyCompressionOutputSectionsToRecords(template, outputSections) {
-    return applyCompressionContentTemplateToRecords(template, { includeEdited: false, outputSections });
-}
-
-async function applyContentTemplateToRecords({ template, includeEdited, emptyTemplateMessage, matches, render }) {
-    const normalizedTemplate = String(template || '');
-    if (!normalizedTemplate.trim()) throw new Error(emptyTemplateMessage);
-
-    const store = getStore();
-    const previousRecords = store.records;
-    let appliedCount = 0;
-    let skippedEditedCount = 0;
-
-    const nextRecords = store.records.map(record => {
-        if (!matches(record)) return record;
-        if (record.contentEdited && !includeEdited) {
-            skippedEditedCount += 1;
-            return record;
-        }
-
-        const content = render(record);
-        if (!content.trim()) throw new Error(`#${record.startId} ~ #${record.endId} 레코드의 적용 결과가 비어 있습니다.`);
-        const contentHash = createContentHash(content);
-        appliedCount += 1;
-        return {
-            ...record,
-            content,
-            contentHash,
-            contentEdited: false,
-            translation: contentHash === record.contentHash ? record.translation : null,
-            updatedAt: new Date().toISOString(),
-        };
-    });
-
-    if (!appliedCount) return { appliedCount, skippedEditedCount };
-    store.records = nextRecords;
-
-    try {
-        await SillyTavern.getContext().saveMetadata();
-    } catch (error) {
-        store.records = previousRecords;
-        throw error;
-    }
-    notifyRecordsChanged();
-    return { appliedCount, skippedEditedCount };
 }
 
 export async function updateSummaryRecordTags(recordId, tags) {
@@ -509,7 +458,7 @@ export async function updateSummaryRecordTags(recordId, tags) {
         throw error;
     }
     notifyRecordsChanged();
-    return structuredClone(updatedRecord);
+    return hydrateRecord(updatedRecord);
 }
 
 export async function updateSummaryRecordPinned(recordId, pinned) {
@@ -540,7 +489,7 @@ export async function updateSummaryRecordPinned(recordId, pinned) {
         throw error;
     }
     notifyRecordsChanged();
-    return structuredClone(updatedRecord);
+    return hydrateRecord(updatedRecord);
 }
 
 export async function updateSummaryRecordRanges(updates) {
@@ -592,7 +541,7 @@ export async function updateSummaryRecordRanges(updates) {
         throw error;
     }
     notifyRecordsChanged();
-    return updatedRecords;
+    return updatedRecords.map(hydrateRecord);
 }
 
 export async function setSummaryRecordTranslation(recordId, translation) {
@@ -603,9 +552,10 @@ export async function setSummaryRecordTranslation(recordId, translation) {
 
     store.records = store.records.map(record => {
         if (record.id !== normalizedId) return record;
+        const runtimeRecord = hydrateRecord(record);
         updatedRecord = {
             ...record,
-            translation: normalizeTranslation(translation, record.contentHash, record.contentHash),
+            translation: normalizeTranslation(translation, runtimeRecord.contentHash, runtimeRecord.contentHash),
         };
         return updatedRecord;
     });
@@ -618,7 +568,7 @@ export async function setSummaryRecordTranslation(recordId, translation) {
         store.records = previousRecords;
         throw error;
     }
-    return updatedRecord;
+    return hydrateRecord(updatedRecord);
 }
 
 export async function clearAllSummaryTranslations() {
@@ -659,31 +609,33 @@ function normalizeRecords(records) {
     if (!Array.isArray(records)) return [];
 
     const normalized = records
-        .filter(record => record && String(record.content || '').trim())
+        .filter(Boolean)
         .map(record => {
-            const content = String(record.content);
-            const contentHash = createContentHash(content);
+            const structuredSummary = normalizeStructuredSummary(record.structuredSummary);
+            const compression = normalizeCompression(record.compression);
+            const legacyContent = String(record.legacyContent ?? record.content ?? '').trim();
+            const hasStructuredData = Boolean(structuredSummary || compression?.data && Object.keys(compression.data).length);
+            const preserveLegacyContent = Boolean(record.contentEdited) || !hasStructuredData;
             return {
                 id: String(record.id || createId('summary')),
-                type: record.type === 'compressed' || record.compression ? 'compressed' : 'summary',
+                type: compression ? 'compressed' : 'summary',
                 compressedBy: normalizeOptionalId(record.compressedBy),
                 pinned: Boolean(record.pinned),
                 batchId: normalizeOptionalId(record.batchId),
                 startId: Math.max(0, Number(record.startId) || 0),
                 endId: Math.max(0, Number(record.endId) || 0),
-                content,
-                contentHash,
-                contentEdited: Boolean(record.contentEdited),
+                ...(preserveLegacyContent && legacyContent ? { legacyContent } : {}),
                 sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
-                structuredSummary: normalizeStructuredSummary(record.structuredSummary),
+                structuredSummary,
                 atlasReviewOverrides: normalizeAtlasReviewOverrides(record.atlasReviewOverrides),
                 searchTags: Array.isArray(record.searchTags) ? normalizeRecordTags(record.searchTags) : null,
-                compression: normalizeCompression(record.compression),
+                compression,
                 createdAt: String(record.createdAt || new Date().toISOString()),
                 updatedAt: record.updatedAt ? String(record.updatedAt) : null,
-                translation: normalizeTranslation(record.translation, contentHash, record.contentHash),
+                translation: normalizeStoredTranslation(record.translation, record.contentHash),
             };
-        });
+        })
+        .filter(record => record.legacyContent || record.structuredSummary || record.compression);
     const byId = new Map(normalized.map(record => [record.id, record]));
     return normalized.map(record => {
         const compression = record.compression ? {
@@ -699,6 +651,35 @@ function normalizeRecords(records) {
             compressedBy,
         };
     });
+}
+
+function hydrateRecord(record) {
+    const settings = getSettings().summarization;
+    const content = record.legacyContent
+        ? record.legacyContent
+        : record.compression?.data
+            ? renderCompressionSummary(record.compression.data, {
+                startId: record.startId,
+                endId: record.endId,
+                template: settings.compressionContentTemplate,
+                outputSections: settings.compressionOutputSections,
+            })
+            : record.structuredSummary?.data
+                ? renderStructuredSummary(record.structuredSummary.data, {
+                    startId: record.startId,
+                    endId: record.endId,
+                    template: settings.summaryContentTemplate,
+                    outputSections: settings.summaryOutputSections,
+                })
+                : '';
+    const contentHash = createContentHash(content);
+    return {
+        ...record,
+        content,
+        contentHash,
+        contentEdited: Boolean(record.legacyContent),
+        translation: normalizeTranslation(record.translation, contentHash, record.translation?.sourceHash),
+    };
 }
 
 function normalizeCompression(value) {
@@ -781,6 +762,17 @@ function normalizeTranslation(translation, contentHash, previousContentHash) {
     return {
         content: String(translation.content).trim(),
         sourceHash: contentHash,
+        provider: ['google', 'bing'].includes(translation.provider) ? translation.provider : 'google',
+        targetLanguage: String(translation.targetLanguage || 'ko'),
+        translatedAt: String(translation.translatedAt || new Date().toISOString()),
+    };
+}
+
+function normalizeStoredTranslation(translation, fallbackSourceHash = '') {
+    if (!translation || typeof translation !== 'object' || !String(translation.content || '').trim()) return null;
+    return {
+        content: String(translation.content).trim(),
+        sourceHash: String(translation.sourceHash ?? fallbackSourceHash),
         provider: ['google', 'bing'].includes(translation.provider) ? translation.provider : 'google',
         targetLanguage: String(translation.targetLanguage || 'ko'),
         translatedAt: String(translation.translatedAt || new Date().toISOString()),

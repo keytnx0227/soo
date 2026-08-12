@@ -72,11 +72,10 @@ import {
 import { bindCompressionView } from './summary/compression-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import {
-    applySummaryOutputSectionsToRecords,
-    applyCompressionOutputSectionsToRecords,
     deleteSummaryRecord,
     getSummaryRecord,
     getSummaryRecords,
+    initializeSummaryRecordStorage,
     updateSummaryRecordContent,
 } from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
@@ -98,7 +97,6 @@ let summaryAbortController = null;
 let translationAbortController = null;
 let translationOperationToken = null;
 let summaryOperationToken = null;
-let isApplyingRecordOutput = false;
 const busyRecordIds = new Set();
 
 function addMenuItem() {
@@ -132,6 +130,16 @@ async function openSummarizerPopup() {
     if (popup) return;
 
     getSettings();
+    try {
+        await initializeSummaryRecordStorage();
+    } catch (error) {
+        console.error('[Chat Summarizer] Failed to initialize summary record storage:', error);
+        addExtensionErrorLog(error, {
+            operation: 'record-storage-initialization',
+            title: '요약 저장 구조 정리 실패',
+            message: '구조화 데이터는 유지되지만 기존 렌더링 문자열을 저장소에서 정리하지 못했습니다.',
+        });
+    }
     const root = buildPopup();
     currentRoot = root;
     const cleanup = bindEvents(root);
@@ -287,10 +295,10 @@ function bindSummarizationSettings(root) {
         });
     });
     summaryOutputSectionToggles.forEach(toggle => {
-        toggle.addEventListener('change', event => updateSummaryOutputSection(root, event.target));
+        toggle.addEventListener('change', event => updateSummaryOutputSection(event.target));
     });
     compressionOutputSectionToggles.forEach(toggle => {
-        toggle.addEventListener('change', event => updateCompressionOutputSection(root, event.target));
+        toggle.addEventListener('change', event => updateCompressionOutputSection(event.target));
     });
     memorySectionToggles.forEach(toggle => {
         toggle.addEventListener('change', event => {
@@ -392,34 +400,14 @@ function renderSummarizationSettings(root) {
     renderWorldOutputFields(root);
 }
 
-async function updateSummaryOutputSection(root, toggle) {
+function updateSummaryOutputSection(toggle) {
     const section = toggle.dataset.summaryOutputSection;
     const next = toggle.checked;
     const previous = !next;
-    if (isApplyingRecordOutput) {
-        toggle.checked = Boolean(getSettings().summarization.summaryOutputSections[section]);
-        return;
-    }
-
-    let operationToken = null;
-    isApplyingRecordOutput = true;
-    toggle.disabled = true;
     try {
-        operationToken = beginOperation('applying-summary-output', '요약 출력 항목 반영 중', {
-            requiresEnabled: false,
-        });
-        await new Promise(resolve => setTimeout(resolve, 0));
         setSummaryOutputSectionEnabled(section, next);
-        const settings = getSettings().summarization;
-        const result = await applySummaryOutputSectionsToRecords(
-            settings.summaryContentTemplate,
-            settings.summaryOutputSections,
-        );
-        renderSummaryRecords(root, bindRecordEvents);
-        const skipped = result.skippedEditedCount
-            ? ` 수정 대화로 직접 수정된 레코드 ${result.skippedEditedCount}개는 유지했습니다.`
-            : '';
-        toastr.success(`요약 출력 항목을 변경했습니다.${skipped}`);
+        window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
+        toastr.success('요약 출력 항목을 변경했습니다.');
     } catch (error) {
         setSummaryOutputSectionEnabled(section, previous);
         toggle.checked = previous;
@@ -430,41 +418,17 @@ async function updateSummaryOutputSection(root, toggle) {
             message: '요약 출력 항목을 기존 레코드에 적용하지 못했습니다.',
         });
         toastr.error(error.message || '요약 출력 항목 적용에 실패했습니다.');
-    } finally {
-        if (operationToken) endOperation(operationToken);
-        isApplyingRecordOutput = false;
-        toggle.disabled = false;
     }
 }
 
-async function updateCompressionOutputSection(root, toggle) {
+function updateCompressionOutputSection(toggle) {
     const section = toggle.dataset.compressionOutputSection;
     const next = toggle.checked;
     const previous = !next;
-    if (isApplyingRecordOutput) {
-        toggle.checked = Boolean(getSettings().summarization.compressionOutputSections[section]);
-        return;
-    }
-
-    let operationToken = null;
-    isApplyingRecordOutput = true;
-    toggle.disabled = true;
     try {
-        operationToken = beginOperation('applying-compression-output', '압축 요약 출력 항목 반영 중', {
-            requiresEnabled: false,
-        });
-        await new Promise(resolve => setTimeout(resolve, 0));
         setCompressionOutputSectionEnabled(section, next);
-        const settings = getSettings().summarization;
-        const result = await applyCompressionOutputSectionsToRecords(
-            settings.compressionContentTemplate,
-            settings.compressionOutputSections,
-        );
-        renderSummaryRecords(root, bindRecordEvents);
-        const skipped = result.skippedEditedCount
-            ? ` 이전 문자열 편집 레코드 ${result.skippedEditedCount}개는 보호를 위해 유지했습니다.`
-            : '';
-        toastr.success(`압축 요약 출력 항목을 변경했습니다.${skipped}`);
+        window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
+        toastr.success('압축 요약 출력 항목을 변경했습니다.');
     } catch (error) {
         setCompressionOutputSectionEnabled(section, previous);
         toggle.checked = previous;
@@ -475,10 +439,6 @@ async function updateCompressionOutputSection(root, toggle) {
             message: '압축 요약 출력 항목을 기존 레코드에 적용하지 못했습니다.',
         });
         toastr.error(error.message || '압축 요약 출력 항목 적용에 실패했습니다.');
-    } finally {
-        if (operationToken) endOperation(operationToken);
-        isApplyingRecordOutput = false;
-        toggle.disabled = false;
     }
 }
 
@@ -500,15 +460,6 @@ async function applyImportedGlobalSettings(root) {
     refreshSummaryInjection();
 
     try {
-        const settings = getSettings().summarization;
-        await applySummaryOutputSectionsToRecords(
-            settings.summaryContentTemplate,
-            settings.summaryOutputSections,
-        );
-        await applyCompressionOutputSectionsToRecords(
-            settings.compressionContentTemplate,
-            settings.compressionOutputSections,
-        );
         renderSummaryRecords(root, bindRecordEvents);
         await syncSummarizedMessageVisibility();
     } catch (error) {
@@ -1298,6 +1249,7 @@ function initialize() {
         renderSummaryStatus(currentRoot);
     });
     window.addEventListener('stsm:record-content-template-applied', () => {
+        refreshSummaryInjection();
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
     });
     window.addEventListener('stsm:atlas-changed', () => {
