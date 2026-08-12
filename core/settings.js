@@ -718,6 +718,7 @@ export const defaultSettings = Object.freeze({
     },
     summarization: {
         chunkSize: 30,
+        compressionMode: 'segmented',
         outputLanguage: SUMMARY_LANGUAGE_MODES.ENGLISH,
         summarySections: DEFAULT_SUMMARY_SECTIONS,
         summaryOutputSections: DEFAULT_SUMMARY_OUTPUT_SECTIONS,
@@ -1493,6 +1494,9 @@ function normalizeSettings(settings, {
     settings.connection.profile = normalizeConnection(settings.connection.profile, defaultSettings.connection.profile);
     settings.connection.custom = normalizeConnection(settings.connection.custom, defaultSettings.connection.custom);
     settings.summarization.chunkSize = clampInteger(settings.summarization.chunkSize, 1, 1000, defaultSettings.summarization.chunkSize);
+    settings.summarization.compressionMode = ['integrated', 'segmented'].includes(settings.summarization.compressionMode)
+        ? settings.summarization.compressionMode
+        : defaultSettings.summarization.compressionMode;
     settings.summarization.outputLanguage = Object.values(SUMMARY_LANGUAGE_MODES).includes(settings.summarization.outputLanguage)
         ? settings.summarization.outputLanguage
         : defaultSettings.summarization.outputLanguage;

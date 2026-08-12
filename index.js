@@ -333,9 +333,20 @@ function bindSummarizationSettings(root) {
     });
     compressionMode.addEventListener('change', async event => {
         const previous = getCompressionMode();
+        const nextMode = event.target.value;
+        const nextModeLabel = nextMode === 'segmented' ? '세그먼트형(v3)' : '통합형(v2)';
+        let operationToken = null;
         event.target.disabled = true;
         try {
-            await setCompressionMode(event.target.value);
+            operationToken = beginOperation(
+                'compression-mode',
+                `압축 기억을 ${nextModeLabel}으로 전환 중`,
+                { requiresEnabled: false },
+            );
+            await waitForUiPaint();
+            await setCompressionMode(nextMode);
+            updateOperation(operationToken, `${nextModeLabel} 기록 다시 계산 중`);
+            await waitForUiPaint();
             clearRevisionSession();
             renderCompressionModeControls(root);
             renderSummaryRecords(root, bindRecordEvents);
@@ -343,7 +354,7 @@ function bindSummarizationSettings(root) {
             renderSummaryStatus(root);
             refreshSummaryInjection();
             root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
-            toastr.success(event.target.value === 'segmented'
+            toastr.success(nextMode === 'segmented'
                 ? '세그먼트형(v3) 압축 기억으로 전환했습니다.'
                 : '통합형(v2) 압축 기억으로 전환했습니다.');
         } catch (error) {
@@ -356,6 +367,7 @@ function bindSummarizationSettings(root) {
             toastr.error(error.message || '압축 기억 방식 변경에 실패했습니다.');
         } finally {
             event.target.disabled = false;
+            if (operationToken) endOperation(operationToken);
         }
     });
     summarySectionToggles.forEach(toggle => {
@@ -435,6 +447,10 @@ function bindSummarizationSettings(root) {
     });
     root.querySelector('#stsm-hide-all-summarized').addEventListener('click', () => hideSummarizedMessages());
     root.querySelector('#stsm-unhide-all-summarized').addEventListener('click', () => unhideSummarizedMessages());
+}
+
+function waitForUiPaint() {
+    return new Promise(resolve => setTimeout(resolve, 0));
 }
 
 function renderSummarizationSettings(root) {

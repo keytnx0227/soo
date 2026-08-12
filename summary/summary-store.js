@@ -1,5 +1,5 @@
 import { createId } from '../core/utils.js';
-import { getSettings } from '../core/settings.js';
+import { getSettings, saveSettings } from '../core/settings.js';
 import { getStringHash } from '../../../../../scripts/utils.js';
 import { normalizeSourceFingerprint } from './source-tracking.js';
 import { renderStructuredSummary } from './summary-format.js';
@@ -19,7 +19,7 @@ window.addEventListener('stsm:records-changed', clearRecordRenderCache);
 
 export function getSummaryRecords() {
     const store = getStore();
-    const mode = resolveCompressionMode(store);
+    const mode = resolveCompressionMode();
     const records = getModeRecords(store.records, mode);
     const renderSettings = getRecordRenderSettings();
     return records.map(record => hydrateRecord(record, renderSettings, mode));
@@ -27,13 +27,13 @@ export function getSummaryRecords() {
 
 export function getSummaryRecordIndex() {
     const store = getStore();
-    const mode = resolveCompressionMode(store);
+    const mode = resolveCompressionMode();
     return getModeRecords(store.records, mode).map(record => toRecordIndexEntry(record, mode));
 }
 
 export function getSummaryRecordSourceIndex() {
     const store = getStore();
-    const mode = resolveCompressionMode(store);
+    const mode = resolveCompressionMode();
     return getModeRecords(store.records, mode).map(record => ({
         ...toRecordIndexEntry(record, mode),
         sourceFingerprint: record.sourceFingerprint ? structuredClone(record.sourceFingerprint) : null,
@@ -46,29 +46,22 @@ export function getActiveSummaryRecords() {
 
 export function getSummaryRecord(recordId) {
     const store = getStore();
-    const mode = resolveCompressionMode(store);
+    const mode = resolveCompressionMode();
     const record = getModeRecords(store.records, mode).find(item => item.id === String(recordId));
     return record ? hydrateRecord(record, getRecordRenderSettings(), mode) : null;
 }
 
 export function getCompressionMode() {
-    return resolveCompressionMode(getStore());
+    return normalizeCompressionMode(getSettings().summarization.compressionMode);
 }
 
-export async function setCompressionMode(mode) {
+export function setCompressionMode(mode) {
     const normalized = normalizeCompressionMode(mode);
-    const store = getStore();
-    const previous = store.compressionMode;
-    if (resolveCompressionMode(store) === normalized && previous === normalized) return normalized;
-    store.compressionMode = normalized;
-    try {
-        await SillyTavern.getContext().saveMetadata();
-    } catch (error) {
-        if (previous === undefined) delete store.compressionMode;
-        else store.compressionMode = previous;
-        throw error;
-    }
-    notifyRecordsChanged();
+    const settings = getSettings();
+    if (settings.summarization.compressionMode === normalized) return normalized;
+    settings.summarization.compressionMode = normalized;
+    saveSettings();
+    window.dispatchEvent(new CustomEvent('stsm:compression-mode-changed'));
     return normalized;
 }
 
@@ -86,7 +79,7 @@ export function getIntegratedCompressionCleanupPlan() {
 
 export async function deleteIntegratedCompressionData() {
     const store = getStore();
-    if (resolveCompressionMode(store) !== COMPRESSION_MODES.SEGMENTED) {
+    if (getCompressionMode() !== COMPRESSION_MODES.SEGMENTED) {
         throw new Error('세그먼트형(v3)으로 전환한 뒤 통합형 압축 데이터를 삭제할 수 있습니다.');
     }
     const deletedIds = new Set(store.records
@@ -147,15 +140,20 @@ function toRecordIndexEntry(record, mode) {
 
 export async function initializeSummaryRecordStorage() {
     const store = getStore();
-    if (Number(store.recordStorageVersion || 0) >= RECORD_STORAGE_VERSION) return false;
+    const needsVersionUpdate = Number(store.recordStorageVersion || 0) < RECORD_STORAGE_VERSION;
+    const hasLegacyCompressionMode = Object.hasOwn(store, 'compressionMode');
+    if (!needsVersionUpdate && !hasLegacyCompressionMode) return false;
 
     const previousVersion = store.recordStorageVersion;
-    store.recordStorageVersion = RECORD_STORAGE_VERSION;
+    const previousCompressionMode = store.compressionMode;
+    if (needsVersionUpdate) store.recordStorageVersion = RECORD_STORAGE_VERSION;
+    if (hasLegacyCompressionMode) delete store.compressionMode;
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         if (previousVersion === undefined) delete store.recordStorageVersion;
         else store.recordStorageVersion = previousVersion;
+        if (hasLegacyCompressionMode) store.compressionMode = previousCompressionMode;
         throw error;
     }
     return true;
@@ -395,7 +393,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
 
 export async function deleteSummaryRecord(recordId) {
     const store = getStore();
-    const mode = resolveCompressionMode(store);
+    const mode = resolveCompressionMode();
     const target = getModeRecords(store.records, mode).find(record => record.id === String(recordId));
     if (!target) return false;
     if (getCompressionParentId(target, mode)) {
@@ -586,7 +584,7 @@ export async function updateSummaryRecordTags(recordId, tags) {
 export async function updateSummaryRecordPinned(recordId, pinned) {
     const normalizedId = String(recordId);
     const store = getStore();
-    const mode = resolveCompressionMode(store);
+    const mode = resolveCompressionMode();
     const previousRecords = store.records;
     let updatedRecord = null;
 
@@ -728,7 +726,6 @@ function getStore() {
 
     const store = metadata[METADATA_KEY];
     store.records = normalizeRecords(store.records);
-    store.compressionMode = normalizeCompressionMode(store.compressionMode, store.records);
     store.recentRevisionConversation = normalizeRevisionConversation(store.recentRevisionConversation);
     return store;
 }
@@ -873,16 +870,13 @@ function normalizeCompression(value) {
     };
 }
 
-function normalizeCompressionMode(value, records = []) {
+function normalizeCompressionMode(value) {
     if (Object.values(COMPRESSION_MODES).includes(value)) return value;
-    const hasIntegratedCompression = records.some(record => (
-        record?.compression && getCompressionRecordMode(record) === COMPRESSION_MODES.INTEGRATED
-    ));
-    return hasIntegratedCompression ? COMPRESSION_MODES.INTEGRATED : COMPRESSION_MODES.SEGMENTED;
+    return COMPRESSION_MODES.SEGMENTED;
 }
 
-function resolveCompressionMode(store) {
-    return normalizeCompressionMode(store.compressionMode, store.records);
+function resolveCompressionMode() {
+    return getCompressionMode();
 }
 
 function getModeRecords(records, mode) {

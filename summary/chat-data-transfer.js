@@ -8,6 +8,7 @@ export function createCurrentChatBackup() {
     const { metadata } = getCurrentChatContext();
     const storedData = metadata[METADATA_KEY];
     const data = isPlainObject(storedData) ? structuredClone(storedData) : { records: [] };
+    delete data.compressionMode;
 
     return {
         format: BACKUP_FORMAT,
@@ -107,7 +108,9 @@ function validateChatData(value) {
         && !isPlainObject(value.recentRevisionConversation)) {
         throw new Error('백업 파일의 최근 수정 대화 형식이 올바르지 않습니다.');
     }
-    return structuredClone(value);
+    const normalized = structuredClone(value);
+    delete normalized.compressionMode;
+    return normalized;
 }
 
 function getCurrentChatContext() {
