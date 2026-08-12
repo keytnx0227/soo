@@ -28,7 +28,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 24;
+const PROMPT_SCHEMA_VERSION = 25;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -509,7 +509,7 @@ Quotes: preserve 1-3 exact source lines whose wording has the highest future rec
 
 Context: merge date, time, and location chronologically. Keep only meaningful transitions. Use only supplied records as evidence, never invent facts, and follow the JSON contract exactly.`;
 
-const DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
+const V24_DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
 
 Compress the supplied summary records into one dense long-term memory. Preserve chronological causality and durable facts, but remove repetition, scene texture, gestures, pauses, transient reactions, and details already represented by current memory atlases.
 
@@ -520,6 +520,18 @@ Emotion: for each relevant character, reduce each source record to one represent
 Quotes: preserve 1-3 exact source lines whose wording has the highest future recall value. Prefer vows, confessions, revelations, relationship-defining words, and irreversible decisions. Never invent dialogue; return an empty array only when no source quote exists.
 
 Context: merge date, time, and location chronologically. Keep only meaningful transitions. Use only supplied records as evidence, never invent facts, and follow the JSON contract exactly.`;
+
+const DEFAULT_COMPRESSION_MAIN_PROMPT = `# Summary Compression Task
+
+Compress the supplied records into a dense long-term memory representation. Preserve chronological causality and durable facts; remove repetition, scene texture, gestures, pauses, transient reactions, and details already represented by current memory atlases. Follow the JSON contract's integrated or per-source structure exactly.
+
+Plot: obey the contract's allocation rules. Use short causal event sentences, not prose paragraphs. Preserve relationship development only when it has lasting narrative consequences; express it as an action or outcome, never as separate analysis.
+
+Emotion: keep only representative states and compact causes. Merge repeated or near-identical states. Omit emotion targets. Never retell the event sequence in a reason.
+
+Quotes: preserve only the exact source lines with the highest future recall value, especially vows, confessions, revelations, relationship-defining words, and irreversible decisions. Never invent dialogue.
+
+Context: keep date, time, and location concise and chronological. Use only supplied records as evidence, never invent facts, and follow the JSON contract exactly.`;
 
 const DEFAULT_SUMMARY_RECORD_TEMPLATE = `<Summary range="#{{sumiRecordStartId}} ~ #{{sumiRecordEndId}}">
 {{sumiRecordContent}}
@@ -1996,6 +2008,15 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
         migratedBlocks = migratedBlocks.map(block => (
             block.id === 'compression-main'
                 && String(block.content || '').trim() === V15_DEFAULT_COMPRESSION_MAIN_PROMPT.trim()
+                ? { ...block, content: DEFAULT_COMPRESSION_MAIN_PROMPT }
+                : block
+        ));
+    }
+
+    if (type === PROMPT_TYPES.COMPRESSION && sourceSchemaVersion < 25) {
+        migratedBlocks = migratedBlocks.map(block => (
+            block.id === 'compression-main'
+                && String(block.content || '').trim() === V24_DEFAULT_COMPRESSION_MAIN_PROMPT.trim()
                 ? { ...block, content: DEFAULT_COMPRESSION_MAIN_PROMPT }
                 : block
         ));

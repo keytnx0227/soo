@@ -6,7 +6,13 @@ const RELEVANCE_THRESHOLDS = Object.freeze({
     strict: 5.5,
 });
 
-export function retrieveLongTermRecords({ records, messages, settings, countTokens = approximateTokenCount }) {
+export function retrieveLongTermRecords({
+    records,
+    messages,
+    settings,
+    countTokens = approximateTokenCount,
+    selectCandidates = selectWithinBudget,
+}) {
     const allRecords = Array.isArray(records) ? records : [];
     const longTermRecords = allRecords.filter(record => Boolean(record?.compressedBy));
     const normalizedSettings = normalizeRetrievalSettings(settings);
@@ -61,7 +67,7 @@ export function retrieveLongTermRecords({ records, messages, settings, countToke
         ? ranked.slice(0, normalizedSettings.relevanceMaxRecords)
         : ranked;
     const excludedByRecordLimit = limited.length < ranked.length ? ranked.slice(limited.length) : [];
-    const { selected, omitted } = selectWithinBudget(limited, normalizedSettings.maxTokens);
+    const { selected, omitted } = selectCandidates(limited, normalizedSettings.maxTokens);
 
     return {
         ...base,

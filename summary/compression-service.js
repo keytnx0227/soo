@@ -3,12 +3,15 @@ import { assertExtensionEnabled } from '../core/extension-state.js';
 import { getSettings } from '../core/settings.js';
 import { buildCompressionPrompt } from '../prompts/prompt-builder.js';
 import {
-    COMPRESSION_FORMAT_VERSION,
+    INTEGRATED_COMPRESSION_FORMAT_VERSION,
+    SEGMENTED_COMPRESSION_FORMAT_VERSION,
     parseCompressionResponse,
     renderCompressionSummary,
 } from './compression-format.js';
 import {
     addCompressedSummaryRecord,
+    COMPRESSION_MODES,
+    getCompressionMode,
     getActiveSummaryRecords,
     getSummaryRecord,
     updateSummaryRecordContent,
@@ -69,13 +72,15 @@ export async function compressSummaryRecords({ startRecordId, count }) {
     const sources = selectCompressionSources(startRecordId, count);
     const snapshot = createSourceSnapshot(sources);
     const { outputLanguage, compressionContentTemplate, compressionOutputSections } = getSettings().summarization;
-    const prompt = buildCompressionPrompt(sources, outputLanguage);
+    const mode = getCompressionMode();
+    const segmented = mode === COMPRESSION_MODES.SEGMENTED;
+    const prompt = buildCompressionPrompt(sources, outputLanguage, mode);
     if (!prompt.trim()) throw new Error('조립된 압축 요약 프롬프트가 비어 있습니다.');
 
     const response = await generateSummary(prompt);
     if (!response) throw new Error('압축 요약 응답이 비어 있습니다.');
     assertSourcesUnchanged(snapshot);
-    const data = parseCompressionResponse(response);
+    const data = parseCompressionResponse(response, { segmented, sourceRecords: sources });
     const content = renderCompressionSummary(data, {
         startId: sources[0].startId,
         endId: sources.at(-1).endId,
@@ -85,8 +90,12 @@ export async function compressSummaryRecords({ startRecordId, count }) {
     return addCompressedSummaryRecord({
         sourceRecordIds: sources.map(record => record.id),
         content,
-        compressionData: { formatVersion: COMPRESSION_FORMAT_VERSION, ...data },
+        compressionData: {
+            formatVersion: segmented ? SEGMENTED_COMPRESSION_FORMAT_VERSION : INTEGRATED_COMPRESSION_FORMAT_VERSION,
+            ...data,
+        },
         languageMode: outputLanguage,
+        mode,
     });
 }
 
@@ -97,14 +106,16 @@ export async function regenerateCompressedSummary(recordId) {
     const sources = record.compression.sourceRecordIds.map(getSummaryRecord);
     if (sources.some(source => !source)) throw new Error('압축 요약의 원본 레코드 일부를 찾지 못했습니다.');
     const snapshot = createSourceSnapshot(sources);
+    const mode = getCompressionMode();
+    const segmented = mode === COMPRESSION_MODES.SEGMENTED;
     const { outputLanguage, compressionContentTemplate, compressionOutputSections } = getSettings().summarization;
-    const prompt = buildCompressionPrompt(sources, outputLanguage);
+    const prompt = buildCompressionPrompt(sources, outputLanguage, mode);
     if (!prompt.trim()) throw new Error('조립된 압축 재생성 프롬프트가 비어 있습니다.');
 
     const response = await generateSummary(prompt);
     if (!response) throw new Error('재생성된 압축 요약 응답이 비어 있습니다.');
     assertSourcesUnchanged(snapshot, record.id);
-    const data = parseCompressionResponse(response);
+    const data = parseCompressionResponse(response, { segmented, sourceRecords: sources });
     const content = renderCompressionSummary(data, {
         startId: record.startId,
         endId: record.endId,
@@ -113,7 +124,10 @@ export async function regenerateCompressedSummary(recordId) {
     });
     const updated = await updateSummaryRecordContent(record.id, content, {
         contentEdited: false,
-        compressionData: { formatVersion: COMPRESSION_FORMAT_VERSION, ...data },
+        compressionData: {
+            formatVersion: segmented ? SEGMENTED_COMPRESSION_FORMAT_VERSION : INTEGRATED_COMPRESSION_FORMAT_VERSION,
+            ...data,
+        },
     });
     if (!updated) throw new Error('압축 재생성 결과를 저장할 기록을 찾지 못했습니다.');
     return updated;

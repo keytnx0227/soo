@@ -7,11 +7,7 @@ export function createRecordDeletionPlan(records, selectedRecordIds) {
     const deletedIds = new Set(directlySelectedIds);
 
     for (const recordId of directlySelectedIds) {
-        let parentId = normalizeId(byId.get(recordId)?.compressedBy);
-        while (parentId && !deletedIds.has(parentId)) {
-            deletedIds.add(parentId);
-            parentId = normalizeId(byId.get(parentId)?.compressedBy);
-        }
+        collectParents(recordId, byId, deletedIds);
     }
 
     const deletedRecords = source
@@ -19,7 +15,10 @@ export function createRecordDeletionPlan(records, selectedRecordIds) {
         .map(record => toPlanRecord(record, directlySelectedIds.has(String(record.id))))
         .sort(compareRecords);
     const releasedRecords = source
-        .filter(record => !deletedIds.has(String(record.id)) && deletedIds.has(normalizeId(record.compressedBy)))
+        .filter(record => !deletedIds.has(String(record.id)) && (
+            deletedIds.has(normalizeId(record.compressedBy))
+            || deletedIds.has(normalizeId(record.segmentedCompressedBy))
+        ))
         .map(record => toPlanRecord(record, false))
         .sort(compareRecords);
 
@@ -32,6 +31,15 @@ export function createRecordDeletionPlan(records, selectedRecordIds) {
     };
 }
 
+function collectParents(recordId, byId, deletedIds) {
+    const record = byId.get(String(recordId));
+    for (const parentId of [record?.compressedBy, record?.segmentedCompressedBy].map(normalizeId).filter(Boolean)) {
+        if (deletedIds.has(parentId)) continue;
+        deletedIds.add(parentId);
+        collectParents(parentId, byId, deletedIds);
+    }
+}
+
 function toPlanRecord(record, direct) {
     return {
         id: String(record.id),
@@ -39,6 +47,7 @@ function toPlanRecord(record, direct) {
         startId: Number(record.startId),
         endId: Number(record.endId),
         level: Number(record.compression?.level) || 0,
+        mode: record.compression?.mode === 'segmented' ? 'segmented' : record.compression ? 'integrated' : null,
         direct,
     };
 }

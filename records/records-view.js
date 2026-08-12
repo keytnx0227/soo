@@ -418,13 +418,14 @@ function renderSummaryRecord(summary, sourceStatus) {
     const tokenCount = getTokenCount(String(summary.content || ''));
     const compressedChild = Boolean(summary.compressedBy);
     const compressionLevel = Number(summary.compression?.level) || 0;
+    const compressionModeLabel = summary.compression?.mode === 'segmented' ? '세그먼트형(v3)' : '통합형(v2)';
     return `
         <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${summary.pinned ? ' stsm-record-pinned' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
             <header class="stsm-record-header">
                 <div class="stsm-record-range">
                     <strong>#${summary.startId} ~ #${summary.endId}</strong>
                     <span>${tokenCount.toLocaleString()} tokens</span>
-                    ${compressionLevel ? `<span class="stsm-record-compression-badge">압축 Lv.${compressionLevel}</span>` : ''}
+                    ${compressionLevel ? `<span class="stsm-record-compression-badge">압축 Lv.${compressionLevel} · ${compressionModeLabel}</span>` : ''}
                     ${compressedChild ? '<span class="stsm-record-compressed-child-badge">장기기억</span>' : ''}
                     ${summary.type === 'summary' ? renderRecordMemoryUpdateBadge(summary) : ''}
                     <span class="stsm-record-source-state-slot">${renderSourceState(sourceStatus, summary)}</span>

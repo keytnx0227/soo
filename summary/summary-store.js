@@ -9,23 +9,33 @@ import { createRecordDeletionPlan } from './range-deletion.js';
 const METADATA_KEY = 'sumi_chat_summarizer';
 const COMPRESSION_CONTENT_MIGRATION_VERSION = 1;
 const RECORD_STORAGE_VERSION = 1;
+export const COMPRESSION_MODES = Object.freeze({
+    INTEGRATED: 'integrated',
+    SEGMENTED: 'segmented',
+});
 let renderCacheOwner = null;
 let recordRenderCache = new Map();
 window.addEventListener('stsm:records-changed', clearRecordRenderCache);
 
 export function getSummaryRecords() {
-    const records = getStore().records;
+    const store = getStore();
+    const mode = resolveCompressionMode(store);
+    const records = getModeRecords(store.records, mode);
     const renderSettings = getRecordRenderSettings();
-    return records.map(record => hydrateRecord(record, renderSettings));
+    return records.map(record => hydrateRecord(record, renderSettings, mode));
 }
 
 export function getSummaryRecordIndex() {
-    return getStore().records.map(toRecordIndexEntry);
+    const store = getStore();
+    const mode = resolveCompressionMode(store);
+    return getModeRecords(store.records, mode).map(record => toRecordIndexEntry(record, mode));
 }
 
 export function getSummaryRecordSourceIndex() {
-    return getStore().records.map(record => ({
-        ...toRecordIndexEntry(record),
+    const store = getStore();
+    const mode = resolveCompressionMode(store);
+    return getModeRecords(store.records, mode).map(record => ({
+        ...toRecordIndexEntry(record, mode),
         sourceFingerprint: record.sourceFingerprint ? structuredClone(record.sourceFingerprint) : null,
     }));
 }
@@ -35,15 +45,94 @@ export function getActiveSummaryRecords() {
 }
 
 export function getSummaryRecord(recordId) {
-    const record = getStore().records.find(item => item.id === String(recordId));
-    return record ? hydrateRecord(record, getRecordRenderSettings()) : null;
+    const store = getStore();
+    const mode = resolveCompressionMode(store);
+    const record = getModeRecords(store.records, mode).find(item => item.id === String(recordId));
+    return record ? hydrateRecord(record, getRecordRenderSettings(), mode) : null;
 }
 
-function toRecordIndexEntry(record) {
+export function getCompressionMode() {
+    return resolveCompressionMode(getStore());
+}
+
+export async function setCompressionMode(mode) {
+    const normalized = normalizeCompressionMode(mode);
+    const store = getStore();
+    const previous = store.compressionMode;
+    if (resolveCompressionMode(store) === normalized && previous === normalized) return normalized;
+    store.compressionMode = normalized;
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        if (previous === undefined) delete store.compressionMode;
+        else store.compressionMode = previous;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return normalized;
+}
+
+export function getIntegratedCompressionCleanupPlan() {
+    const records = getStore().records.filter(record => (
+        getCompressionRecordMode(record) === COMPRESSION_MODES.INTEGRATED
+    ));
+    return {
+        count: records.length,
+        ranges: records
+            .map(record => ({ startId: record.startId, endId: record.endId }))
+            .sort((left, right) => left.startId - right.startId || left.endId - right.endId),
+    };
+}
+
+export async function deleteIntegratedCompressionData() {
+    const store = getStore();
+    if (resolveCompressionMode(store) !== COMPRESSION_MODES.SEGMENTED) {
+        throw new Error('세그먼트형(v3)으로 전환한 뒤 통합형 압축 데이터를 삭제할 수 있습니다.');
+    }
+    const deletedIds = new Set(store.records
+        .filter(record => getCompressionRecordMode(record) === COMPRESSION_MODES.INTEGRATED)
+        .map(record => record.id));
+    if (!deletedIds.size) return { count: 0, ranges: [] };
+    const plan = getIntegratedCompressionCleanupPlan();
+    const previousRecords = store.records;
+    const previousRecentConversation = store.recentRevisionConversation;
+    store.records = store.records
+        .filter(record => !deletedIds.has(record.id))
+        .map(record => deletedIds.has(record.compressedBy) ? { ...record, compressedBy: null } : record);
+    if (deletedIds.has(String(store.recentRevisionConversation?.recordId))) {
+        store.recentRevisionConversation = null;
+    }
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        store.recentRevisionConversation = previousRecentConversation;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return plan;
+}
+
+export function getCompressionParentId(record, mode = getCompressionMode()) {
+    return normalizeCompressionMode(mode) === COMPRESSION_MODES.SEGMENTED
+        ? normalizeOptionalId(record?.segmentedCompressedBy)
+        : normalizeOptionalId(record?.compressedBy);
+}
+
+export function getCompressionRecordMode(record) {
+    if (!record?.compression) return null;
+    return record.compression.mode === COMPRESSION_MODES.SEGMENTED
+        ? COMPRESSION_MODES.SEGMENTED
+        : COMPRESSION_MODES.INTEGRATED;
+}
+
+function toRecordIndexEntry(record, mode) {
     return {
         id: record.id,
         type: record.type,
-        compressedBy: record.compressedBy,
+        compressedBy: getCompressionParentId(record, mode),
+        integratedCompressedBy: record.compressedBy,
+        segmentedCompressedBy: record.segmentedCompressedBy,
         pinned: record.pinned,
         batchId: record.batchId,
         startId: record.startId,
@@ -217,6 +306,7 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
         id: createId('summary'),
         type: 'summary',
         compressedBy: null,
+        segmentedCompressedBy: null,
         pinned: false,
         batchId: normalizeOptionalId(batchId),
         startId: Number(startId),
@@ -240,14 +330,16 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
     return hydrateRecord(record);
 }
 
-export async function addCompressedSummaryRecord({ sourceRecordIds, content, compressionData, languageMode }) {
+export async function addCompressedSummaryRecord({ sourceRecordIds, content, compressionData, languageMode, mode = getCompressionMode() }) {
     const store = getStore();
+    const normalizedMode = normalizeCompressionMode(mode);
     const normalizedSourceIds = [...new Set((Array.isArray(sourceRecordIds) ? sourceRecordIds : []).map(String))];
-    const sources = normalizedSourceIds.map(id => store.records.find(record => record.id === id));
+    const modeRecords = getModeRecords(store.records, normalizedMode);
+    const sources = normalizedSourceIds.map(id => modeRecords.find(record => record.id === id));
     if (sources.length < 2 || sources.some(record => !record)) {
         throw new Error('압축할 원본 요약 레코드를 두 개 이상 찾지 못했습니다.');
     }
-    if (sources.some(record => record.compressedBy)) {
+    if (sources.some(record => getCompressionParentId(record, normalizedMode))) {
         throw new Error('이미 다른 압축본에 포함된 요약 레코드는 다시 직접 압축할 수 없습니다.');
     }
 
@@ -261,6 +353,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
         id: createId('compression'),
         type: 'compressed',
         compressedBy: null,
+        segmentedCompressedBy: null,
         pinned: false,
         batchId: null,
         startId: sortedSources[0].startId,
@@ -271,6 +364,7 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
         searchTags: null,
         compression: {
             version: 1,
+            mode: normalizedMode,
             level: Math.max(...sortedSources.map(source => Number(source.compression?.level) || 0)) + 1,
             sourceRecordIds: sortedSources.map(source => source.id),
             languageMode: String(languageMode || 'english'),
@@ -281,9 +375,12 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
 
     const previousRecords = store.records;
     store.records = [
-        ...store.records.map(source => normalizedSourceIds.includes(source.id)
-            ? { ...source, compressedBy: record.id }
-            : source),
+        ...store.records.map(source => {
+            if (!normalizedSourceIds.includes(source.id)) return source;
+            return normalizedMode === COMPRESSION_MODES.SEGMENTED
+                ? { ...source, segmentedCompressedBy: record.id }
+                : { ...source, compressedBy: record.id };
+        }),
         record,
     ];
     try {
@@ -298,32 +395,18 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
 
 export async function deleteSummaryRecord(recordId) {
     const store = getStore();
-    const target = store.records.find(record => record.id === String(recordId));
+    const mode = resolveCompressionMode(store);
+    const target = getModeRecords(store.records, mode).find(record => record.id === String(recordId));
     if (!target) return false;
-    if (target.compressedBy) {
+    if (getCompressionParentId(target, mode)) {
         throw new Error('압축본에 포함된 원본은 해당 압축본을 먼저 삭제해야 합니다.');
     }
-    const previousRecords = store.records;
-    const childIds = new Set(target.compression?.sourceRecordIds || []);
-    const records = store.records
-        .filter(record => record.id !== String(recordId))
-        .map(record => childIds.has(record.id) && record.compressedBy === target.id
-            ? { ...record, compressedBy: null }
-            : record);
-
-    store.records = records;
-    try {
-        await SillyTavern.getContext().saveMetadata();
-    } catch (error) {
-        store.records = previousRecords;
-        throw error;
-    }
-    notifyRecordsChanged();
-    return true;
+    const plan = await deleteSummaryRecords([target.id]);
+    return plan.deletedIds.length > 0;
 }
 
 export function getSummaryRecordDeletionPlan(recordIds) {
-    return createRecordDeletionPlan(getSummaryRecordIndex(), recordIds);
+    return createRecordDeletionPlan(getStore().records, recordIds);
 }
 
 export async function deleteSummaryRecords(recordIds) {
@@ -338,13 +421,17 @@ export async function deleteSummaryRecords(recordIds) {
         .filter(record => !deletedIds.has(record.id))
         .map(record => {
             const compressedBy = deletedIds.has(record.compressedBy) ? null : record.compressedBy;
+            const segmentedCompressedBy = deletedIds.has(record.segmentedCompressedBy) ? null : record.segmentedCompressedBy;
             const sourceRecordIds = record.compression?.sourceRecordIds.filter(id => !deletedIds.has(id));
             const compressionChanged = Boolean(record.compression)
                 && sourceRecordIds.length !== record.compression.sourceRecordIds.length;
-            if (compressedBy === record.compressedBy && !compressionChanged) return record;
+            if (compressedBy === record.compressedBy
+                && segmentedCompressedBy === record.segmentedCompressedBy
+                && !compressionChanged) return record;
             return {
                 ...record,
                 compressedBy,
+                segmentedCompressedBy,
                 compression: compressionChanged ? { ...record.compression, sourceRecordIds } : record.compression,
             };
         });
@@ -499,12 +586,13 @@ export async function updateSummaryRecordTags(recordId, tags) {
 export async function updateSummaryRecordPinned(recordId, pinned) {
     const normalizedId = String(recordId);
     const store = getStore();
+    const mode = resolveCompressionMode(store);
     const previousRecords = store.records;
     let updatedRecord = null;
 
     store.records = store.records.map(record => {
         if (record.id !== normalizedId) return record;
-        if (!record.compressedBy) {
+        if (!getCompressionParentId(record, mode)) {
             throw new Error('장기기억 레코드만 고정할 수 있습니다.');
         }
         updatedRecord = {
@@ -640,6 +728,7 @@ function getStore() {
 
     const store = metadata[METADATA_KEY];
     store.records = normalizeRecords(store.records);
+    store.compressionMode = normalizeCompressionMode(store.compressionMode, store.records);
     store.recentRevisionConversation = normalizeRevisionConversation(store.recentRevisionConversation);
     return store;
 }
@@ -659,6 +748,7 @@ function normalizeRecords(records) {
                 id: String(record.id || createId('summary')),
                 type: compression ? 'compressed' : 'summary',
                 compressedBy: normalizeOptionalId(record.compressedBy),
+                segmentedCompressedBy: normalizeOptionalId(record.segmentedCompressedBy),
                 pinned: Boolean(record.pinned),
                 batchId: normalizeOptionalId(record.batchId),
                 startId: Math.max(0, Number(record.startId) || 0),
@@ -681,18 +771,23 @@ function normalizeRecords(records) {
             ...record.compression,
             sourceRecordIds: record.compression.sourceRecordIds.filter(id => byId.has(id) && id !== record.id),
         } : null;
-        const parent = record.compressedBy ? byId.get(record.compressedBy) : null;
-        const compressedBy = parent?.compression?.sourceRecordIds.includes(record.id) ? parent.id : null;
+        const integratedParent = record.compressedBy ? byId.get(record.compressedBy) : null;
+        const segmentedParent = record.segmentedCompressedBy ? byId.get(record.segmentedCompressedBy) : null;
+        const compressedBy = getCompressionRecordMode(integratedParent) === COMPRESSION_MODES.INTEGRATED
+            && integratedParent.compression.sourceRecordIds.includes(record.id) ? integratedParent.id : null;
+        const segmentedCompressedBy = getCompressionRecordMode(segmentedParent) === COMPRESSION_MODES.SEGMENTED
+            && segmentedParent.compression.sourceRecordIds.includes(record.id) ? segmentedParent.id : null;
         return {
             ...record,
             type: compression ? 'compressed' : 'summary',
             compression,
             compressedBy,
+            segmentedCompressedBy,
         };
     });
 }
 
-function hydrateRecord(record, renderSettings = getRecordRenderSettings()) {
+function hydrateRecord(record, renderSettings = getRecordRenderSettings(), mode = getCompressionMode()) {
     const cacheKey = createRecordRenderCacheKey(record, renderSettings);
     let rendered = recordRenderCache.get(record.id);
     if (rendered?.key !== cacheKey) {
@@ -706,6 +801,8 @@ function hydrateRecord(record, renderSettings = getRecordRenderSettings()) {
     }
     return {
         ...record,
+        compressedBy: getCompressionParentId(record, mode),
+        integratedCompressedBy: record.compressedBy,
         content: rendered.content,
         contentHash: rendered.contentHash,
         contentEdited: Boolean(record.legacyContent),
@@ -766,11 +863,31 @@ function normalizeCompression(value) {
     delete data.relationships;
     return {
         version: Math.max(1, Number(value.version) || 1),
+        mode: value.mode === COMPRESSION_MODES.SEGMENTED
+            ? COMPRESSION_MODES.SEGMENTED
+            : COMPRESSION_MODES.INTEGRATED,
         level: Math.max(1, Number(value.level) || 1),
         sourceRecordIds: [...new Set(value.sourceRecordIds.map(String).filter(Boolean))],
         languageMode: String(value.languageMode || 'english'),
         data,
     };
+}
+
+function normalizeCompressionMode(value, records = []) {
+    if (Object.values(COMPRESSION_MODES).includes(value)) return value;
+    const hasIntegratedCompression = records.some(record => (
+        record?.compression && getCompressionRecordMode(record) === COMPRESSION_MODES.INTEGRATED
+    ));
+    return hasIntegratedCompression ? COMPRESSION_MODES.INTEGRATED : COMPRESSION_MODES.SEGMENTED;
+}
+
+function resolveCompressionMode(store) {
+    return normalizeCompressionMode(store.compressionMode, store.records);
+}
+
+function getModeRecords(records, mode) {
+    const normalizedMode = normalizeCompressionMode(mode);
+    return records.filter(record => !record.compression || getCompressionRecordMode(record) === normalizedMode);
 }
 
 function normalizeStructuredSummary(value) {

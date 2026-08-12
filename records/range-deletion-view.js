@@ -215,7 +215,7 @@ function renderContentPreviewGroup(title, planRecords, recordsById) {
                 <summary>
                     <i class="stsm-range-deletion-record-chevron fa-solid fa-chevron-right" aria-hidden="true"></i>
                     <i class="fa-solid ${planRecord.type === 'compressed' ? 'fa-compress' : 'fa-file-lines'}" aria-hidden="true"></i>
-                    <span>#${planRecord.startId} ~ #${planRecord.endId}${planRecord.level ? ` · 압축 Lv.${planRecord.level}` : ''}</span>
+                    <span>#${planRecord.startId} ~ #${planRecord.endId}${planRecord.level ? ` · 압축 Lv.${planRecord.level} · ${planRecord.mode === 'segmented' ? 'v3' : 'v2'}` : ''}</span>
                 </summary>
                 <div class="stsm-range-deletion-record-content">${escapeHtml(record?.content || '내용이 없습니다.')}</div>
             </details>

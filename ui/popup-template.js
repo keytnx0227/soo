@@ -321,6 +321,29 @@ export function buildPopup() {
                             <span>기본 압축 레코드 수</span>
                             <input id="stsm-compression-group-size" class="text_pole" type="number" min="2" max="100" step="1" />
                         </label>
+                        <label class="stsm-field stsm-compression-mode-field">
+                            <span>압축 기억 방식</span>
+                            <select id="stsm-compression-mode" class="text_pole">
+                                <option value="integrated">통합형(v2)</option>
+                                <option value="segmented">세그먼트형(v3)</option>
+                            </select>
+                            <span class="stsm-compression-mode-help">
+                                <button class="stsm-section-info interactable" type="button"
+                                    data-compression-mode-info="integrated"
+                                    data-tooltip="통합형(v2)은 여러 원본을 하나의 압축본으로 완전히 합칩니다. 기존 압축 데이터와 기존 장기기억 회상 방식을 사용합니다."
+                                    aria-label="통합형(v2) 설명">
+                                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                </button>
+                                <span>통합형(v2)</span>
+                                <button class="stsm-section-info interactable" type="button"
+                                    data-compression-mode-info="segmented"
+                                    data-tooltip="세그먼트형(v3)은 원본별 compact 슬롯을 보존합니다. 검색된 상세 기억만 원래 시간 위치에서 펼치고 나머지 범위는 압축 상태로 유지합니다."
+                                    aria-label="세그먼트형(v3) 설명">
+                                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                </button>
+                                <span>세그먼트형(v3)</span>
+                            </span>
+                        </label>
                     </div>
                 </details>
 
@@ -531,6 +554,13 @@ export function buildPopup() {
                         </button>
                     </div>
                     <input id="stsm-import-global-settings-file" type="file" accept="application/json,.json" hidden />
+                </div>
+                <div class="stsm-data-management-group">
+                    <div class="stsm-data-management-copy">
+                        <strong>기존 통합형 압축 데이터</strong>
+                        <span>세그먼트형(v3)으로 이전을 마친 뒤 현재 채팅의 통합형(v2) 압축본만 정리합니다. 상세 원본과 세그먼트형 데이터는 유지됩니다.</span>
+                    </div>
+                    <button id="stsm-delete-integrated-compressions" class="menu_button interactable stsm-danger-text-button" type="button">통합형(v2) 압축 데이터 삭제</button>
                 </div>
             </div>
         </section>

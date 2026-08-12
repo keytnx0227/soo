@@ -413,6 +413,9 @@ function createRevisionPromptInput(session) {
     if (!session?.recordType || !session.baseStructuredData) return session;
     const currentData = getCurrentStructuredData(session);
     const isCompressed = session.recordType === 'compressed';
+    const compressionRecord = isCompressed ? getSummaryRecord(session.recordId) : null;
+    const compressionSources = compressionRecord?.compression?.sourceRecordIds.map(getSummaryRecord).filter(Boolean) || [];
+    const segmented = compressionRecord?.compression?.mode === 'segmented';
     const sections = isCompressed ? null : getRevisionSections(session);
     const sourceData = isCompressed
         ? currentData
@@ -421,14 +424,22 @@ function createRevisionPromptInput(session) {
         ...session,
         structuredSourceContent: JSON.stringify(sourceData, null, 2),
         revisionOutputContract: isCompressed
-            ? buildCompressionJsonContract()
+            ? buildCompressionJsonContract({ segmented, sourceCount: compressionSources.length })
             : buildSummaryJsonContract(sections, NO_MEMORY_SECTIONS),
     };
 }
 
 function parseRevisionResult(session, response) {
     if (session.recordType === 'compressed') {
-        return { type: 'compressed', data: parseCompressionResponse(response) };
+        const record = getSummaryRecord(session.recordId);
+        const sourceRecords = record?.compression?.sourceRecordIds.map(getSummaryRecord).filter(Boolean) || [];
+        return {
+            type: 'compressed',
+            data: parseCompressionResponse(response, {
+                segmented: record?.compression?.mode === 'segmented',
+                sourceRecords,
+            }),
+        };
     }
 
     const currentData = getCurrentStructuredData(session);

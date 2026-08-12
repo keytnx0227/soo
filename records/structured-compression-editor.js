@@ -13,7 +13,9 @@ export async function openStructuredCompressionEditor(recordId) {
 
     const form = document.createElement('div');
     form.className = 'stsm-structured-summary-editor stsm-structured-compression-editor';
-    form.innerHTML = renderEditor(record);
+    const sourceRecords = record.compression.sourceRecordIds.map(getSummaryRecord).filter(Boolean);
+    const segmented = record.compression.mode === 'segmented';
+    form.innerHTML = segmented ? renderSegmentedEditor(record, sourceRecords) : renderEditor(record);
     bindEditorActions(form);
 
     let updatedRecord = null;
@@ -26,7 +28,12 @@ export async function openStructuredCompressionEditor(recordId) {
         onClosing: async currentPopup => {
             if (currentPopup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
             try {
-                const parsed = parseCompressionResponse(JSON.stringify(collectEditorData(form)));
+                const parsed = segmented
+                    ? parseCompressionResponse(JSON.stringify(collectSegmentedEditorData(form)), {
+                        segmented: true,
+                        sourceRecords,
+                    })
+                    : parseCompressionResponse(JSON.stringify(collectEditorData(form)));
                 const data = { ...record.compression.data, ...parsed };
                 const settings = getSettings().summarization;
                 const content = renderCompressionSummary(data, {
@@ -56,6 +63,38 @@ export async function openStructuredCompressionEditor(recordId) {
     });
     await popup.show();
     return updatedRecord;
+}
+
+function renderSegmentedEditor(record, sources) {
+    const byId = new Map(sources.map(source => [String(source.id), source]));
+    return `
+        <header class="stsm-structured-editor-header">
+            <strong>세그먼트 압축 요약 수정</strong>
+            <span>#${record.startId} ~ #${record.endId}</span>
+        </header>
+        <div class="stsm-structured-editor-list stsm-segmented-editor-list">
+            ${record.compression.data.segments.map((segment, index) => {
+                const source = byId.get(String(segment.sourceRecordId));
+                const data = segment.compactData || {};
+                return `
+                    <article class="stsm-structured-editor-section stsm-segmented-editor-item" data-segment-index="${index}">
+                        <div class="stsm-structured-editor-section-heading">
+                            <div class="stsm-structured-editor-title">Source ${index + 1} · #${source?.startId ?? '?'} ~ #${source?.endId ?? '?'}</div>
+                            <label class="stsm-field stsm-segment-rank-field">
+                                <span>중요도 순위</span>
+                                <input class="text_pole" data-segment-rank type="number" min="1" max="${sources.length}" value="${segment.importanceRank}" />
+                            </label>
+                        </div>
+                        ${renderContextEditor(data.contextFlow)}
+                        ${renderStringListEditor('plot', '플롯', data.plot, '플롯 항목 추가')}
+                        ${renderStringListEditor('additionalPlot', '추가 플롯', data.additionalPlot, '추가 플롯 항목 추가')}
+                        ${renderEmotionEditor(data.emotions)}
+                        ${renderQuoteEditor(data.quotes)}
+                    </article>
+                `;
+            }).join('')}
+        </div>
+    `;
 }
 
 function renderEditor(record) {
@@ -202,11 +241,13 @@ function bindEditorActions(form) {
 }
 
 function addEditorItem(form, target, kind) {
-    if (kind === 'context') appendHtml(form.querySelector('[data-editor-list="context"]'), renderContextRow());
-    if (kind === 'plot') appendHtml(form.querySelector('[data-editor-list="plot"]'), renderStringRow('', '플롯'));
-    if (kind === 'emotion-group') appendHtml(form.querySelector('[data-editor-list="emotions"]'), renderEmotionGroup());
+    const scope = target.closest('[data-segment-index]') || form;
+    if (kind === 'context') appendHtml(scope.querySelector('[data-editor-list="context"]'), renderContextRow());
+    if (kind === 'plot') appendHtml(scope.querySelector('[data-editor-list="plot"]'), renderStringRow('', '플롯'));
+    if (kind === 'additionalPlot') appendHtml(scope.querySelector('[data-editor-list="additionalPlot"]'), renderStringRow('', '추가 플롯'));
+    if (kind === 'emotion-group') appendHtml(scope.querySelector('[data-editor-list="emotions"]'), renderEmotionGroup());
     if (kind === 'emotion-state') appendHtml(target.closest('[data-emotion-group]').querySelector('[data-emotion-states]'), renderTrajectoryRow());
-    if (kind === 'quote') appendHtml(form.querySelector('[data-editor-list="quotes"]'), renderQuoteRow());
+    if (kind === 'quote') appendHtml(scope.querySelector('[data-editor-list="quotes"]'), renderQuoteRow());
 }
 
 function removeEditorItem(target, kind) {
@@ -215,19 +256,37 @@ function removeEditorItem(target, kind) {
 }
 
 function appendHtml(container, html) {
+    if (!container) throw new Error('항목을 추가할 편집 영역을 찾지 못했습니다.');
     container.insertAdjacentHTML('beforeend', html);
     container.lastElementChild?.querySelector('input, textarea')?.focus();
 }
 
 function collectEditorData(form) {
-    const contextFlow = [...form.querySelectorAll('[data-editor-list="context"] [data-editor-row]')]
+    return collectCompressionData(form);
+}
+
+function collectSegmentedEditorData(form) {
+    return {
+        segments: [...form.querySelectorAll('[data-segment-index]')].map((section, index) => ({
+            sourceIndex: index + 1,
+            importanceRank: Number(section.querySelector('[data-segment-rank]').value),
+            ...collectCompressionData(section),
+            additionalPlot: collectStringRows(section, 'additionalPlot'),
+        })),
+    };
+}
+
+function collectCompressionData(form) {
+    const contextFlow = [...form.querySelectorAll(':scope [data-editor-list="context"] [data-editor-row]')]
         .map(row => Object.fromEntries([...row.querySelectorAll('[data-context-field]')]
             .map(input => [input.dataset.contextField, input.value.trim() || null])))
         .filter(item => Object.values(item).some(Boolean));
     const plot = collectStringRows(form, 'plot');
     if (!plot.length) throw new Error('플롯에는 최소 한 개의 항목이 필요합니다.');
 
-    const emotions = [...form.querySelectorAll('[data-emotion-group]')].map(group => {
+    const emotions = [...form.querySelectorAll(':scope [data-emotion-group]')].filter(group => (
+        group.closest('[data-segment-index]') === form || !form.matches('[data-segment-index]')
+    )).map(group => {
         const subject = group.querySelector('[data-emotion-subject]').value.trim();
         const trajectory = [...group.querySelectorAll('[data-emotion-states] [data-emotion-state]')]
             .map(input => input.value.trim())
@@ -240,7 +299,7 @@ function collectEditorData(form) {
             reason: group.querySelector('[data-emotion-reason]').value.trim() || null,
         };
     });
-    const quotes = [...form.querySelectorAll('[data-editor-list="quotes"] [data-editor-row]')].map(row => ({
+    const quotes = [...form.querySelectorAll(':scope [data-editor-list="quotes"] [data-editor-row]')].map(row => ({
         speaker: row.querySelector('[data-quote-speaker]').value.trim(),
         text: row.querySelector('[data-quote-text]').value.trim(),
     })).filter(quote => quote.speaker || quote.text);
@@ -251,7 +310,7 @@ function collectEditorData(form) {
 }
 
 function collectStringRows(form, kind) {
-    return [...form.querySelectorAll(`[data-editor-list="${kind}"] [data-editor-row]`)]
+    return [...form.querySelectorAll(`:scope [data-editor-list="${kind}"] [data-editor-row]`)]
         .map(row => row.querySelector('[data-string-value]').value.trim())
         .filter(Boolean);
 }

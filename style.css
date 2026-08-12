@@ -2822,6 +2822,37 @@
     white-space: normal;
 }
 
+.stsm-compression-mode-help {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    font-size: 0.78em;
+    opacity: 0.78;
+}
+
+.stsm-compression-mode-help .stsm-section-info {
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    min-height: 18px;
+}
+
+.stsm-segmented-editor-list {
+    gap: 16px;
+}
+
+.stsm-segmented-editor-item {
+    padding: 12px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+}
+
+.stsm-segment-rank-field {
+    max-width: 130px;
+}
+
 .stsm-block-section-disabled .stsm-block-main {
     opacity: 0.48;
 }

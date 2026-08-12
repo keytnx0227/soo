@@ -14,7 +14,8 @@ import { world_info_position } from '../../../../../scripts/world-info.js';
 import { isExtensionEnabled } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { finalizeRetrievalResult, retrieveLongTermRecords } from '../memory/long-term-retrieval.js';
-import { getSummaryRecords } from './summary-store.js';
+import { resolveSegmentedRecall, selectSegmentedRecallWithinBudget } from '../memory/segmented-recall.js';
+import { COMPRESSION_MODES, getCompressionMode, getSummaryRecords } from './summary-store.js';
 import { buildContextBlockComposition } from './context-block-composer.js';
 
 const INJECTION_KEY = 'sumi_chat_summarizer_context';
@@ -90,31 +91,66 @@ export function buildSummaryContextDetails() {
     }
     const context = SillyTavern.getContext();
     const allRecords = getSummaryRecords();
-    const activeRecords = allRecords.filter(record => !record.compressedBy);
+    const compressionMode = getCompressionMode();
+    const recallOptions = {
+        compressionTemplate: settings.compressionContentTemplate,
+        compressionOutputSections: settings.compressionOutputSections,
+    };
     const retrieval = retrieveLongTermRecords({
         records: allRecords,
         messages: context.chat,
         settings: settings.longTermRetrieval,
         countTokens: getTokenCount,
+        selectCandidates: compressionMode === COMPRESSION_MODES.SEGMENTED
+            ? (candidates, budget) => selectSegmentedRecallWithinBudget(candidates, budget, {
+                records: allRecords,
+                countTokens: getTokenCount,
+                ...recallOptions,
+            })
+            : undefined,
     });
-    const selectedRecords = retrieval.selected.map(item => item.record);
-    const pinnedRecordIds = retrieval.selected.filter(item => item.pinned).map(item => item.record.id);
-    const composition = buildContextBlockComposition(settings.injectionMaxTokens, {
-        records: [...activeRecords, ...selectedRecords],
-        retrievedRecordIds: selectedRecords.map(record => record.id),
-        pinnedRecordIds,
-        messages: context.chat,
-        blockKinds: settings.worldOutput.mode === 'summary'
-            ? null
-            : settings.contextBlocks
-                .map(block => block.kind)
-                .filter(kind => kind !== SUMMARY_CONTEXT_BLOCK_KINDS.WORLD),
-    });
+    const blockKinds = settings.worldOutput.mode === 'summary'
+        ? null
+        : settings.contextBlocks
+            .map(block => block.kind)
+            .filter(kind => kind !== SUMMARY_CONTEXT_BLOCK_KINDS.WORLD);
+    let selected = retrieval.selected;
+    let composition;
+    let resolved;
+    const rolledBackIds = new Set();
+    do {
+        resolved = compressionMode === COMPRESSION_MODES.SEGMENTED
+            ? resolveSegmentedRecall(allRecords, selected, recallOptions)
+            : {
+                records: [
+                    ...allRecords.filter(record => !record.compressedBy),
+                    ...selected.map(item => item.record),
+                ],
+                retrievedRecordIds: selected.map(item => item.record.id),
+                pinnedRecordIds: selected.filter(item => item.pinned).map(item => item.record.id),
+            };
+        composition = buildContextBlockComposition(settings.injectionMaxTokens, {
+            records: resolved.records,
+            retrievedRecordIds: resolved.retrievedRecordIds,
+            pinnedRecordIds: resolved.pinnedRecordIds,
+            messages: context.chat,
+            blockKinds,
+        });
+        const omittedRetrieved = composition.omittedUnits
+            .filter(unit => unit.retrieved)
+            .map(unit => String(unit.id));
+        if (!omittedRetrieved.length || compressionMode !== COMPRESSION_MODES.SEGMENTED) break;
+        omittedRetrieved.forEach(id => rolledBackIds.add(id));
+        const next = selected.filter(item => !rolledBackIds.has(String(item.record.id)));
+        if (next.length === selected.length) break;
+        selected = next;
+    } while (true);
+    const rollbackUnits = [...rolledBackIds].map(id => ({ id, retrieved: true }));
     return {
         enabled: true,
         ...composition,
-        sourceRecordCount: activeRecords.length + selectedRecords.length,
-        retrieval: finalizeRetrievalResult(retrieval, composition.omittedUnits),
+        sourceRecordCount: resolved.records.length,
+        retrieval: finalizeRetrievalResult(retrieval, [...composition.omittedUnits, ...rollbackUnits]),
         omittedRecords: [],
         partialRecord: null,
     };

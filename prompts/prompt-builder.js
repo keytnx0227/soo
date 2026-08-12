@@ -12,7 +12,7 @@ import {
     SUMMARY_EXTRACTION_RULE_DEFINITIONS,
 } from '../core/settings.js';
 import { buildSummaryRecordsContext, withWorldInfoInjectionSuppressed } from '../summary/summary-context.js';
-import { getSummaryRecords } from '../summary/summary-store.js';
+import { getCompressionMode, getSummaryRecords } from '../summary/summary-store.js';
 import { buildPeopleMemoryPromptContext } from '../memory/people-memory-service.js';
 import { buildItemMemoryPromptContext } from '../memory/item-memory-service.js';
 import { buildCommitmentMemoryPromptContext } from '../memory/commitment-memory-service.js';
@@ -172,18 +172,21 @@ export async function buildRevisionPrompt({
     return parts.join('\n\n');
 }
 
-export function buildCompressionPrompt(records, languageMode = getSettings().summarization.outputLanguage) {
+export function buildCompressionPrompt(records, languageMode = getSettings().summarization.outputLanguage, mode = getCompressionMode()) {
     const preset = getActivePreset(PROMPT_TYPES.COMPRESSION);
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
     const values = {
         sumiCompressionStartId: sourceRecords[0]?.startId ?? '',
         sumiCompressionEndId: sourceRecords.at(-1)?.endId ?? '',
-        sumiCompressionSources: sourceRecords.map(record => (
-            `[#${record.startId}-#${record.endId}]\n${String(record.content || '').trim()}`
+        sumiCompressionSources: sourceRecords.map((record, index) => (
+            `[Source ${index + 1} | #${record.startId}-#${record.endId}]\n${String(record.content || '').trim()}`
         )).join('\n\n'),
         sumiSummaryLanguageInstruction: getSummaryLanguageInstruction(languageMode),
-        sumiCompressionJsonContract: buildCompressionJsonContract(),
+        sumiCompressionJsonContract: buildCompressionJsonContract({
+            segmented: mode === 'segmented',
+            sourceCount: sourceRecords.length,
+        }),
     };
 
     return preset.blocks

@@ -1,6 +1,7 @@
 import { renderTemplateData } from './summary-record-template.js';
 
-export const COMPRESSION_FORMAT_VERSION = 2;
+export const INTEGRATED_COMPRESSION_FORMAT_VERSION = 2;
+export const SEGMENTED_COMPRESSION_FORMAT_VERSION = 3;
 
 export const DEFAULT_COMPRESSION_OUTPUT_SECTIONS = Object.freeze({
     date: true,
@@ -58,7 +59,43 @@ export const COMPRESSION_CONTENT_TEMPLATE_MACROS = Object.freeze([
     ['sumiCompressionQuotes', '대표 대사 배열. speaker, text 사용'],
 ]);
 
-export function buildCompressionJsonContract() {
+export function buildCompressionJsonContract({ segmented = false, sourceCount = 0 } = {}) {
+    if (segmented) {
+        return [
+            '# JSON Output Contract',
+            '',
+            'Return exactly one valid JSON object matching this structure.',
+            'Return exactly one segment for every numbered source. Do not omit, duplicate, merge, or reorder sources.',
+            'importanceRank must rank all sources from 1 (most important) to the source count without duplicates.',
+            'Every segment requires one concise plot item. Only rank 1 may use additionalPlot, with at most one item.',
+            'Across all segments, preserve 1-3 exact quotes at most. Each segment may contain at most one quote; omit quotes with lower recall value.',
+            'Keep each segment strictly grounded in its own numbered source. Never move an event or detail into another source segment.',
+            'Do not use Markdown fences, commentary, or additional properties.',
+            '',
+            JSON.stringify({
+                segments: Array.from({ length: Math.max(1, sourceCount) }, (_, index) => ({
+                    sourceIndex: index + 1,
+                    importanceRank: index + 1,
+                    contextFlow: [{
+                        date: 'Day 1 or an explicit date',
+                        time: 'A concise time period',
+                        location: 'A concise location',
+                    }],
+                    plot: ['One mandatory compact causal event from this source'],
+                    additionalPlot: index === 0 ? ['One optional extra event only for the most important source'] : [],
+                    emotions: [{
+                        subject: 'Character name',
+                        trajectory: ['Compact representative emotion'],
+                        reason: 'One short causal clause',
+                    }],
+                    quotes: index < 3 ? [{
+                        speaker: 'Speaker name',
+                        text: 'Exact source dialogue',
+                    }] : [],
+                })),
+            }, null, 2),
+        ].join('\n');
+    }
     return [
         '# JSON Output Contract',
         '',
@@ -85,7 +122,7 @@ export function buildCompressionJsonContract() {
     ].join('\n');
 }
 
-export function parseCompressionResponse(response) {
+export function parseCompressionResponse(response, { segmented = false, sourceRecords = [] } = {}) {
     const source = stripCodeFence(response);
     let parsed;
     try {
@@ -94,6 +131,8 @@ export function parseCompressionResponse(response) {
         throw new Error(`압축 요약 응답 JSON 파싱에 실패했습니다: ${error.message}`);
     }
     if (!isPlainObject(parsed)) throw new Error('압축 요약 응답은 하나의 JSON 객체여야 합니다.');
+
+    if (segmented) return normalizeSegments(parsed.segments, sourceRecords);
 
     const result = {
         contextFlow: normalizeContextFlow(parsed.contextFlow),
@@ -111,6 +150,9 @@ export function renderCompressionSummary(summary, {
     template = DEFAULT_COMPRESSION_CONTENT_TEMPLATE,
     outputSections = DEFAULT_COMPRESSION_OUTPUT_SECTIONS,
 }) {
+    if (Array.isArray(summary?.segments)) {
+        return renderSegmentedCompressionSummary(summary, { startId, endId, template, outputSections });
+    }
     const visible = applyOutputSections(summary, outputSections);
     return renderTemplateData(template, {
         sumiCompressionStartId: startId,
@@ -121,6 +163,91 @@ export function renderCompressionSummary(summary, {
         sumiCompressionEmotions: visible.emotions,
         sumiCompressionQuotes: visible.quotes,
     });
+}
+
+function renderSegmentedCompressionSummary(summary, options) {
+    const merged = mergeSegmentCompactData(summary.segments);
+    return renderCompressionSummary(merged, options);
+}
+
+function mergeSegmentCompactData(segments) {
+    const ordered = Array.isArray(segments) ? segments : [];
+    const contextFlow = ordered.flatMap(segment => segment.compactData?.contextFlow || []);
+    const plot = ordered.flatMap(segment => [
+        ...(segment.compactData?.plot || []),
+        ...(Number(segment.importanceRank) === 1 ? segment.compactData?.additionalPlot || [] : []),
+    ]);
+    const emotionMap = new Map();
+    for (const segment of ordered) {
+        for (const emotion of segment.compactData?.emotions || []) {
+            const current = emotionMap.get(emotion.subject) || { subject: emotion.subject, trajectory: [], reasons: [] };
+            current.trajectory.push(...(emotion.trajectory || []));
+            if (emotion.reason) current.reasons.push(emotion.reason);
+            emotionMap.set(emotion.subject, current);
+        }
+    }
+    const emotions = [...emotionMap.values()].map(emotion => ({
+        subject: emotion.subject,
+        trajectory: dedupeAdjacent(emotion.trajectory),
+        reason: dedupeAdjacent(emotion.reasons).join('; ') || null,
+    }));
+    const quotes = ordered.flatMap(segment => segment.compactData?.quotes || []).slice(0, 3);
+    return { contextFlow, plot, emotions, quotes };
+}
+
+function normalizeSegments(value, sourceRecords) {
+    const sources = Array.isArray(sourceRecords) ? sourceRecords : [];
+    if (!Array.isArray(value) || value.length !== sources.length) {
+        throw new Error(`세그먼트 압축 응답에는 원본 ${sources.length}개와 같은 수의 세그먼트가 필요합니다.`);
+    }
+    const byIndex = new Map();
+    for (const item of value) {
+        if (!isPlainObject(item)) throw new Error('세그먼트 압축 항목이 올바르지 않습니다.');
+        const sourceIndex = Number(item.sourceIndex);
+        if (!Number.isInteger(sourceIndex) || sourceIndex < 1 || sourceIndex > sources.length || byIndex.has(sourceIndex)) {
+            throw new Error('세그먼트 압축의 sourceIndex가 누락되었거나 중복되었습니다.');
+        }
+        const plot = normalizeStringList(item.plot).slice(0, 1);
+        if (!plot.length) throw new Error(`#${sourceIndex} 원본의 세그먼트 plot이 비어 있습니다.`);
+        byIndex.set(sourceIndex, {
+            sourceRecordId: String(sources[sourceIndex - 1].id),
+            requestedRank: Number(item.importanceRank),
+            sourceIndex,
+            compactData: {
+                contextFlow: normalizeContextFlow(item.contextFlow),
+                plot,
+                additionalPlot: normalizeStringList(item.additionalPlot),
+                emotions: normalizeEmotions(item.emotions),
+                quotes: normalizeQuotes(item.quotes),
+            },
+        });
+    }
+    const ranked = [...byIndex.values()].sort((left, right) => (
+        normalizeRank(left.requestedRank, sources.length) - normalizeRank(right.requestedRank, sources.length)
+        || left.sourceIndex - right.sourceIndex
+    ));
+    const normalizedRanks = new Map(ranked.map((segment, index) => [segment.sourceRecordId, index + 1]));
+    return {
+        segments: [...byIndex.values()]
+            .sort((left, right) => left.sourceIndex - right.sourceIndex)
+            .map(segment => ({
+                sourceRecordId: segment.sourceRecordId,
+                importanceRank: normalizedRanks.get(segment.sourceRecordId),
+                compactData: {
+                    ...segment.compactData,
+                    additionalPlot: normalizedRanks.get(segment.sourceRecordId) === 1
+                        ? segment.compactData.additionalPlot.slice(0, 1)
+                        : [],
+                    quotes: normalizedRanks.get(segment.sourceRecordId) <= 3
+                        ? segment.compactData.quotes.slice(0, 1)
+                        : [],
+                },
+            })),
+    };
+}
+
+function normalizeRank(value, count) {
+    return Number.isInteger(value) && value >= 1 && value <= count ? value : count + 1;
 }
 
 function applyOutputSections(summary, outputSections) {

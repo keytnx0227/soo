@@ -24,6 +24,7 @@ import {
     updatePromptBlock,
 } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
+import { getCompressionMode } from '../summary/summary-store.js';
 import {
     buildSummaryJsonContract,
     getEnabledMemorySections,
@@ -321,7 +322,10 @@ async function showCompressionOutputContractPopup() {
         <div class="stsm-muted">압축 응답을 검증하고 레코드 형식으로 렌더링하는 계약입니다.</div>
         <textarea class="text_pole monospace" rows="18" readonly></textarea>
     `;
-    form.querySelector('textarea').value = buildCompressionJsonContract();
+    form.querySelector('textarea').value = buildCompressionJsonContract({
+        segmented: getCompressionMode() === 'segmented',
+        sourceCount: getSettings().summarization.compressionGroupSize,
+    });
     await new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기' }).show();
 }
 
@@ -346,7 +350,10 @@ async function showRevisionOutputContractPopup() {
         </label>
     `;
     form.querySelector('.stsm-revision-summary-contract').value = buildSummaryJsonContract(sections, noMemorySections);
-    form.querySelector('.stsm-revision-compression-contract').value = buildCompressionJsonContract();
+    form.querySelector('.stsm-revision-compression-contract').value = buildCompressionJsonContract({
+        segmented: getCompressionMode() === 'segmented',
+        sourceCount: getSettings().summarization.compressionGroupSize,
+    });
     await new Popup(form, POPUP_TYPE.TEXT, '', { okButton: '닫기', wide: true, large: true }).show();
 }
 

@@ -73,9 +73,14 @@ import { bindCompressionView } from './summary/compression-view.js';
 import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
 import {
     deleteSummaryRecord,
+    deleteIntegratedCompressionData,
+    getCompressionMode,
+    getIntegratedCompressionCleanupPlan,
     getSummaryRecord,
+    getSummaryRecordDeletionPlan,
     getSummaryRecordIndex,
     initializeSummaryRecordStorage,
+    setCompressionMode,
     updateSummaryRecordContent,
 } from './summary/summary-store.js';
 import { renderSummaryStatus } from './summary/summary-status-view.js';
@@ -220,9 +225,20 @@ function bindEvents(root) {
     bindDataTransfer(root, {
         onChatDataChanged: () => {
             clearRevisionSession();
+            renderCompressionModeControls(root);
             renderSummaryRecords(root, bindRecordEvents);
         },
         onGlobalSettingsChanged: () => applyImportedGlobalSettings(root),
+    });
+    root.querySelector('#stsm-delete-integrated-compressions').addEventListener('click', () => {
+        deleteIntegratedCompressions(root).catch(error => {
+            addExtensionErrorLog(error, {
+                operation: 'compression-cleanup',
+                title: '통합형 압축 데이터 삭제 실패',
+                message: '현재 채팅의 통합형 압축 데이터를 삭제하지 못했습니다.',
+            });
+            toastr.error(error.message || '통합형 압축 데이터 삭제에 실패했습니다.');
+        });
     });
     bindPeopleMemoryView(root);
     bindItemMemoryView(root);
@@ -260,6 +276,33 @@ function bindEvents(root) {
     };
 }
 
+async function deleteIntegratedCompressions(root) {
+    if (getCompressionMode() !== 'segmented') {
+        toastr.info('세그먼트형(v3)으로 전환한 뒤 삭제할 수 있습니다.');
+        return;
+    }
+    const plan = getIntegratedCompressionCleanupPlan();
+    if (!plan.count) {
+        toastr.info('삭제할 통합형(v2) 압축 데이터가 없습니다.');
+        return;
+    }
+    const first = plan.ranges[0];
+    const last = plan.ranges.at(-1);
+    const confirmed = await Popup.show.confirm(
+        `통합형(v2) 압축본 ${plan.count}개를 영구 삭제할까요?`,
+        `범위 #${first.startId} ~ #${last.endId}의 통합형 압축 내용, 번역과 사용자 수정이 삭제됩니다. 상세 원본과 세그먼트형(v3) 데이터는 유지됩니다.`,
+    );
+    if (!confirmed) return;
+    const result = await deleteIntegratedCompressionData();
+    clearRevisionSession();
+    renderSummaryRecords(root, bindRecordEvents);
+    renderRangeActions(root);
+    renderSummaryStatus(root);
+    renderCompressionModeControls(root);
+    refreshSummaryInjection();
+    toastr.success(`통합형(v2) 압축본 ${result.count}개를 삭제했습니다.`);
+}
+
 function bindSummarizationSettings(root) {
     const maxTokens = root.querySelector('#stsm-injection-max-tokens');
     const eventMaxTokens = root.querySelector('#stsm-event-injection-max-tokens');
@@ -277,6 +320,7 @@ function bindSummarizationSettings(root) {
     const position = root.querySelector('#stsm-injection-position');
     const autoHide = root.querySelector('#stsm-auto-hide-summarized');
     const compressionGroupSize = root.querySelector('#stsm-compression-group-size');
+    const compressionMode = root.querySelector('#stsm-compression-mode');
     const summarySectionToggles = root.querySelectorAll('[data-summary-section]');
     const summaryOutputSectionToggles = root.querySelectorAll('[data-summary-output-section]');
     const compressionOutputSectionToggles = root.querySelectorAll('[data-compression-output-section]');
@@ -286,6 +330,33 @@ function bindSummarizationSettings(root) {
     compressionGroupSize.addEventListener('change', event => {
         event.target.value = setCompressionGroupSize(event.target.value);
         root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+    });
+    compressionMode.addEventListener('change', async event => {
+        const previous = getCompressionMode();
+        event.target.disabled = true;
+        try {
+            await setCompressionMode(event.target.value);
+            clearRevisionSession();
+            renderCompressionModeControls(root);
+            renderSummaryRecords(root, bindRecordEvents);
+            renderRangeActions(root);
+            renderSummaryStatus(root);
+            refreshSummaryInjection();
+            root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+            toastr.success(event.target.value === 'segmented'
+                ? '세그먼트형(v3) 압축 기억으로 전환했습니다.'
+                : '통합형(v2) 압축 기억으로 전환했습니다.');
+        } catch (error) {
+            event.target.value = previous;
+            addExtensionErrorLog(error, {
+                operation: 'compression-mode',
+                title: '압축 기억 방식 변경 실패',
+                message: '현재 채팅의 압축 기억 방식을 변경하지 못했습니다.',
+            });
+            toastr.error(error.message || '압축 기억 방식 변경에 실패했습니다.');
+        } finally {
+            event.target.disabled = false;
+        }
     });
     summarySectionToggles.forEach(toggle => {
         toggle.addEventListener('change', event => {
@@ -384,6 +455,7 @@ function renderSummarizationSettings(root) {
     root.querySelector('#stsm-injection-position').value = settings.injection.position;
     root.querySelector('#stsm-auto-hide-summarized').checked = settings.autoHideSummarizedMessages;
     root.querySelector('#stsm-compression-group-size').value = settings.compressionGroupSize;
+    renderCompressionModeControls(root);
     root.querySelectorAll('[data-summary-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.summarySections[toggle.dataset.summarySection]);
     });
@@ -398,6 +470,21 @@ function renderSummarizationSettings(root) {
     });
     renderInjectionFields(root);
     renderWorldOutputFields(root);
+}
+
+function renderCompressionModeControls(root) {
+    const mode = getCompressionMode();
+    const select = root.querySelector('#stsm-compression-mode');
+    const cleanup = root.querySelector('#stsm-delete-integrated-compressions');
+    if (select) select.value = mode;
+    if (!cleanup) return;
+    const plan = getIntegratedCompressionCleanupPlan();
+    cleanup.disabled = mode !== 'segmented' || plan.count === 0;
+    cleanup.title = mode !== 'segmented'
+        ? '세그먼트형(v3)으로 전환한 뒤 삭제할 수 있습니다.'
+        : plan.count
+            ? `현재 채팅의 통합형(v2) 압축본 ${plan.count}개를 삭제합니다.`
+            : '삭제할 통합형(v2) 압축 데이터가 없습니다.';
 }
 
 function updateSummaryOutputSection(toggle) {
@@ -1010,9 +1097,13 @@ function getRecordRange(recordOrElement) {
 
 async function showDeleteConfirmation(record) {
     const sourceRecord = getSummaryRecord(record.dataset.recordId);
+    const plan = getSummaryRecordDeletionPlan([record.dataset.recordId]);
+    const dependentDescription = plan.dependentRecords.length
+        ? ` 이 원본을 사용하는 다른 압축본 ${plan.dependentRecords.length}개도 함께 삭제됩니다.`
+        : '';
     const message = sourceRecord?.type === 'compressed'
         ? '이 압축본을 삭제하시겠습니까? 압축에 포함된 직계 원본 요약은 다시 활성화됩니다.'
-        : '정말 삭제하시겠습니까? 삭제된 기록은 복구할 수 없습니다.';
+        : `정말 삭제하시겠습니까? 삭제된 기록은 복구할 수 없습니다.${dependentDescription}`;
     const confirmed = await showConfirmation(message, '삭제');
     if (!confirmed) return;
 
