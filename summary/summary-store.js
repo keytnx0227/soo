@@ -15,6 +15,7 @@ export const COMPRESSION_MODES = Object.freeze({
 });
 let renderCacheOwner = null;
 let recordRenderCache = new Map();
+const normalizedStores = new WeakSet();
 window.addEventListener('stsm:records-changed', clearRecordRenderCache);
 
 export function getSummaryRecords() {
@@ -49,6 +50,19 @@ export function getSummaryRecord(recordId) {
     const mode = resolveCompressionMode();
     const record = getModeRecords(store.records, mode).find(item => item.id === String(recordId));
     return record ? hydrateRecord(record, getRecordRenderSettings(), mode) : null;
+}
+
+export function getSummaryRecordsByIds(recordIds) {
+    const ids = Array.isArray(recordIds) ? recordIds.map(String) : [];
+    if (!ids.length) return [];
+    const store = getStore();
+    const mode = resolveCompressionMode();
+    const recordsById = new Map(getModeRecords(store.records, mode).map(record => [record.id, record]));
+    const renderSettings = getRecordRenderSettings();
+    return ids.map(id => {
+        const record = recordsById.get(id);
+        return record ? hydrateRecord(record, renderSettings, mode) : null;
+    });
 }
 
 export function getCompressionMode() {
@@ -725,8 +739,11 @@ function getStore() {
     }
 
     const store = metadata[METADATA_KEY];
-    store.records = normalizeRecords(store.records);
-    store.recentRevisionConversation = normalizeRevisionConversation(store.recentRevisionConversation);
+    if (!normalizedStores.has(store)) {
+        store.records = normalizeRecords(store.records);
+        store.recentRevisionConversation = normalizeRevisionConversation(store.recentRevisionConversation);
+        normalizedStores.add(store);
+    }
     return store;
 }
 

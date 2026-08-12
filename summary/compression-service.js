@@ -14,6 +14,7 @@ import {
     getCompressionMode,
     getActiveSummaryRecords,
     getSummaryRecord,
+    getSummaryRecordsByIds,
     updateSummaryRecordContent,
 } from './summary-store.js';
 
@@ -103,7 +104,7 @@ export async function regenerateCompressedSummary(recordId) {
     assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record?.compression) throw new Error('재생성할 압축 요약 기록을 찾지 못했습니다.');
-    const sources = record.compression.sourceRecordIds.map(getSummaryRecord);
+    const sources = getSummaryRecordsByIds(record.compression.sourceRecordIds);
     if (sources.some(source => !source)) throw new Error('압축 요약의 원본 레코드 일부를 찾지 못했습니다.');
     const snapshot = createSourceSnapshot(sources);
     const mode = getCompressionMode();
@@ -152,8 +153,10 @@ function createSourceSnapshot(sources) {
 }
 
 function assertSourcesUnchanged(snapshot, expectedParentId = null) {
-    for (const expected of snapshot) {
-        const current = getSummaryRecord(expected.id);
+    const currentRecords = getSummaryRecordsByIds(snapshot.map(record => record.id));
+    for (let index = 0; index < snapshot.length; index += 1) {
+        const expected = snapshot[index];
+        const current = currentRecords[index];
         if (!current || current.contentHash !== expected.contentHash) {
             throw new Error('압축 요청 중 원본 요약이 변경되어 결과를 저장하지 않았습니다.');
         }
