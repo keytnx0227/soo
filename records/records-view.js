@@ -47,7 +47,7 @@ export function bindRecordsView(root, bindRecordEvents) {
             logRecordViewError(error, '요약 기록 전체 화면 열기 실패', '요약 기록 전체 화면을 열지 못했습니다.');
         });
     });
-    const renderContextUsage = () => renderSummaryContextTokenUsage(root);
+    const renderContextUsage = event => renderSummaryContextTokenUsage(root, event?.detail || null);
     const unsubscribeExtensionState = subscribeExtensionState(renderContextUsage);
     window.addEventListener('stsm:long-term-retrieval-changed', renderContextUsage);
     renderSummaryRecords(root, bindRecordEvents);
@@ -57,19 +57,19 @@ export function bindRecordsView(root, bindRecordEvents) {
     };
 }
 
-export function renderSummaryRecords(root, bindRecordEvents) {
+export function renderSummaryRecords(root, bindRecordEvents, { renderContextUsage = true } = {}) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
     renderRecordList(list, direction, getSelectedMemoryView(root), getRecordSearchState(root), bindRecordEvents);
-    renderSummaryContextTokenUsage(root);
+    if (renderContextUsage) renderSummaryContextTokenUsage(root);
     root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
 }
 
-export function renderSummaryContextTokenUsage(root) {
+export function renderSummaryContextTokenUsage(root, contextDetails = null) {
     const host = root.querySelector('#stsm-summary-context-token-usage');
     if (!host) return;
     try {
-        const details = buildSummaryContextDetails();
+        const details = contextDetails || buildSummaryContextDetails();
         host.innerHTML = `
             ${renderTokenUsageBar({
                 label: '{{sumiSummary}} 합본',

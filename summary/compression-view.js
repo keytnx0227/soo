@@ -9,6 +9,7 @@ import {
     createCompressionBatchPlan,
     getCompressionCandidates,
 } from './compression-service.js';
+import { publishSummaryRecordsChanged } from './summary-store.js';
 
 export function bindCompressionView(root, { onCreated } = {}) {
     const button = root.querySelector('#stsm-open-compression');
@@ -83,6 +84,12 @@ async function openCompressionPopup(button, onCreated) {
     let plan = null;
     const completedRecords = [];
     let currentBatchIndex = 0;
+    let changesPublished = false;
+    const publishCompletedChanges = () => {
+        if (changesPublished || !completedRecords.length) return;
+        changesPublished = true;
+        publishSummaryRecordsChanged();
+    };
     const summarizeButton = button.closest('#stsm-root')?.querySelector('#stsm-summarize');
     const summarizeWasDisabled = summarizeButton?.disabled;
     try {
@@ -100,7 +107,11 @@ async function openCompressionPopup(button, onCreated) {
                 operationToken,
                 `#${batchStart.startId} ~ #${batchEnd.endId} 압축 중 (${currentBatchIndex + 1}/${plan.batches.length})`,
             );
-            const record = await compressSummaryRecords({ startRecordId: batchStart.id, count: batch.length });
+            const record = await compressSummaryRecords({
+                startRecordId: batchStart.id,
+                count: batch.length,
+                notifyChanges: false,
+            });
             completedRecords.push(record);
 
             if (getSettings().translation.autoTranslate) {
@@ -121,6 +132,7 @@ async function openCompressionPopup(button, onCreated) {
                 }
             }
         }
+        publishCompletedChanges();
         await onCreated?.(completedRecords.at(-1));
         toastr.success(`${plan.sources.length}개의 요약 레코드를 ${completedRecords.length}개의 압축본으로 만들었습니다.`);
     } catch (error) {
@@ -142,7 +154,10 @@ async function openCompressionPopup(button, onCreated) {
                 unattemptedRanges: unattempted.map(batch => ({ startId: batch[0].startId, endId: batch.at(-1).endId })),
             },
         });
-        if (completedRecords.length) await onCreated?.(completedRecords.at(-1));
+        if (completedRecords.length) {
+            publishCompletedChanges();
+            await onCreated?.(completedRecords.at(-1));
+        }
         const completedLabel = completedRecords.length ? ` · 완료 ${completedRecords.length}회` : '';
         toastr.error(`${error.message || '요약 레코드 압축에 실패했습니다.'}${completedLabel}`);
     } finally {

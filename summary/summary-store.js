@@ -342,7 +342,14 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
     return hydrateRecord(record);
 }
 
-export async function addCompressedSummaryRecord({ sourceRecordIds, content, compressionData, languageMode, mode = getCompressionMode() }) {
+export async function addCompressedSummaryRecord({
+    sourceRecordIds,
+    content,
+    compressionData,
+    languageMode,
+    mode = getCompressionMode(),
+    notifyChanges = true,
+}) {
     const store = getStore();
     const normalizedMode = normalizeCompressionMode(mode);
     const normalizedSourceIds = [...new Set((Array.isArray(sourceRecordIds) ? sourceRecordIds : []).map(String))];
@@ -401,8 +408,12 @@ export async function addCompressedSummaryRecord({ sourceRecordIds, content, com
         store.records = previousRecords;
         throw error;
     }
-    notifyRecordsChanged();
+    if (notifyChanges) notifyRecordsChanged();
     return hydrateRecord(record);
+}
+
+export function publishSummaryRecordsChanged() {
+    notifyRecordsChanged();
 }
 
 export async function deleteSummaryRecord(recordId) {

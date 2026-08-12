@@ -68,7 +68,7 @@ export function createCompressionBatchPlan(startRecordId, count, repeatCount) {
     };
 }
 
-export async function compressSummaryRecords({ startRecordId, count }) {
+export async function compressSummaryRecords({ startRecordId, count, notifyChanges = true }) {
     assertExtensionEnabled();
     const sources = selectCompressionSources(startRecordId, count);
     const snapshot = createSourceSnapshot(sources);
@@ -97,6 +97,7 @@ export async function compressSummaryRecords({ startRecordId, count }) {
         },
         languageMode: outputLanguage,
         mode,
+        notifyChanges,
     });
 }
 

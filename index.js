@@ -218,7 +218,7 @@ function bindEvents(root) {
     const unbindRecordsView = bindRecordsView(root, bindRecordEvents);
     bindCompressionView(root, {
         onCreated: () => {
-            renderSummaryRecords(root, bindRecordEvents);
+            renderSummaryRecords(root, bindRecordEvents, { renderContextUsage: false });
             setActiveTab(root, 'records');
         },
     });
@@ -1331,11 +1331,10 @@ function initialize() {
     context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => {
         clearRevisionSession();
         invalidateAtlasProjection();
-        refreshSummaryInjection();
         if (!currentRoot) return;
         currentRoot.querySelector('#stsm-range-start').value = '';
         currentRoot.querySelector('#stsm-range-end').value = '';
-        renderSummaryRecords(currentRoot, bindRecordEvents);
+        renderSummaryRecords(currentRoot, bindRecordEvents, { renderContextUsage: false });
         renderPeopleMemory(currentRoot);
         renderItemMemory(currentRoot);
         renderCommitmentMemory(currentRoot);

@@ -27,6 +27,7 @@ const WORLD_INFO_BOOTSTRAP_UID = -731942;
 const RECORD_SEPARATOR = '\n\n';
 let initialized = false;
 let worldInfoInjectionSuppressionDepth = 0;
+let retrievalRefreshQueued = false;
 
 export function initializeSummaryContext() {
     if (initialized) return;
@@ -37,7 +38,7 @@ export function initializeSummaryContext() {
     refreshSummaryInjection();
     window.addEventListener('stsm:records-changed', queueRetrievalRefresh);
     window.addEventListener('stsm:atlas-changed', queueRetrievalRefresh);
-    window.addEventListener('stsm:injection-settings-changed', refreshRetrievalState);
+    window.addEventListener('stsm:injection-settings-changed', queueRetrievalRefresh);
     for (const eventType of [
         event_types.CHAT_CHANGED,
         event_types.MESSAGE_SENT,
@@ -50,17 +51,18 @@ export function initializeSummaryContext() {
     ]) {
         eventSource.on(eventType, queueRetrievalRefresh);
     }
-    eventSource.on(event_types.GENERATION_AFTER_COMMANDS, refreshRetrievalState);
+    eventSource.on(event_types.GENERATION_AFTER_COMMANDS, queueRetrievalRefresh);
 }
 
-export function refreshSummaryInjection() {
+export function refreshSummaryInjection(details = null) {
     if (!isExtensionEnabled()) {
         setExtensionPrompt(INJECTION_KEY, '', extension_prompt_types.NONE, 0);
-        return;
+        return details || buildSummaryContextDetails();
     }
 
     const settings = getSettings().summarization.injection;
-    const value = buildSummaryContext();
+    const resolvedDetails = details || buildSummaryContextDetails();
+    const value = resolvedDetails.content;
     const roles = {
         system: extension_prompt_roles.SYSTEM,
         user: extension_prompt_roles.USER,
@@ -75,6 +77,7 @@ export function refreshSummaryInjection() {
     } else {
         setExtensionPrompt(INJECTION_KEY, '', extension_prompt_types.NONE, 0);
     }
+    return resolvedDetails;
 }
 
 export function buildSummaryContext() {
@@ -339,10 +342,16 @@ function injectVirtualWorldInfoEntry(scan) {
 }
 
 function queueRetrievalRefresh() {
-    queueMicrotask(refreshRetrievalState);
+    if (retrievalRefreshQueued) return;
+    retrievalRefreshQueued = true;
+    queueMicrotask(() => {
+        retrievalRefreshQueued = false;
+        refreshRetrievalState();
+    });
 }
 
 function refreshRetrievalState() {
-    refreshSummaryInjection();
-    window.dispatchEvent(new CustomEvent('stsm:long-term-retrieval-changed'));
+    const details = buildSummaryContextDetails();
+    refreshSummaryInjection(details);
+    window.dispatchEvent(new CustomEvent('stsm:long-term-retrieval-changed', { detail: details }));
 }
