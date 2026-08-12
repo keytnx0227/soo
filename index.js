@@ -74,7 +74,7 @@ import { regenerateSummaryRecord, summarizeRange } from './summary/summary-servi
 import {
     deleteSummaryRecord,
     getSummaryRecord,
-    getSummaryRecords,
+    getSummaryRecordIndex,
     initializeSummaryRecordStorage,
     updateSummaryRecordContent,
 } from './summary/summary-store.js';
@@ -517,7 +517,7 @@ function bindRangeActions(root) {
     const plus = root.querySelector('#stsm-range-chunk-plus');
 
     afterLast.addEventListener('click', () => {
-        const records = getSummaryRecords();
+        const records = getSummaryRecordIndex();
         if (!records.length) return;
         const nextId = Math.max(...records.map(record => record.endId)) + 1;
         if (nextId > getLastChatId()) return;
@@ -556,7 +556,7 @@ function renderRangeActions(root) {
 
 function renderNextSummaryAction(root) {
     const lastChatId = getLastChatId();
-    const records = getSummaryRecords();
+    const records = getSummaryRecordIndex();
     const nextSummaryId = records.length ? Math.max(...records.map(record => record.endId)) + 1 : null;
     setButtonDisabled(root.querySelector('#stsm-range-after-last'), nextSummaryId === null || nextSummaryId > lastChatId);
 }

@@ -14,7 +14,7 @@ import { world_info_position } from '../../../../../scripts/world-info.js';
 import { isExtensionEnabled } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { finalizeRetrievalResult, retrieveLongTermRecords } from '../memory/long-term-retrieval.js';
-import { getActiveSummaryRecords, getSummaryRecords } from './summary-store.js';
+import { getSummaryRecords } from './summary-store.js';
 import { buildContextBlockComposition } from './context-block-composer.js';
 
 const INJECTION_KEY = 'sumi_chat_summarizer_context';
@@ -90,7 +90,7 @@ export function buildSummaryContextDetails() {
     }
     const context = SillyTavern.getContext();
     const allRecords = getSummaryRecords();
-    const activeRecords = getActiveSummaryRecords();
+    const activeRecords = allRecords.filter(record => !record.compressedBy);
     const retrieval = retrieveLongTermRecords({
         records: allRecords,
         messages: context.chat,

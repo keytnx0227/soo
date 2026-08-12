@@ -1,7 +1,7 @@
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { createRangeShiftProposal, formatRange } from './range-adjustment.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
-import { getSummaryRecords, updateSummaryRecordRanges } from '../summary/summary-store.js';
+import { getSummaryRecordIndex, updateSummaryRecordRanges } from '../summary/summary-store.js';
 
 export function bindRangeAdjustment(root, { onApplied } = {}) {
     root.querySelector('#stsm-adjust-record-ranges').addEventListener('click', async () => {
@@ -20,7 +20,7 @@ export function bindRangeAdjustment(root, { onApplied } = {}) {
 }
 
 async function openRangeAdjustmentPopup(onApplied) {
-    if (!getSummaryRecords().length) {
+    if (!getSummaryRecordIndex().length) {
         toastr.info('교정할 요약 기록이 없습니다.');
         return;
     }
@@ -65,7 +65,7 @@ async function openRangeAdjustmentPopup(onApplied) {
             if (amount === null || amount < 1) throw new Error('변경 메시지 개수는 1 이상의 정수로 입력해주세요.');
 
             const chat = SillyTavern.getContext().chat;
-            const proposal = createRangeShiftProposal(getSummaryRecords(), {
+            const proposal = createRangeShiftProposal(getSummaryRecordIndex(), {
                 threshold,
                 delta: direction * amount,
                 chatLength: Array.isArray(chat) ? chat.length : 0,

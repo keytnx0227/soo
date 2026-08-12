@@ -5,7 +5,7 @@ import { escapeHtml } from '../core/utils.js';
 import { formatRanges, getCoveredRanges } from '../summary/range-utils.js';
 import {
     clearAtlasRecordReviewOverride,
-    getSummaryRecords,
+    getSummaryRecordIndex,
 } from '../summary/summary-store.js';
 import {
     deleteAtlasReviewRecord,
@@ -267,7 +267,7 @@ function buildReviewMarkup() {
 
 function renderStatus(content) {
     const chat = SillyTavern.getContext().chat;
-    const records = getSummaryRecords();
+    const records = getSummaryRecordIndex();
     const ranges = getCoveredRanges(records);
     const summarized = ranges.reduce((total, range) => {
         const startId = Math.max(0, range.startId);

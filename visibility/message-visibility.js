@@ -7,7 +7,7 @@ import {
 } from './message-visibility-state.js';
 import { getCoveredRanges } from '../summary/range-utils.js';
 import { getSettings } from '../core/settings.js';
-import { getSummaryRecords } from '../summary/summary-store.js';
+import { getSummaryRecordIndex } from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 
 let operationQueue = Promise.resolve();
@@ -64,7 +64,7 @@ async function synchronizeVisibility() {
     const chat = context.chat;
     if (!Array.isArray(chat) || !chat.length) return { hidden: 0, unhidden: 0 };
 
-    const coveredIds = getCoveredMessageIds(getSummaryRecords(), chat.length);
+    const coveredIds = getCoveredMessageIds(getSummaryRecordIndex(), chat.length);
     const idsToHide = [];
     const idsToUnhide = [];
     let markerChangedWithoutVisibility = false;
@@ -118,7 +118,7 @@ async function releaseUncoveredOwnedMessages() {
     const chat = SillyTavern.getContext().chat;
     if (!Array.isArray(chat) || !chat.length) return { hidden: 0, unhidden: 0 };
 
-    const coveredIds = getCoveredMessageIds(getSummaryRecords(), chat.length);
+    const coveredIds = getCoveredMessageIds(getSummaryRecordIndex(), chat.length);
     const idsToUnhide = [];
     let markerChangedWithoutVisibility = false;
 

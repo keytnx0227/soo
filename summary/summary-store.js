@@ -9,9 +9,25 @@ import { createRecordDeletionPlan } from './range-deletion.js';
 const METADATA_KEY = 'sumi_chat_summarizer';
 const COMPRESSION_CONTENT_MIGRATION_VERSION = 1;
 const RECORD_STORAGE_VERSION = 1;
+let renderCacheOwner = null;
+let recordRenderCache = new Map();
+window.addEventListener('stsm:records-changed', clearRecordRenderCache);
 
 export function getSummaryRecords() {
-    return getStore().records.map(hydrateRecord);
+    const records = getStore().records;
+    const renderSettings = getRecordRenderSettings();
+    return records.map(record => hydrateRecord(record, renderSettings));
+}
+
+export function getSummaryRecordIndex() {
+    return getStore().records.map(toRecordIndexEntry);
+}
+
+export function getSummaryRecordSourceIndex() {
+    return getStore().records.map(record => ({
+        ...toRecordIndexEntry(record),
+        sourceFingerprint: record.sourceFingerprint ? structuredClone(record.sourceFingerprint) : null,
+    }));
 }
 
 export function getActiveSummaryRecords() {
@@ -20,7 +36,24 @@ export function getActiveSummaryRecords() {
 
 export function getSummaryRecord(recordId) {
     const record = getStore().records.find(item => item.id === String(recordId));
-    return record ? hydrateRecord(record) : null;
+    return record ? hydrateRecord(record, getRecordRenderSettings()) : null;
+}
+
+function toRecordIndexEntry(record) {
+    return {
+        id: record.id,
+        type: record.type,
+        compressedBy: record.compressedBy,
+        pinned: record.pinned,
+        batchId: record.batchId,
+        startId: record.startId,
+        endId: record.endId,
+        compression: record.compression ? {
+            level: record.compression.level,
+        } : null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+    };
 }
 
 export async function initializeSummaryRecordStorage() {
@@ -290,7 +323,7 @@ export async function deleteSummaryRecord(recordId) {
 }
 
 export function getSummaryRecordDeletionPlan(recordIds) {
-    return createRecordDeletionPlan(getSummaryRecords(), recordIds);
+    return createRecordDeletionPlan(getSummaryRecordIndex(), recordIds);
 }
 
 export async function deleteSummaryRecords(recordIds) {
@@ -370,6 +403,7 @@ export async function updateSummaryRecordContent(recordId, content, {
         if (keepLegacyContent) nextRecord.legacyContent = normalizedContent;
         else delete nextRecord.legacyContent;
 
+        recordRenderCache.delete(normalizedId);
         const nextRuntimeRecord = hydrateRecord(nextRecord);
         nextRecord.translation = nextRuntimeRecord.contentHash === previousRuntimeRecord.contentHash
             ? record.translation
@@ -384,6 +418,7 @@ export async function updateSummaryRecordContent(recordId, content, {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.records = previousRecords;
+        recordRenderCache.delete(normalizedId);
         throw error;
     }
     notifyRecordsChanged();
@@ -594,6 +629,10 @@ export async function clearAllSummaryTranslations() {
 function getStore() {
     const context = SillyTavern.getContext();
     const metadata = context.chatMetadata;
+    if (renderCacheOwner !== metadata) {
+        renderCacheOwner = metadata;
+        recordRenderCache = new Map();
+    }
 
     if (!metadata[METADATA_KEY] || typeof metadata[METADATA_KEY] !== 'object') {
         metadata[METADATA_KEY] = { records: [] };
@@ -653,33 +692,72 @@ function normalizeRecords(records) {
     });
 }
 
-function hydrateRecord(record) {
-    const settings = getSettings().summarization;
-    const content = record.legacyContent
-        ? record.legacyContent
-        : record.compression?.data
-            ? renderCompressionSummary(record.compression.data, {
-                startId: record.startId,
-                endId: record.endId,
-                template: settings.compressionContentTemplate,
-                outputSections: settings.compressionOutputSections,
-            })
-            : record.structuredSummary?.data
-                ? renderStructuredSummary(record.structuredSummary.data, {
-                    startId: record.startId,
-                    endId: record.endId,
-                    template: settings.summaryContentTemplate,
-                    outputSections: settings.summaryOutputSections,
-                })
-                : '';
-    const contentHash = createContentHash(content);
+function hydrateRecord(record, renderSettings = getRecordRenderSettings()) {
+    const cacheKey = createRecordRenderCacheKey(record, renderSettings);
+    let rendered = recordRenderCache.get(record.id);
+    if (rendered?.key !== cacheKey) {
+        const content = renderRecordContent(record, renderSettings);
+        rendered = {
+            key: cacheKey,
+            content,
+            contentHash: createContentHash(content),
+        };
+        recordRenderCache.set(record.id, rendered);
+    }
     return {
         ...record,
-        content,
-        contentHash,
+        content: rendered.content,
+        contentHash: rendered.contentHash,
         contentEdited: Boolean(record.legacyContent),
-        translation: normalizeTranslation(record.translation, contentHash, record.translation?.sourceHash),
+        translation: normalizeTranslation(record.translation, rendered.contentHash, record.translation?.sourceHash),
     };
+}
+
+function getRecordRenderSettings() {
+    const settings = getSettings().summarization;
+    return {
+        summaryTemplate: settings.summaryContentTemplate,
+        summaryOutputSections: settings.summaryOutputSections,
+        compressionTemplate: settings.compressionContentTemplate,
+        compressionOutputSections: settings.compressionOutputSections,
+    };
+}
+
+function renderRecordContent(record, settings) {
+    if (record.legacyContent) return record.legacyContent;
+    if (record.compression?.data) {
+        return renderCompressionSummary(record.compression.data, {
+            startId: record.startId,
+            endId: record.endId,
+            template: settings.compressionTemplate,
+            outputSections: settings.compressionOutputSections,
+        });
+    }
+    if (record.structuredSummary?.data) {
+        return renderStructuredSummary(record.structuredSummary.data, {
+            startId: record.startId,
+            endId: record.endId,
+            template: settings.summaryTemplate,
+            outputSections: settings.summaryOutputSections,
+        });
+    }
+    return '';
+}
+
+function createRecordRenderCacheKey(record, settings) {
+    const template = record.compression ? settings.compressionTemplate : settings.summaryTemplate;
+    const outputSections = record.compression
+        ? settings.compressionOutputSections
+        : settings.summaryOutputSections;
+    return [
+        record.type,
+        record.startId,
+        record.endId,
+        record.updatedAt || record.createdAt,
+        record.legacyContent || '',
+        template,
+        JSON.stringify(outputSections),
+    ].join('\u0000');
 }
 
 function normalizeCompression(value) {
@@ -781,6 +859,10 @@ function normalizeStoredTranslation(translation, fallbackSourceHash = '') {
 
 function createContentHash(content) {
     return String(getStringHash(String(content || '').trim()));
+}
+
+function clearRecordRenderCache() {
+    recordRenderCache = new Map();
 }
 
 function notifyRecordsChanged() {

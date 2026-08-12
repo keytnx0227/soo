@@ -2,8 +2,9 @@ import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import {
     deleteSummaryRecords,
+    getSummaryRecord,
     getSummaryRecordDeletionPlan,
-    getSummaryRecords,
+    getSummaryRecordIndex,
 } from '../summary/summary-store.js';
 import { escapeHtml } from '../core/utils.js';
 
@@ -19,7 +20,7 @@ export function bindRangeDeletion(root, { onApplied } = {}) {
 
 async function openRangeDeletionPopup(root, onApplied) {
     const memoryView = root.dataset.recordMemoryView === 'long-term' ? 'long-term' : 'active';
-    const candidates = getSummaryRecords()
+    const candidates = getSummaryRecordIndex()
         .filter(record => memoryView === 'long-term' ? Boolean(record.compressedBy) : !record.compressedBy)
         .sort(compareRecords);
     if (!candidates.length) {
@@ -87,7 +88,11 @@ async function openRangeDeletionPopup(root, onApplied) {
             return;
         }
         const plan = getSummaryRecordDeletionPlan(selectedIds);
-        const recordsById = new Map(getSummaryRecords().map(record => [record.id, record]));
+        const previewIds = [...plan.directRecords, ...plan.dependentRecords].map(record => record.id);
+        const recordsById = new Map(previewIds
+            .map(getSummaryRecord)
+            .filter(Boolean)
+            .map(record => [record.id, record]));
         inlinePreview.innerHTML = `
             ${renderContentPreviewGroup('직접 선택한 기록', plan.directRecords, recordsById)}
             ${renderContentPreviewGroup('압축 관계로 함께 삭제되는 기록', plan.dependentRecords, recordsById)}

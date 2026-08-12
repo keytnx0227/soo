@@ -14,7 +14,7 @@ import {
 import {
     addSummaryRecord,
     getSummaryRecord,
-    getSummaryRecords,
+    getSummaryRecordIndex,
     updateSummaryRecordContent,
 } from './summary-store.js';
 import { regenerateCompressedSummary } from './compression-service.js';
@@ -216,7 +216,7 @@ export async function regenerateSummaryRecord(recordId) {
 }
 
 function validateUncoveredRange(startId, endId) {
-    const records = getSummaryRecords();
+    const records = getSummaryRecordIndex();
     const overlaps = findOverlappingRanges(startId, endId, records);
     if (!overlaps.length) return;
 

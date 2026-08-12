@@ -1,10 +1,10 @@
 import { getCoveredRanges } from './range-utils.js';
-import { getSummaryRecords } from './summary-store.js';
+import { getSummaryRecordIndex } from './summary-store.js';
 
 export function renderSummaryStatus(root) {
     const chat = SillyTavern.getContext().chat;
     const messages = Array.isArray(chat) ? chat : [];
-    const records = getSummaryRecords();
+    const records = getSummaryRecordIndex();
     const summarizedCount = countCoveredMessages(messages, getCoveredRanges(records));
     const lastSummaryId = records.length
         ? Math.max(...records.map(record => record.endId))

@@ -2,7 +2,7 @@ import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { collectChatRangeMessages, renderChatMessage } from './chat-message-view.js';
 import { getCoverageSegments } from '../summary/range-utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
-import { getSummaryRecords } from '../summary/summary-store.js';
+import { getSummaryRecordIndex } from '../summary/summary-store.js';
 
 export function bindCoverageMap(root) {
     root.querySelector('#stsm-open-coverage-map').addEventListener('click', async () => {
@@ -23,7 +23,7 @@ export function bindCoverageMap(root) {
 async function openCoverageMap(summaryRoot) {
     const chat = SillyTavern.getContext().chat;
     const messages = Array.isArray(chat) ? chat : [];
-    const segments = getCoverageSegments(messages.length, getSummaryRecords());
+    const segments = getCoverageSegments(messages.length, getSummaryRecordIndex());
     const content = document.createElement('div');
     content.className = 'stsm-coverage-popup';
 

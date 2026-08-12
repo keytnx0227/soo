@@ -3,7 +3,12 @@ import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { openSummaryRecordDetail } from './record-detail-view.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
 import { getSummaryRecordSourceStatuses, SOURCE_STATES } from '../summary/source-tracking.js';
-import { getSummaryRecords, updateSummaryRecordPinned } from '../summary/summary-store.js';
+import {
+    getSummaryRecordIndex,
+    getSummaryRecords,
+    getSummaryRecordSourceIndex,
+    updateSummaryRecordPinned,
+} from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { getRecordTags } from './record-tags.js';
@@ -118,7 +123,7 @@ function renderRecordList(list, direction, memoryView, searchState, bindRecordEv
         });
         recordElement.querySelector('.stsm-record-pin')?.addEventListener('click', async event => {
             const button = event.currentTarget;
-            const record = getSummaryRecords().find(item => item.id === recordElement.dataset.recordId);
+            const record = getSummaryRecordIndex().find(item => item.id === recordElement.dataset.recordId);
             if (!record || button.disabled) return;
             button.disabled = true;
             try {
@@ -317,12 +322,12 @@ function logRecordViewError(error, title, message, context = null) {
 }
 
 function getElementRecordRange(recordElement) {
-    const record = getSummaryRecords().find(item => item.id === recordElement.dataset.recordId);
+    const record = getSummaryRecordIndex().find(item => item.id === recordElement.dataset.recordId);
     return record ? { startId: record.startId, endId: record.endId } : null;
 }
 
 export function refreshSummaryRecordSourceStates(root) {
-    const records = getSummaryRecords();
+    const records = getSummaryRecordSourceIndex();
     const sourceStatuses = getSummaryRecordSourceStatuses(records);
     root.querySelectorAll('.stsm-record').forEach(recordElement => {
         const slot = recordElement.querySelector('.stsm-record-source-state-slot');
