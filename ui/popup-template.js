@@ -458,6 +458,7 @@ export function buildPopup() {
                     ${renderSummaryOutputToggle('location', '장소')}
                     ${renderSummaryOutputToggle('continuity', '연속성 변화')}
                     ${renderSummaryOutputToggle('emotions', '감정')}
+                    ${renderSummaryOutputToggle('emotionReasons', '감정 이유', 'emotions')}
                     ${renderSummaryOutputToggle('quotes', '주요 대사')}
                 </div>
                 <p class="stsm-settings-note">출력을 꺼도 저장된 데이터는 유지되며, 다시 켜면 복원됩니다.</p>
@@ -475,6 +476,7 @@ export function buildPopup() {
                     ${renderCompressionOutputToggle('time', '시간')}
                     ${renderCompressionOutputToggle('location', '장소')}
                     ${renderCompressionOutputToggle('emotions', '감정')}
+                    ${renderCompressionOutputToggle('emotionReasons', '감정 이유', null, 'emotions')}
                     ${renderCompressionOutputToggle('quotes', '주요 대사')}
                 </div>
                 <p class="stsm-settings-note">출력을 꺼도 압축 데이터는 유지되며, 다시 켜면 복원됩니다.</p>
@@ -607,9 +609,9 @@ function renderSummarySectionToggle(section, label, required = false) {
     `;
 }
 
-function renderSummaryOutputToggle(section, label) {
+function renderSummaryOutputToggle(section, label, requires = null) {
     return `
-        <div class="stsm-summary-section-toggle">
+        <div class="stsm-summary-section-toggle"${requires ? ` data-summary-output-requires="${requires}"` : ''}>
             <span class="stsm-summary-section-label"><span>${label}</span></span>
             <label class="stsm-switch" title="${label} 출력 켜기/끄기">
                 <input type="checkbox" data-summary-output-section="${section}" />
@@ -619,9 +621,9 @@ function renderSummaryOutputToggle(section, label) {
     `;
 }
 
-function renderCompressionOutputToggle(section, label, mode = null) {
+function renderCompressionOutputToggle(section, label, mode = null, requires = null) {
     return `
-        <div class="stsm-summary-section-toggle"${mode ? ` data-compression-output-mode="${mode}"` : ''}>
+        <div class="stsm-summary-section-toggle"${mode ? ` data-compression-output-mode="${mode}"` : ''}${requires ? ` data-compression-output-requires="${requires}"` : ''}>
             <span class="stsm-summary-section-label"><span>${label}</span></span>
             <label class="stsm-switch" title="${label} 출력 켜기/끄기">
                 <input type="checkbox" data-compression-output-section="${section}" />

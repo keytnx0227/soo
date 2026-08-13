@@ -1677,18 +1677,20 @@ function normalizeSummarySections(value) {
 
 function normalizeSummaryOutputSections(value) {
     const source = value && typeof value === 'object' ? value : {};
-    return Object.fromEntries(Object.entries(DEFAULT_SUMMARY_OUTPUT_SECTIONS).map(([key, fallback]) => [
+    const normalized = Object.fromEntries(Object.entries(DEFAULT_SUMMARY_OUTPUT_SECTIONS).map(([key, fallback]) => [
         key,
         source[key] === undefined ? fallback : Boolean(source[key]),
     ]));
+    return normalized;
 }
 
 function normalizeCompressionOutputSections(value) {
     const source = value && typeof value === 'object' ? value : {};
-    return Object.fromEntries(Object.entries(DEFAULT_COMPRESSION_OUTPUT_SECTIONS).map(([key, fallback]) => [
+    const normalized = Object.fromEntries(Object.entries(DEFAULT_COMPRESSION_OUTPUT_SECTIONS).map(([key, fallback]) => [
         key,
         source[key] === undefined ? fallback : Boolean(source[key]),
     ]));
+    return normalized;
 }
 
 function normalizeMemorySections(value) {

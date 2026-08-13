@@ -31,6 +31,7 @@ export const DEFAULT_SUMMARY_SECTIONS = Object.freeze({
     plot: true,
     continuity: true,
     emotions: true,
+    emotionReasons: true,
     quotes: true,
     tags: true,
 });
@@ -769,9 +770,22 @@ function applyOutputSections(summary, outputSections) {
         contextFlow,
         plot: enabled.plot ? summary?.plot : [],
         continuityChanges: enabled.continuity ? summary?.continuityChanges : [],
-        emotions: enabled.emotions ? summary?.emotions : [],
+        emotions: enabled.emotions
+            ? applyEmotionReasonOutput(summary?.emotions, enabled.emotionReasons)
+            : [],
         quotes: enabled.quotes ? summary?.quotes : [],
     };
+}
+
+function applyEmotionReasonOutput(emotions, includeReasons) {
+    const source = Array.isArray(emotions) ? emotions : [];
+    if (includeReasons) return source;
+    return source.map(emotion => ({
+        ...emotion,
+        states: Array.isArray(emotion.states)
+            ? emotion.states.map(state => ({ ...state, reason: null }))
+            : [],
+    }));
 }
 
 function normalizeContextFlow(value, sections) {

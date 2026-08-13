@@ -2772,6 +2772,16 @@
     border-bottom: 1px solid rgb(128 128 128 / 22%);
 }
 
+.stsm-summary-section-toggle:is([data-summary-output-requires], [data-compression-output-requires]) {
+    margin-left: 10px;
+    padding-left: 12px;
+    border-left: 1px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-summary-section-toggle.stsm-control-disabled {
+    opacity: 0.42;
+}
+
 .stsm-summary-section-label {
     display: flex;
     min-width: 0;

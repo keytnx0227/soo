@@ -486,6 +486,7 @@ function renderSummarizationSettings(root) {
     root.querySelectorAll('[data-compression-output-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.compressionOutputSections[toggle.dataset.compressionOutputSection]);
     });
+    renderOutputSectionDependencies(root);
     root.querySelectorAll('[data-memory-section]').forEach(toggle => {
         toggle.checked = Boolean(settings.memorySections[toggle.dataset.memorySection]);
     });
@@ -511,17 +512,36 @@ function renderCompressionModeControls(root) {
             : '삭제할 통합형(v2) 압축 데이터가 없습니다.';
 }
 
+function renderOutputSectionDependencies(root) {
+    root.querySelectorAll('[data-summary-output-requires]').forEach(container => {
+        const parent = root.querySelector(`[data-summary-output-section="${container.dataset.summaryOutputRequires}"]`);
+        const toggle = container.querySelector('[data-summary-output-section]');
+        const disabled = !parent?.checked;
+        if (toggle) toggle.disabled = disabled;
+        container.classList.toggle('stsm-control-disabled', disabled);
+    });
+    root.querySelectorAll('[data-compression-output-requires]').forEach(container => {
+        const parent = root.querySelector(`[data-compression-output-section="${container.dataset.compressionOutputRequires}"]`);
+        const toggle = container.querySelector('[data-compression-output-section]');
+        const disabled = !parent?.checked;
+        if (toggle) toggle.disabled = disabled;
+        container.classList.toggle('stsm-control-disabled', disabled);
+    });
+}
+
 function updateSummaryOutputSection(toggle) {
     const section = toggle.dataset.summaryOutputSection;
     const next = toggle.checked;
     const previous = !next;
     try {
         setSummaryOutputSectionEnabled(section, next);
+        renderOutputSectionDependencies(toggle.closest('#stsm-root'));
         window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
         toastr.success('요약 출력 항목을 변경했습니다.');
     } catch (error) {
         setSummaryOutputSectionEnabled(section, previous);
         toggle.checked = previous;
+        renderOutputSectionDependencies(toggle.closest('#stsm-root'));
         console.error('[Chat Summarizer] Failed to apply summary output sections:', error);
         addExtensionErrorLog(error, {
             operation: 'summary-output-settings',
@@ -538,11 +558,13 @@ function updateCompressionOutputSection(toggle) {
     const previous = !next;
     try {
         setCompressionOutputSectionEnabled(section, next);
+        renderOutputSectionDependencies(toggle.closest('#stsm-root'));
         window.dispatchEvent(new CustomEvent('stsm:record-content-template-applied'));
         toastr.success('압축 요약 출력 항목을 변경했습니다.');
     } catch (error) {
         setCompressionOutputSectionEnabled(section, previous);
         toggle.checked = previous;
+        renderOutputSectionDependencies(toggle.closest('#stsm-root'));
         console.error('[Chat Summarizer] Failed to apply compression output sections:', error);
         addExtensionErrorLog(error, {
             operation: 'compression-output-settings',
