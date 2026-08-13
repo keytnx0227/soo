@@ -3653,6 +3653,34 @@
     white-space: nowrap;
 }
 
+.stsm-block-title-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.stsm-block-title-row .stsm-block-title {
+    min-width: 0;
+}
+
+.stsm-character-prompt-badge {
+    display: inline-flex;
+    min-width: 0;
+    max-width: min(180px, 42%);
+    align-items: center;
+    gap: 4px;
+    padding: 1px 5px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    overflow: hidden;
+    color: var(--SmartThemeQuoteColor);
+    font-size: 0.78em;
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .stsm-block-preview {
     margin-top: 2px;
     overflow: hidden;

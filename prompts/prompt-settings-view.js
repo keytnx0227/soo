@@ -32,6 +32,12 @@ import {
     getSummarySectionKeyForKind,
     SUMMARY_SECTION_DESCRIPTIONS,
 } from '../summary/summary-format.js';
+import {
+    getCurrentCharacterPromptTarget,
+    isPromptBlockApplicable,
+    normalizePromptScope,
+    PROMPT_SCOPE_TYPES,
+} from './character-prompt-scope.js';
 
 const TYPE_LABELS = Object.freeze({
     [PROMPT_TYPES.SUMMARY]: '요약',
@@ -81,7 +87,11 @@ export function renderPromptEditor(root, type) {
             </div>
         </div>
         <div class="stsm-block-list">
-            ${preset.blocks.filter(block => !editor.hideSeparators || !block.separator).map(block => renderPromptBlock(block, summarySections)).join('')}
+            ${preset.blocks
+                .filter(block => type !== PROMPT_TYPES.SUMMARY || isPromptBlockApplicable(block))
+                .filter(block => !editor.hideSeparators || !block.separator)
+                .map(block => renderPromptBlock(block, summarySections))
+                .join('')}
         </div>
     `;
 }
@@ -120,13 +130,22 @@ function renderPromptBlock(block, summarySections) {
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
         BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
     ].includes(block.kind);
+    const promptScope = normalizePromptScope(block.scope);
+    const characterScope = promptScope.type === PROMPT_SCOPE_TYPES.CHARACTER;
+    const currentTarget = characterScope ? getCurrentCharacterPromptTarget() : null;
+    const characterName = currentTarget && currentTarget.characterKey === promptScope.characterKey
+        ? currentTarget.characterName
+        : promptScope.characterName || '캐릭터';
     return `
         <div class="stsm-block${block.separator ? ' stsm-block-separator' : ''}${controlledBySection && !enabled ? ' stsm-block-section-disabled' : ''}${generatedBlock ? ' stsm-block-generated' : ''}" data-block-id="${escapeHtml(block.id)}" draggable="true">
             <div class="stsm-block-grip" title="드래그로 이동">
                 <i class="fa-solid fa-grip-vertical"></i>
             </div>
             <div class="stsm-block-main">
-                <div class="stsm-block-title">${escapeHtml(block.name)}</div>
+                <div class="stsm-block-title-row">
+                    <div class="stsm-block-title">${escapeHtml(block.name)}</div>
+                    ${characterScope ? `<span class="stsm-character-prompt-badge" title="${escapeHtml(characterName)} 전용 프롬프트"><i class="fa-solid fa-user" aria-hidden="true"></i>${escapeHtml(characterName)}</span>` : ''}
+                </div>
                 <div class="stsm-block-preview">${escapeHtml(getBlockPreview(block))}</div>
             </div>
             ${generatedBlock ? '' : `
@@ -184,9 +203,9 @@ async function handleEditorClick(root, type, event) {
         resetActivePreset(type);
         renderPromptEditor(root, type);
     } else if (action === 'add-block') {
-        const values = await showPromptBlockPopup({ title: '프롬프트 추가', okButton: '추가' });
+        const values = await showPromptBlockPopup({ title: '프롬프트 추가', okButton: '추가', type });
         if (!values) return;
-        addPromptBlock(type, values.name, values.content);
+        addPromptBlock(type, values.name, values.content, { scope: values.scope });
         renderPromptEditor(root, type);
     } else if (action === 'edit-block') {
         const block = getActivePreset(type).blocks.find(item => item.id === blockId);
@@ -211,7 +230,7 @@ async function handleEditorClick(root, type, event) {
             root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
             return;
         }
-        const values = await showPromptBlockPopup({ title: '프롬프트 수정', okButton: '수정하기', block });
+        const values = await showPromptBlockPopup({ title: '프롬프트 수정', okButton: '수정하기', block, type });
         if (!values) return;
         updatePromptBlock(type, blockId, values);
         renderPromptEditor(root, type);
@@ -399,8 +418,14 @@ function handleDrop(root, type, event) {
     }
 }
 
-async function showPromptBlockPopup({ title, okButton, block = null }) {
+async function showPromptBlockPopup({ title, okButton, block = null, type }) {
     const isRecentSummary = block?.kind === BLOCK_KINDS.RECENT_SUMMARIES;
+    const supportsCharacterScope = type === PROMPT_TYPES.SUMMARY
+        && (!block || (block.kind === BLOCK_KINDS.EDITABLE && !block.locked));
+    const currentTarget = supportsCharacterScope ? getCurrentCharacterPromptTarget() : null;
+    const selectedScope = block?.scope?.type === PROMPT_SCOPE_TYPES.CHARACTER
+        ? PROMPT_SCOPE_TYPES.CHARACTER
+        : PROMPT_SCOPE_TYPES.GLOBAL;
     const form = document.createElement('div');
     form.className = 'stsm-prompt-form';
     form.innerHTML = `
@@ -409,6 +434,15 @@ async function showPromptBlockPopup({ title, okButton, block = null }) {
             <span>프롬프트 이름</span>
             <input class="stsm-block-name text_pole" type="text" />
         </label>
+        ${supportsCharacterScope ? `
+            <label class="stsm-field">
+                <span>적용 범위</span>
+                <select class="stsm-block-scope text_pole">
+                    <option value="${PROMPT_SCOPE_TYPES.GLOBAL}">공통 프롬프트</option>
+                    <option value="${PROMPT_SCOPE_TYPES.CHARACTER}" ${currentTarget ? '' : 'disabled'}>현재 캐릭터 전용${currentTarget ? ` · ${escapeHtml(currentTarget.characterName)}` : ' · 선택된 캐릭터 없음'}</option>
+                </select>
+            </label>
+        ` : ''}
         <label class="stsm-field">
             <span>내용</span>
             <textarea class="stsm-block-content text_pole monospace" rows="10"></textarea>
@@ -428,6 +462,8 @@ async function showPromptBlockPopup({ title, okButton, block = null }) {
     `;
     form.querySelector('.stsm-block-name').value = block?.name || '';
     form.querySelector('.stsm-block-content').value = block?.content || '';
+    const scopeSelect = form.querySelector('.stsm-block-scope');
+    if (scopeSelect) scopeSelect.value = selectedScope;
 
     if (isRecentSummary) {
         const countEnabled = form.querySelector('.stsm-recent-count-enabled');
@@ -458,7 +494,11 @@ async function showPromptBlockPopup({ title, okButton, block = null }) {
         return null;
     }
 
-    if (!isRecentSummary) return { name, content };
+    const scope = scopeSelect?.value === PROMPT_SCOPE_TYPES.CHARACTER && currentTarget
+        ? { type: PROMPT_SCOPE_TYPES.CHARACTER, ...currentTarget }
+        : { type: PROMPT_SCOPE_TYPES.GLOBAL };
+
+    if (!isRecentSummary) return { name, content, scope };
 
     const countEnabled = form.querySelector('.stsm-recent-count-enabled').checked;
     const countValue = Number(form.querySelector('.stsm-recent-count-value').value);
@@ -473,6 +513,7 @@ async function showPromptBlockPopup({ title, okButton, block = null }) {
     return {
         name,
         content,
+        scope,
         config: {
             countLimit: { enabled: countEnabled, value: countValue },
             tokenLimit: { enabled: tokenEnabled, value: tokenValue },

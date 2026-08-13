@@ -26,6 +26,7 @@ import {
     getSummarySectionKeyForKind,
     getSummaryLanguageInstruction,
 } from '../summary/summary-format.js';
+import { isPromptBlockApplicable } from './character-prompt-scope.js';
 
 const ATLAS_REVIEW_PROMPT_DEFINITIONS = Object.freeze({
     people: { kind: BLOCK_KINDS.PEOPLE_MEMORY, macro: 'sumiPeopleMemory', buildContext: buildPeopleMemoryPromptContext },
@@ -46,13 +47,17 @@ export function getSummaryOutputConfiguration() {
 
 export async function buildSummaryPrompt({ messages, startId, endId }, outputConfiguration = getSummaryOutputConfiguration()) {
     const preset = getActivePreset(PROMPT_TYPES.SUMMARY);
-    const recentSummaryBlock = preset.blocks.find(block => block.enabled && block.kind === BLOCK_KINDS.RECENT_SUMMARIES);
+    const recentSummaryBlock = preset.blocks.find(block => (
+        block.enabled && isPromptBlockApplicable(block) && block.kind === BLOCK_KINDS.RECENT_SUMMARIES
+    ));
     const recentSummaries = recentSummaryBlock ? buildRecentSummaryContent(recentSummaryBlock, startId) : '';
     const { sections, memorySections, languageMode } = outputConfiguration;
     const chunk = { messages, startId, endId, recentSummaries, sections, memorySections, languageMode };
     const parts = [];
 
-    for (const block of preset.blocks.filter(block => isSummaryBlockEnabled(block, sections))) {
+    for (const block of preset.blocks.filter(block => (
+        isPromptBlockApplicable(block) && isSummaryBlockEnabled(block, sections)
+    ))) {
         const content = await renderSummaryBlock(block, chunk);
         if (content.trim()) parts.push(content.trim());
     }

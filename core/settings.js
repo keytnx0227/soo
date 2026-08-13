@@ -19,6 +19,7 @@ import {
     getCompressionContentTemplatePresetId,
     LEGACY_COMPRESSION_CONTENT_TEMPLATE_WITH_RELATIONSHIPS,
 } from '../summary/compression-format.js';
+import { normalizePromptScope } from '../prompts/character-prompt-scope.js';
 
 export const MODULE_NAME = 'sumi_chat_summarizer';
 
@@ -1046,8 +1047,8 @@ export function setPromptSeparatorsHidden(type, hidden) {
     return editor.hideSeparators;
 }
 
-export function addPromptBlock(type, name, content) {
-    const block = createPromptBlock({ name, content });
+export function addPromptBlock(type, name, content, { scope } = {}) {
+    const block = createPromptBlock({ name, content, scope });
     updateActivePreset(type, preset => ({
         ...preset,
         blocks: [...preset.blocks, block],
@@ -1180,17 +1181,22 @@ export function createPromptBlock({
     kind = BLOCK_KINDS.EDITABLE,
     separator = false,
     config = {},
+    scope = null,
 } = {}) {
     const normalizedKind = Object.values(BLOCK_KINDS).includes(kind) ? kind : BLOCK_KINDS.EDITABLE;
+    const normalizedLocked = Boolean(locked);
     return {
         id,
         name: String(name || '새 프롬프트'),
         content: String(content || ''),
         enabled: isRequiredPromptBlock({ kind: normalizedKind }) ? true : Boolean(enabled),
-        locked: Boolean(locked),
+        locked: normalizedLocked,
         kind: normalizedKind,
         separator: Boolean(separator),
         config: normalizePromptBlockConfig(normalizedKind, config),
+        scope: normalizedKind === BLOCK_KINDS.EDITABLE && !normalizedLocked
+            ? normalizePromptScope(scope)
+            : normalizePromptScope(null),
     };
 }
 
