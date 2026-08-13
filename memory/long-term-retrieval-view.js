@@ -2,18 +2,18 @@ import { getSettings, setSummarizationSettings } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
 
-export function bindLongTermRetrievalSettings(root) {
+export function bindLongTermRetrievalSettings(root, initialContextDetails = null) {
     const container = root.querySelector('.stsm-long-term-retrieval');
     if (!container || container.dataset.bound) return;
     container.dataset.bound = 'true';
     container.addEventListener('change', event => handleSettingChange(root, event));
-    const refresh = () => renderLongTermRetrievalSettings(root);
+    const refresh = event => renderLongTermRetrievalSettings(root, event?.detail || null);
     window.addEventListener('stsm:long-term-retrieval-changed', refresh);
-    renderLongTermRetrievalSettings(root);
+    renderLongTermRetrievalSettings(root, initialContextDetails);
     return () => window.removeEventListener('stsm:long-term-retrieval-changed', refresh);
 }
 
-export function renderLongTermRetrievalSettings(root) {
+export function renderLongTermRetrievalSettings(root, contextDetails = null) {
     const container = root.querySelector('.stsm-long-term-retrieval');
     if (!container) return;
     const settings = getSettings().summarization.longTermRetrieval;
@@ -33,7 +33,7 @@ export function renderLongTermRetrievalSettings(root) {
     });
     container.querySelector('.stsm-long-term-max-records-field').hidden = settings.mode !== 'relevance'
         || settings.relevanceLimitMode !== 'top';
-    renderRetrievalResult(container, buildSummaryContextDetails().retrieval);
+    renderRetrievalResult(container, (contextDetails || buildSummaryContextDetails()).retrieval);
 }
 
 export function renderLongTermRetrievalPreview(retrieval) {

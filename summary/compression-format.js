@@ -8,6 +8,7 @@ export const DEFAULT_COMPRESSION_OUTPUT_SECTIONS = Object.freeze({
     time: true,
     location: true,
     plot: true,
+    additionalPlot: true,
     emotions: true,
     quotes: true,
 });
@@ -166,16 +167,19 @@ export function renderCompressionSummary(summary, {
 }
 
 function renderSegmentedCompressionSummary(summary, options) {
-    const merged = mergeSegmentCompactData(summary.segments);
+    const enabled = { ...DEFAULT_COMPRESSION_OUTPUT_SECTIONS, ...(options.outputSections || {}) };
+    const merged = mergeSegmentCompactData(summary.segments, enabled.additionalPlot);
     return renderCompressionSummary(merged, options);
 }
 
-function mergeSegmentCompactData(segments) {
+function mergeSegmentCompactData(segments, includeAdditionalPlot = true) {
     const ordered = Array.isArray(segments) ? segments : [];
     const contextFlow = ordered.flatMap(segment => segment.compactData?.contextFlow || []);
     const plot = ordered.flatMap(segment => [
         ...(segment.compactData?.plot || []),
-        ...(Number(segment.importanceRank) === 1 ? segment.compactData?.additionalPlot || [] : []),
+        ...(includeAdditionalPlot && Number(segment.importanceRank) === 1
+            ? segment.compactData?.additionalPlot || []
+            : []),
     ]);
     const emotionMap = new Map();
     for (const segment of ordered) {

@@ -470,6 +470,7 @@ export function buildPopup() {
                 </summary>
                 <div class="stsm-summary-section-grid">
                     ${renderCompressionOutputToggle('plot', '플롯')}
+                    ${renderCompressionOutputToggle('additionalPlot', '추가 플롯', 'segmented')}
                     ${renderCompressionOutputToggle('date', '날짜')}
                     ${renderCompressionOutputToggle('time', '시간')}
                     ${renderCompressionOutputToggle('location', '장소')}
@@ -618,9 +619,9 @@ function renderSummaryOutputToggle(section, label) {
     `;
 }
 
-function renderCompressionOutputToggle(section, label) {
+function renderCompressionOutputToggle(section, label, mode = null) {
     return `
-        <div class="stsm-summary-section-toggle">
+        <div class="stsm-summary-section-toggle"${mode ? ` data-compression-output-mode="${mode}"` : ''}>
             <span class="stsm-summary-section-label"><span>${label}</span></span>
             <label class="stsm-switch" title="${label} 출력 켜기/끄기">
                 <input type="checkbox" data-compression-output-section="${section}" />

@@ -11,7 +11,7 @@ import { getEventAtlas } from './event-memory-service.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
 import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 
-export function bindEventMemoryView(root) {
+export function bindEventMemoryView(root, initialContextDetails = null) {
     const list = root.querySelector('#stsm-event-memory-list');
     const excluded = root.querySelector('#stsm-event-memory-excluded');
     if (list && !list.dataset.bound) {
@@ -22,10 +22,10 @@ export function bindEventMemoryView(root) {
         excluded.dataset.bound = 'true';
         excluded.addEventListener('click', handleAtlasAction);
     }
-    renderEventMemory(root);
+    renderEventMemory(root, initialContextDetails);
 }
 
-export function renderEventMemory(root) {
+export function renderEventMemory(root, contextDetails = null) {
     const list = root.querySelector('#stsm-event-memory-list');
     const excludedHost = root.querySelector('#stsm-event-memory-excluded');
     const count = root.querySelector('#stsm-event-memory-count');
@@ -39,7 +39,7 @@ export function renderEventMemory(root) {
     count.textContent = `${atlas.events.length.toLocaleString()}개`;
     let omittedIds = new Set();
     if (tokenUsage) {
-        const details = buildSummaryContextDetails();
+        const details = contextDetails || buildSummaryContextDetails();
         const block = details.blocks?.find(item => item.kind === SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS);
         if (details.enabled && block?.enabled) {
             omittedIds = new Set((block.omittedItems || []).map(item => String(item.id)));

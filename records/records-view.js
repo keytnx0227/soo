@@ -20,7 +20,7 @@ import { renderExtensionControls } from '../ui/extension-status-view.js';
 import { renderRecordSearchControls } from '../ui/popup-template.js';
 import { renderLongTermRetrievalPreview } from '../memory/long-term-retrieval-view.js';
 
-export function bindRecordsView(root, bindRecordEvents) {
+export function bindRecordsView(root, bindRecordEvents, initialContextDetails = null) {
     root.querySelector('#stsm-preview-summary-context').addEventListener('click', async () => {
         try {
             await showSummaryContextPreview();
@@ -47,21 +47,29 @@ export function bindRecordsView(root, bindRecordEvents) {
             logRecordViewError(error, '요약 기록 전체 화면 열기 실패', '요약 기록 전체 화면을 열지 못했습니다.');
         });
     });
-    const renderContextUsage = event => renderSummaryContextTokenUsage(root, event?.detail || null);
+    let initialStateNotification = true;
+    const renderContextUsage = event => {
+        const contextDetails = initialStateNotification ? initialContextDetails : event?.detail || null;
+        initialStateNotification = false;
+        renderSummaryContextTokenUsage(root, contextDetails);
+    };
     const unsubscribeExtensionState = subscribeExtensionState(renderContextUsage);
     window.addEventListener('stsm:long-term-retrieval-changed', renderContextUsage);
-    renderSummaryRecords(root, bindRecordEvents);
+    renderSummaryRecords(root, bindRecordEvents, { renderContextUsage: false });
     return () => {
         unsubscribeExtensionState();
         window.removeEventListener('stsm:long-term-retrieval-changed', renderContextUsage);
     };
 }
 
-export function renderSummaryRecords(root, bindRecordEvents, { renderContextUsage = true } = {}) {
+export function renderSummaryRecords(root, bindRecordEvents, {
+    renderContextUsage = true,
+    contextDetails = null,
+} = {}) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
     renderRecordList(list, direction, getSelectedMemoryView(root), getRecordSearchState(root), bindRecordEvents);
-    if (renderContextUsage) renderSummaryContextTokenUsage(root);
+    if (renderContextUsage) renderSummaryContextTokenUsage(root, contextDetails);
     root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
 }
 

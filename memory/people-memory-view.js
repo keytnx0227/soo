@@ -27,7 +27,7 @@ const FIELD_DEFINITIONS = Object.freeze([
     { key: 'voice', label: '말투' },
 ]);
 
-export function bindPeopleMemoryView(root) {
+export function bindPeopleMemoryView(root, initialContextDetails = null) {
     const list = root.querySelector('#stsm-people-memory-list');
     const excluded = root.querySelector('#stsm-people-memory-excluded');
     if (list && !list.dataset.bound) {
@@ -38,10 +38,10 @@ export function bindPeopleMemoryView(root) {
         excluded.dataset.bound = 'true';
         excluded.addEventListener('click', event => handleAtlasAction(event, 'people'));
     }
-    renderPeopleMemory(root);
+    renderPeopleMemory(root, initialContextDetails);
 }
 
-export function renderPeopleMemory(root) {
+export function renderPeopleMemory(root, contextDetails = null) {
     const list = root.querySelector('#stsm-people-memory-list');
     const excludedHost = root.querySelector('#stsm-people-memory-excluded');
     const count = root.querySelector('#stsm-people-memory-count');
@@ -64,7 +64,7 @@ export function renderPeopleMemory(root) {
     count.textContent = `${atlas.people.length.toLocaleString()}명`;
     let omittedIds = new Set();
     if (tokenUsage) {
-        const details = buildSummaryContextDetails();
+        const details = contextDetails || buildSummaryContextDetails();
         const block = details.blocks?.find(item => item.kind === SUMMARY_CONTEXT_BLOCK_KINDS.PEOPLE);
         if (details.enabled && block?.enabled) {
             omittedIds = new Set((block.omittedItems || []).map(item => String(item.id)));

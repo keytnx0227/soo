@@ -59,7 +59,11 @@ import {
     setSummarizationSettings,
     setTranslationSettings,
 } from './core/settings.js';
-import { initializeSummaryContext, refreshSummaryInjection } from './summary/summary-context.js';
+import {
+    buildSummaryContextDetails,
+    initializeSummaryContext,
+    refreshSummaryInjection,
+} from './summary/summary-context.js';
 import { bindContextBlockSettings, renderContextBlockSettings } from './summary/context-block-settings-view.js';
 import {
     bindSummaryRecordTemplateSettings,
@@ -197,7 +201,8 @@ function bindEvents(root) {
     });
     bindSummarizationSettings(root);
     bindContextBlockSettings(root);
-    const unbindLongTermRetrieval = bindLongTermRetrievalSettings(root);
+    const initialContextDetails = buildSummaryContextDetails();
+    const unbindLongTermRetrieval = bindLongTermRetrievalSettings(root, initialContextDetails);
     bindSummaryRecordTemplateSettings(root);
     bindCompressionTemplateSettings(root);
     bindRangeActions(root);
@@ -215,7 +220,7 @@ function bindEvents(root) {
     bindConnectionSettings(root);
     bindPromptSettings(root);
     bindPromptInspector(root);
-    const unbindRecordsView = bindRecordsView(root, bindRecordEvents);
+    const unbindRecordsView = bindRecordsView(root, bindRecordEvents, initialContextDetails);
     bindCompressionView(root, {
         onCreated: () => {
             renderSummaryRecords(root, bindRecordEvents, { renderContextUsage: false });
@@ -240,10 +245,10 @@ function bindEvents(root) {
             toastr.error(error.message || '통합형 압축 데이터 삭제에 실패했습니다.');
         });
     });
-    bindPeopleMemoryView(root);
+    bindPeopleMemoryView(root, initialContextDetails);
     bindItemMemoryView(root);
     bindCommitmentMemoryView(root);
-    bindEventMemoryView(root);
+    bindEventMemoryView(root, initialContextDetails);
     bindWorldMemoryView(root);
     bindAtlasFullscreenView(root);
     bindAtlasReview(root);
@@ -493,6 +498,9 @@ function renderCompressionModeControls(root) {
     const select = root.querySelector('#stsm-compression-mode');
     const cleanup = root.querySelector('#stsm-delete-integrated-compressions');
     if (select) select.value = mode;
+    root.querySelectorAll('[data-compression-output-mode]').forEach(element => {
+        element.hidden = element.dataset.compressionOutputMode !== mode;
+    });
     if (!cleanup) return;
     const plan = getIntegratedCompressionCleanupPlan();
     cleanup.disabled = mode !== 'segmented' || plan.count === 0;
