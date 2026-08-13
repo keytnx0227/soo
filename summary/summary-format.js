@@ -31,7 +31,6 @@ export const DEFAULT_SUMMARY_SECTIONS = Object.freeze({
     plot: true,
     continuity: true,
     emotions: true,
-    emotionReasons: true,
     quotes: true,
     tags: true,
 });
@@ -44,6 +43,7 @@ export const DEFAULT_SUMMARY_OUTPUT_SECTIONS = Object.freeze({
     plot: true,
     continuity: true,
     emotions: true,
+    emotionReasons: true,
     quotes: true,
 });
 
