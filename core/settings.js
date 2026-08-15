@@ -761,6 +761,9 @@ export const defaultSettings = Object.freeze({
             maxTokens: 6000,
             relevance: 'balanced',
             messageRecency: 'balanced',
+            messageRecencyStrength: 'medium',
+            messageRecencyOldestWeight: 0.5,
+            messageRecencyNewestWeight: 2,
             relevanceLimitMode: 'all',
             relevanceMaxRecords: 3,
         },
@@ -1587,6 +1590,11 @@ function normalizeLongTermRetrievalSettings(value) {
         maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
         relevance: ['loose', 'balanced', 'strict'].includes(source.relevance) ? source.relevance : 'balanced',
         messageRecency: ['balanced', 'recent'].includes(source.messageRecency) ? source.messageRecency : 'balanced',
+        messageRecencyStrength: ['weak', 'medium', 'strong', 'custom'].includes(source.messageRecencyStrength)
+            ? source.messageRecencyStrength
+            : 'medium',
+        messageRecencyOldestWeight: clampNumber(source.messageRecencyOldestWeight, 0, 10, 0.5),
+        messageRecencyNewestWeight: clampNumber(source.messageRecencyNewestWeight, 0, 10, 2),
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };

@@ -142,10 +142,29 @@ export function buildPopup() {
                         <label class="stsm-field stsm-long-term-relevance-field">
                             <span>최근 메시지 가중</span>
                             <select id="stsm-long-term-message-recency" data-long-term-setting="messageRecency" class="text_pole">
-                                <option value="balanced">균형형 (기존)</option>
+                                <option value="balanced">균형형 (기존 · 0.75→1.0)</option>
                                 <option value="recent">최근 우선</option>
                             </select>
                         </label>
+                        <label class="stsm-field stsm-long-term-relevance-field stsm-long-term-recency-strength-field">
+                            <span>최근 가중 강도</span>
+                            <select id="stsm-long-term-recency-strength" data-long-term-setting="messageRecencyStrength" class="text_pole">
+                                <option value="weak">약하게 (0.75→1.5)</option>
+                                <option value="medium">중간 (0.5→2.0)</option>
+                                <option value="strong">강하게 (0.25→3.0)</option>
+                                <option value="custom">커스텀</option>
+                            </select>
+                        </label>
+                        <div class="stsm-long-term-relevance-field stsm-long-term-custom-recency-field">
+                            <label class="stsm-field">
+                                <span>가장 오래된 메시지 가중치</span>
+                                <input id="stsm-long-term-oldest-weight" data-long-term-setting="messageRecencyOldestWeight" class="text_pole" type="number" min="0" max="10" step="0.05" />
+                            </label>
+                            <label class="stsm-field">
+                                <span>최신 메시지 가중치</span>
+                                <input id="stsm-long-term-newest-weight" data-long-term-setting="messageRecencyNewestWeight" class="text_pole" type="number" min="0" max="10" step="0.05" />
+                            </label>
+                        </div>
                         <label class="stsm-field stsm-long-term-relevance-field">
                             <span>불러올 기억 수</span>
                             <select id="stsm-long-term-limit-mode" data-long-term-setting="relevanceLimitMode" class="text_pole">
@@ -158,12 +177,14 @@ export function buildPopup() {
                             <input id="stsm-long-term-max-records" data-long-term-setting="relevanceMaxRecords" class="text_pole" type="number" min="1" max="100" />
                         </label>
                     </div>
-                    <div class="stsm-long-term-result-group">
-                        <strong class="stsm-long-term-result-label">현재 문맥</strong>
+                    <div class="stsm-long-term-result-tabs" role="tablist" aria-label="검색 결과 시점">
+                        <button class="stsm-long-term-result-tab stsm-long-term-result-tab-active menu_button interactable" type="button" data-long-term-result-view="current" role="tab" aria-selected="true">현재 문맥</button>
+                        <button class="stsm-long-term-result-tab menu_button interactable" type="button" data-long-term-result-view="last" role="tab" aria-selected="false">마지막 생성 요청</button>
+                    </div>
+                    <div data-long-term-result-panel="current">
                         <div class="stsm-long-term-result" aria-live="polite"></div>
                     </div>
-                    <div class="stsm-long-term-result-group">
-                        <strong class="stsm-long-term-result-label">마지막 생성 요청</strong>
+                    <div data-long-term-result-panel="last" hidden>
                         <div class="stsm-long-term-result stsm-long-term-last-result" aria-live="polite"></div>
                     </div>
                 </div>

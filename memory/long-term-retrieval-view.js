@@ -8,12 +8,14 @@ export function bindLongTermRetrievalSettings(root, initialContextDetails = null
     if (!container || container.dataset.bound) return;
     container.dataset.bound = 'true';
     container.addEventListener('change', event => handleSettingChange(root, event));
+    container.addEventListener('click', event => handleResultTabClick(container, event));
     const refresh = event => renderLongTermRetrievalSettings(root, event?.detail || null);
     const refreshLastGeneration = () => renderLastGenerationRetrieval(container);
     window.addEventListener('stsm:long-term-retrieval-changed', refresh);
     window.addEventListener('stsm:last-generation-retrieval-changed', refreshLastGeneration);
     renderLongTermRetrievalSettings(root, initialContextDetails);
     renderLastGenerationRetrieval(container);
+    setResultView(container, 'current');
     return () => {
         window.removeEventListener('stsm:long-term-retrieval-changed', refresh);
         window.removeEventListener('stsm:last-generation-retrieval-changed', refreshLastGeneration);
@@ -30,6 +32,9 @@ export function renderLongTermRetrievalSettings(root, contextDetails = null) {
     container.querySelector('#stsm-long-term-max-tokens').value = settings.maxTokens;
     container.querySelector('#stsm-long-term-relevance').value = settings.relevance;
     container.querySelector('#stsm-long-term-message-recency').value = settings.messageRecency;
+    container.querySelector('#stsm-long-term-recency-strength').value = settings.messageRecencyStrength;
+    container.querySelector('#stsm-long-term-oldest-weight').value = settings.messageRecencyOldestWeight;
+    container.querySelector('#stsm-long-term-newest-weight').value = settings.messageRecencyNewestWeight;
     container.querySelector('#stsm-long-term-limit-mode').value = settings.relevanceLimitMode;
     container.querySelector('#stsm-long-term-max-records').value = settings.relevanceMaxRecords;
     container.querySelector('.stsm-long-term-settings-grid').classList.toggle('stsm-control-disabled', !settings.enabled);
@@ -39,6 +44,11 @@ export function renderLongTermRetrievalSettings(root, contextDetails = null) {
     container.querySelectorAll('.stsm-long-term-relevance-field').forEach(field => {
         field.hidden = settings.mode !== 'relevance';
     });
+    container.querySelector('.stsm-long-term-recency-strength-field').hidden = settings.mode !== 'relevance'
+        || settings.messageRecency !== 'recent';
+    container.querySelector('.stsm-long-term-custom-recency-field').hidden = settings.mode !== 'relevance'
+        || settings.messageRecency !== 'recent'
+        || settings.messageRecencyStrength !== 'custom';
     container.querySelector('.stsm-long-term-max-records-field').hidden = settings.mode !== 'relevance'
         || settings.relevanceLimitMode !== 'top';
     renderRetrievalResult(container, (contextDetails || buildSummaryContextDetails()).retrieval);
@@ -67,6 +77,25 @@ function handleSettingChange(root, event) {
     };
     setSummarizationSettings({ longTermRetrieval: next });
     renderLongTermRetrievalSettings(root);
+}
+
+function handleResultTabClick(container, event) {
+    const tab = event.target.closest('[data-long-term-result-view]');
+    if (!tab || !container.contains(tab)) return;
+    setResultView(container, tab.dataset.longTermResultView);
+}
+
+function setResultView(container, view) {
+    const normalized = view === 'last' ? 'last' : 'current';
+    container.dataset.resultView = normalized;
+    container.querySelectorAll('[data-long-term-result-view]').forEach(tab => {
+        const selected = tab.dataset.longTermResultView === normalized;
+        tab.classList.toggle('stsm-long-term-result-tab-active', selected);
+        tab.setAttribute('aria-selected', String(selected));
+    });
+    container.querySelectorAll('[data-long-term-result-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.longTermResultPanel !== normalized;
+    });
 }
 
 function renderRetrievalResult(container, retrieval) {

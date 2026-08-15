@@ -35,7 +35,7 @@ export function retrieveLongTermRecords({
 
     const normalizedMessages = contextMessages.map((message, index) => ({
         text: normalizeSearchText(message.mes),
-        recency: getMessageRecencyWeight(index, contextMessages.length, normalizedSettings.messageRecency),
+        recency: getMessageRecencyWeight(index, contextMessages.length, normalizedSettings),
     })).filter(message => message.text);
     if (!normalizedMessages.length && !base.pinnedRecordCount) return base;
 
@@ -192,23 +192,40 @@ function normalizeRetrievalSettings(value) {
         maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
         relevance: Object.hasOwn(RELEVANCE_THRESHOLDS, source.relevance) ? source.relevance : 'balanced',
         messageRecency: ['balanced', 'recent'].includes(source.messageRecency) ? source.messageRecency : 'balanced',
+        messageRecencyStrength: ['weak', 'medium', 'strong', 'custom'].includes(source.messageRecencyStrength)
+            ? source.messageRecencyStrength
+            : 'medium',
+        messageRecencyOldestWeight: clampNumber(source.messageRecencyOldestWeight, 0, 10, 0.5),
+        messageRecencyNewestWeight: clampNumber(source.messageRecencyNewestWeight, 0, 10, 2),
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
 }
 
-function getMessageRecencyWeight(index, count, mode) {
-    if (mode === 'recent') {
-        if (count <= 1) return 2;
-        return 0.5 + (index / (count - 1)) * 1.5;
+function getMessageRecencyWeight(index, count, settings) {
+    const [oldestWeight, newestWeight] = getMessageRecencyRange(settings);
+    if (count <= 1) return newestWeight;
+    return oldestWeight + (index / (count - 1)) * (newestWeight - oldestWeight);
+}
+
+function getMessageRecencyRange(settings) {
+    if (settings.messageRecency !== 'recent') return [0.75, 1];
+    if (settings.messageRecencyStrength === 'weak') return [0.75, 1.5];
+    if (settings.messageRecencyStrength === 'strong') return [0.25, 3];
+    if (settings.messageRecencyStrength === 'custom') {
+        return [settings.messageRecencyOldestWeight, settings.messageRecencyNewestWeight];
     }
-    if (count <= 1) return 1;
-    return 0.75 + (index / (count - 1)) * 0.25;
+    return [0.5, 2];
 }
 
 function clampInteger(value, min, max, fallback) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+}
+
+function clampNumber(value, min, max, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
 }
 
 function approximateTokenCount(value) {

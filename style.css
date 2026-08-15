@@ -2979,15 +2979,36 @@
     border-radius: 6px;
 }
 
-.stsm-long-term-result-group {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 5px;
+.stsm-long-term-custom-recency-field {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
 }
 
-.stsm-long-term-result-label {
-    font-size: 0.86rem;
+.stsm-long-term-result-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stsm-long-term-result-tab {
+    width: 100%;
+    min-width: 0;
+    padding: 6px;
+    margin: 0;
+    border-radius: 0;
+    border-color: transparent;
+    border-bottom: 2px solid var(--SmartThemeBorderColor);
+    background-color: transparent !important;
+    filter: none;
+    outline: none;
+    opacity: 0.7;
+}
+
+.stsm-long-term-result-tab-active {
+    color: var(--SmartThemeQuoteColor);
+    border-bottom-color: color-mix(in srgb, var(--SmartThemeQuoteColor), transparent);
+    opacity: 1;
 }
 
 .stsm-long-term-result-empty,
@@ -3909,7 +3930,8 @@
     .stsm-settings-top-grid,
     .stsm-summary-section-grid,
     .stsm-injection-grid,
-    .stsm-long-term-settings-grid {
+    .stsm-long-term-settings-grid,
+    .stsm-long-term-custom-recency-field {
         grid-template-columns: 1fr;
     }
 
