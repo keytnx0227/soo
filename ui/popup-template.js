@@ -158,7 +158,14 @@ export function buildPopup() {
                             <input id="stsm-long-term-max-records" data-long-term-setting="relevanceMaxRecords" class="text_pole" type="number" min="1" max="100" />
                         </label>
                     </div>
-                    <div class="stsm-long-term-result" aria-live="polite"></div>
+                    <div class="stsm-long-term-result-group">
+                        <strong class="stsm-long-term-result-label">현재 문맥</strong>
+                        <div class="stsm-long-term-result" aria-live="polite"></div>
+                    </div>
+                    <div class="stsm-long-term-result-group">
+                        <strong class="stsm-long-term-result-label">마지막 생성 요청</strong>
+                        <div class="stsm-long-term-result stsm-long-term-last-result" aria-live="polite"></div>
+                    </div>
                 </div>
             </div>
         </section>

@@ -13,6 +13,13 @@ import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { world_info_position } from '../../../../../scripts/world-info.js';
 import { isExtensionEnabled } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
+import {
+    beginGenerationRetrievalCapture,
+    cancelGenerationRetrievalCapture,
+    clearLastGenerationRetrievalSnapshot,
+    commitGenerationRetrievalCapture,
+    stageGenerationRetrieval,
+} from '../memory/generation-retrieval-snapshot.js';
 import { finalizeRetrievalResult, retrieveLongTermRecords } from '../memory/long-term-retrieval.js';
 import { resolveSegmentedRecall, selectSegmentedRecallWithinBudget } from '../memory/segmented-recall.js';
 import { COMPRESSION_MODES, getCompressionMode, getSummaryRecords } from './summary-store.js';
@@ -52,7 +59,14 @@ export function initializeSummaryContext() {
     ]) {
         eventSource.on(eventType, queueRetrievalRefresh);
     }
+    eventSource.on(event_types.GENERATION_STARTED, (type, _options, dryRun) => {
+        beginGenerationRetrievalCapture(type, dryRun);
+    });
     eventSource.on(event_types.GENERATION_AFTER_COMMANDS, queueRetrievalRefresh);
+    eventSource.on(event_types.GENERATE_AFTER_DATA, (_data, dryRun) => commitGenerationRetrievalCapture(dryRun));
+    eventSource.on(event_types.GENERATION_STOPPED, cancelGenerationRetrievalCapture);
+    eventSource.on(event_types.GENERATION_ENDED, cancelGenerationRetrievalCapture);
+    eventSource.on(event_types.CHAT_CHANGED, clearLastGenerationRetrievalSnapshot);
 }
 
 export function refreshSummaryInjection(details = null) {
@@ -151,7 +165,7 @@ export function buildSummaryContextDetails() {
         selected = next;
     } while (true);
     const rollbackUnits = [...rolledBackIds].map(id => ({ id, retrieved: true }));
-    return {
+    const details = {
         enabled: true,
         ...composition,
         sourceRecordCount: resolved.records.length,
@@ -159,6 +173,8 @@ export function buildSummaryContextDetails() {
         omittedRecords: [],
         partialRecord: null,
     };
+    stageGenerationRetrieval(details.retrieval);
+    return details;
 }
 
 export function buildWorldSettingContext() {

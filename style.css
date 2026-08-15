@@ -2979,6 +2979,17 @@
     border-radius: 6px;
 }
 
+.stsm-long-term-result-group {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.stsm-long-term-result-label {
+    font-size: 0.86rem;
+}
+
 .stsm-long-term-result-empty,
 .stsm-context-retrieval-summary {
     font-size: 0.86rem;

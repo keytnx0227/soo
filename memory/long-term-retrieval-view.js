@@ -1,6 +1,7 @@
 import { getSettings, setSummarizationSettings } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
+import { getLastGenerationRetrievalSnapshot } from './generation-retrieval-snapshot.js';
 
 export function bindLongTermRetrievalSettings(root, initialContextDetails = null) {
     const container = root.querySelector('.stsm-long-term-retrieval');
@@ -8,9 +9,15 @@ export function bindLongTermRetrievalSettings(root, initialContextDetails = null
     container.dataset.bound = 'true';
     container.addEventListener('change', event => handleSettingChange(root, event));
     const refresh = event => renderLongTermRetrievalSettings(root, event?.detail || null);
+    const refreshLastGeneration = () => renderLastGenerationRetrieval(container);
     window.addEventListener('stsm:long-term-retrieval-changed', refresh);
+    window.addEventListener('stsm:last-generation-retrieval-changed', refreshLastGeneration);
     renderLongTermRetrievalSettings(root, initialContextDetails);
-    return () => window.removeEventListener('stsm:long-term-retrieval-changed', refresh);
+    renderLastGenerationRetrieval(container);
+    return () => {
+        window.removeEventListener('stsm:long-term-retrieval-changed', refresh);
+        window.removeEventListener('stsm:last-generation-retrieval-changed', refreshLastGeneration);
+    };
 }
 
 export function renderLongTermRetrievalSettings(root, contextDetails = null) {
@@ -103,6 +110,41 @@ function renderRetrievalResult(container, retrieval) {
             </div>
         </details>
     `;
+}
+
+function renderLastGenerationRetrieval(container) {
+    const output = container.querySelector('.stsm-long-term-last-result');
+    if (!output) return;
+    const snapshot = getLastGenerationRetrievalSnapshot();
+    if (!snapshot) {
+        output.innerHTML = '<span class="stsm-long-term-result-empty">이 채팅에서 아직 기록된 생성 요청이 없어요.</span>';
+        return;
+    }
+
+    const label = getGenerationTypeLabel(snapshot.generationType);
+    const time = new Date(snapshot.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!snapshot.enabled || !snapshot.injected.length) {
+        output.innerHTML = `<span class="stsm-long-term-result-empty">${escapeHtml(label)} · ${escapeHtml(time)} · 사용된 장기기억 없음</span>`;
+        return;
+    }
+
+    output.innerHTML = `
+        <details class="stsm-long-term-result-details" open>
+            <summary>${escapeHtml(label)} · ${escapeHtml(time)} · ${snapshot.injected.length}개 사용</summary>
+            <div class="stsm-long-term-result-list">
+                ${snapshot.injected.map(item => renderResultRow(item, true, snapshot.mode)).join('')}
+            </div>
+        </details>
+    `;
+}
+
+function getGenerationTypeLabel(type) {
+    return {
+        normal: '일반 생성',
+        regenerate: '재생성',
+        swipe: '스와이프 재생성',
+        continue: '이어쓰기',
+    }[type] || '생성 요청';
 }
 
 function renderResultRow(item, injected, mode, omittedReason = '전체 주입 토큰 제한') {
