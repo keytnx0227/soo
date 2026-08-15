@@ -35,6 +35,8 @@ export function renderLongTermRetrievalSettings(root, contextDetails = null) {
     container.querySelector('#stsm-long-term-recency-strength').value = settings.messageRecencyStrength;
     container.querySelector('#stsm-long-term-oldest-weight').value = settings.messageRecencyOldestWeight;
     container.querySelector('#stsm-long-term-newest-weight').value = settings.messageRecencyNewestWeight;
+    container.querySelector('#stsm-long-term-recency-curve').value = settings.messageRecencyCurve;
+    container.querySelector('#stsm-long-term-curve-exponent').value = settings.messageRecencyCurveExponent;
     container.querySelector('#stsm-long-term-limit-mode').value = settings.relevanceLimitMode;
     container.querySelector('#stsm-long-term-max-records').value = settings.relevanceMaxRecords;
     container.querySelector('.stsm-long-term-settings-grid').classList.toggle('stsm-control-disabled', !settings.enabled);
@@ -49,6 +51,11 @@ export function renderLongTermRetrievalSettings(root, contextDetails = null) {
     container.querySelector('.stsm-long-term-custom-recency-field').hidden = settings.mode !== 'relevance'
         || settings.messageRecency !== 'recent'
         || settings.messageRecencyStrength !== 'custom';
+    container.querySelector('.stsm-long-term-recency-curve-field').hidden = settings.mode !== 'relevance'
+        || settings.messageRecency !== 'recent';
+    container.querySelector('.stsm-long-term-custom-curve-field').hidden = settings.mode !== 'relevance'
+        || settings.messageRecency !== 'recent'
+        || settings.messageRecencyCurve !== 'custom';
     container.querySelector('.stsm-long-term-max-records-field').hidden = settings.mode !== 'relevance'
         || settings.relevanceLimitMode !== 'top';
     renderRetrievalResult(container, (contextDetails || buildSummaryContextDetails()).retrieval);

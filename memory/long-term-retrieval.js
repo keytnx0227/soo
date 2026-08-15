@@ -197,6 +197,10 @@ function normalizeRetrievalSettings(value) {
             : 'medium',
         messageRecencyOldestWeight: clampNumber(source.messageRecencyOldestWeight, 0, 10, 0.5),
         messageRecencyNewestWeight: clampNumber(source.messageRecencyNewestWeight, 0, 10, 2),
+        messageRecencyCurve: ['linear', 'focused', 'strong', 'custom'].includes(source.messageRecencyCurve)
+            ? source.messageRecencyCurve
+            : 'linear',
+        messageRecencyCurveExponent: clampNumber(source.messageRecencyCurveExponent, 0.1, 10, 2),
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
@@ -205,7 +209,17 @@ function normalizeRetrievalSettings(value) {
 function getMessageRecencyWeight(index, count, settings) {
     const [oldestWeight, newestWeight] = getMessageRecencyRange(settings);
     if (count <= 1) return newestWeight;
-    return oldestWeight + (index / (count - 1)) * (newestWeight - oldestWeight);
+    const position = index / (count - 1);
+    const curvedPosition = Math.pow(position, getMessageRecencyCurveExponent(settings));
+    return oldestWeight + curvedPosition * (newestWeight - oldestWeight);
+}
+
+function getMessageRecencyCurveExponent(settings) {
+    if (settings.messageRecency !== 'recent') return 1;
+    if (settings.messageRecencyCurve === 'focused') return 2;
+    if (settings.messageRecencyCurve === 'strong') return 3;
+    if (settings.messageRecencyCurve === 'custom') return settings.messageRecencyCurveExponent;
+    return 1;
 }
 
 function getMessageRecencyRange(settings) {

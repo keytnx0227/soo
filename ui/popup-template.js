@@ -165,6 +165,19 @@ export function buildPopup() {
                                 <input id="stsm-long-term-newest-weight" data-long-term-setting="messageRecencyNewestWeight" class="text_pole" type="number" min="0" max="10" step="0.05" />
                             </label>
                         </div>
+                        <label class="stsm-field stsm-long-term-relevance-field stsm-long-term-recency-curve-field">
+                            <span>가중치 분포</span>
+                            <select id="stsm-long-term-recency-curve" data-long-term-setting="messageRecencyCurve" class="text_pole">
+                                <option value="linear">균등 증가 (선형)</option>
+                                <option value="focused">최신 집중</option>
+                                <option value="strong">강한 최신 집중</option>
+                                <option value="custom">커스텀 곡률</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field stsm-long-term-relevance-field stsm-long-term-custom-curve-field">
+                            <span>곡률 지수</span>
+                            <input id="stsm-long-term-curve-exponent" data-long-term-setting="messageRecencyCurveExponent" class="text_pole" type="number" min="0.1" max="10" step="0.1" />
+                        </label>
                         <label class="stsm-field stsm-long-term-relevance-field">
                             <span>불러올 기억 수</span>
                             <select id="stsm-long-term-limit-mode" data-long-term-setting="relevanceLimitMode" class="text_pole">

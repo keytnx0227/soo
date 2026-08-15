@@ -764,6 +764,8 @@ export const defaultSettings = Object.freeze({
             messageRecencyStrength: 'medium',
             messageRecencyOldestWeight: 0.5,
             messageRecencyNewestWeight: 2,
+            messageRecencyCurve: 'linear',
+            messageRecencyCurveExponent: 2,
             relevanceLimitMode: 'all',
             relevanceMaxRecords: 3,
         },
@@ -1595,6 +1597,10 @@ function normalizeLongTermRetrievalSettings(value) {
             : 'medium',
         messageRecencyOldestWeight: clampNumber(source.messageRecencyOldestWeight, 0, 10, 0.5),
         messageRecencyNewestWeight: clampNumber(source.messageRecencyNewestWeight, 0, 10, 2),
+        messageRecencyCurve: ['linear', 'focused', 'strong', 'custom'].includes(source.messageRecencyCurve)
+            ? source.messageRecencyCurve
+            : 'linear',
+        messageRecencyCurveExponent: clampNumber(source.messageRecencyCurveExponent, 0.1, 10, 2),
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
