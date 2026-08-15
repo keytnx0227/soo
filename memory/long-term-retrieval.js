@@ -35,7 +35,7 @@ export function retrieveLongTermRecords({
 
     const normalizedMessages = contextMessages.map((message, index) => ({
         text: normalizeSearchText(message.mes),
-        recency: contextMessages.length === 1 ? 1 : 0.75 + (index / (contextMessages.length - 1)) * 0.25,
+        recency: getMessageRecencyWeight(index, contextMessages.length, normalizedSettings.messageRecency),
     })).filter(message => message.text);
     if (!normalizedMessages.length && !base.pinnedRecordCount) return base;
 
@@ -191,9 +191,19 @@ function normalizeRetrievalSettings(value) {
         messageCount: clampInteger(source.messageCount, 1, 100, 6),
         maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
         relevance: Object.hasOwn(RELEVANCE_THRESHOLDS, source.relevance) ? source.relevance : 'balanced',
+        messageRecency: ['balanced', 'recent'].includes(source.messageRecency) ? source.messageRecency : 'balanced',
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
+}
+
+function getMessageRecencyWeight(index, count, mode) {
+    if (mode === 'recent') {
+        if (count <= 1) return 2;
+        return 0.5 + (index / (count - 1)) * 1.5;
+    }
+    if (count <= 1) return 1;
+    return 0.75 + (index / (count - 1)) * 0.25;
 }
 
 function clampInteger(value, min, max, fallback) {

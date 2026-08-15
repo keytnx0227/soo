@@ -140,6 +140,13 @@ export function buildPopup() {
                             </select>
                         </label>
                         <label class="stsm-field stsm-long-term-relevance-field">
+                            <span>최근 메시지 가중</span>
+                            <select id="stsm-long-term-message-recency" data-long-term-setting="messageRecency" class="text_pole">
+                                <option value="balanced">균형형 (기존)</option>
+                                <option value="recent">최근 우선</option>
+                            </select>
+                        </label>
+                        <label class="stsm-field stsm-long-term-relevance-field">
                             <span>불러올 기억 수</span>
                             <select id="stsm-long-term-limit-mode" data-long-term-setting="relevanceLimitMode" class="text_pole">
                                 <option value="all">전체</option>

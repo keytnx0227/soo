@@ -760,6 +760,7 @@ export const defaultSettings = Object.freeze({
             messageCount: 6,
             maxTokens: 6000,
             relevance: 'balanced',
+            messageRecency: 'balanced',
             relevanceLimitMode: 'all',
             relevanceMaxRecords: 3,
         },
@@ -1585,6 +1586,7 @@ function normalizeLongTermRetrievalSettings(value) {
         messageCount: clampInteger(source.messageCount, 1, 100, 6),
         maxTokens: clampInteger(source.maxTokens, 100, 100000, 6000),
         relevance: ['loose', 'balanced', 'strict'].includes(source.relevance) ? source.relevance : 'balanced',
+        messageRecency: ['balanced', 'recent'].includes(source.messageRecency) ? source.messageRecency : 'balanced',
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
