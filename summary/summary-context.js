@@ -17,6 +17,7 @@ import { finalizeRetrievalResult, retrieveLongTermRecords } from '../memory/long
 import { resolveSegmentedRecall, selectSegmentedRecallWithinBudget } from '../memory/segmented-recall.js';
 import { COMPRESSION_MODES, getCompressionMode, getSummaryRecords } from './summary-store.js';
 import { buildContextBlockComposition } from './context-block-composer.js';
+import { getGenerationSearchMessages } from './generation-context.js';
 
 const INJECTION_KEY = 'sumi_chat_summarizer_context';
 const MACRO_NAME = 'sumiSummary';
@@ -93,6 +94,7 @@ export function buildSummaryContextDetails() {
         });
     }
     const context = SillyTavern.getContext();
+    const contextMessages = getGenerationSearchMessages(context.chat);
     const allRecords = getSummaryRecords();
     const compressionMode = getCompressionMode();
     const recallOptions = {
@@ -101,7 +103,7 @@ export function buildSummaryContextDetails() {
     };
     const retrieval = retrieveLongTermRecords({
         records: allRecords,
-        messages: context.chat,
+        messages: contextMessages,
         settings: settings.longTermRetrieval,
         countTokens: getTokenCount,
         selectCandidates: compressionMode === COMPRESSION_MODES.SEGMENTED
@@ -136,7 +138,7 @@ export function buildSummaryContextDetails() {
             records: resolved.records,
             retrievedRecordIds: resolved.retrievedRecordIds,
             pinnedRecordIds: resolved.pinnedRecordIds,
-            messages: context.chat,
+            messages: contextMessages,
             blockKinds,
         });
         const omittedRetrieved = composition.omittedUnits
@@ -175,7 +177,7 @@ export function buildWorldSettingContextDetails() {
         enabled: true,
         ...buildContextBlockComposition(Infinity, {
             records: [],
-            messages: SillyTavern.getContext().chat,
+            messages: getGenerationSearchMessages(SillyTavern.getContext().chat),
             blockKinds: [SUMMARY_CONTEXT_BLOCK_KINDS.WORLD],
         }),
     };
