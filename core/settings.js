@@ -29,7 +29,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 26;
+const PROMPT_SCHEMA_VERSION = 27;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -444,13 +444,47 @@ Maintain a compact lorebook of durable world facts newly established by the Summ
 
 const MANUAL_ATLAS_UPDATE_RULE = '- Entries marked manual are user-owned. Update their exact ID only when allowAutoUpdate is true; when false, use them only to prevent duplication and never target their IDs.';
 const OLD_MANUAL_WORLD_RULE = '- Entries marked manual are user-owned facts. Use them to prevent duplication, but never create an update targeting their IDs.';
-const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+const V26_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V25_DEFAULT_SUMMARY_EXTRACTION_RULES,
     people: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.people}\n${MANUAL_ATLAS_UPDATE_RULE}`,
     items: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.items}\n${MANUAL_ATLAS_UPDATE_RULE}`,
     commitments: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.commitments}\n${MANUAL_ATLAS_UPDATE_RULE}`,
     events: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.events}\n${MANUAL_ATLAS_UPDATE_RULE}`,
     world: V25_DEFAULT_SUMMARY_EXTRACTION_RULES.world.replace(OLD_MANUAL_WORLD_RULE, MANUAL_ATLAS_UPDATE_RULE),
+});
+
+const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+    ...V26_DEFAULT_SUMMARY_EXTRACTION_RULES,
+    people: `# People Memory Updates
+
+Maintain compact current profiles, never plot or action history.
+
+- The Summary Target alone can create or change data; other context only establishes the existing baseline and resolves identity.
+- Create a compact card for any named or distinctly characterized person, even after one appearance. A pivotal unnamed person may use one stable provisional handle; replace it with the real name later and append the handle to aliases. Ignore only indistinguishable background figures with no stable identity.
+- For a minor or one-scene person, record only the few established fields needed to recognize them later, often just name and role. Leave unsupported fields empty.
+- Create only unmatched people. Update only an exact targetId. Never guess IDs, duplicate, or delete. Append only new aliases; replace only changed current snapshots using complete, concise arrays. Return no proposal for unchanged or uncertain data.
+- role, age, occupation, appearance, affiliations, traits, and voice contain only stable profile facts. voice is a speech pattern, never sample dialogue. Exclude actions, chronology, evidence, temporary moods, clothing, expressions, and injuries unless durable.
+- lastKnownState contains only the latest observed location and physical condition.
+- relationship is a directional, objective current snapshot of the bond or social relationship toward the related person.
+- feelings is a directional, durable relational snapshot toward the related person, not a list of momentary scene emotions or moods.
+- Use the existing feelings snapshot as the baseline. New evidence from the Summary Target may deepen, weaken, complicate, redirect, or resolve it, but must not make the character appear emotionally reset.
+- When an update is warranted, return a complete, continuity-preserving current snapshot. Preserve every still-valid emotional layer from the previous snapshot and integrate the new development into it.
+- Each feeling must communicate its emotional quality, depth or intensity, and a compact accumulated cause. Keep the cause self-contained, but do not recount event chronology.
+- Do not flatten emotional analysis into generic labels or superficial rationalizations. Meaningful contradictions may coexist, such as affection mixed with distrust, dependence mixed with fear, or resentment mixed with lingering attachment.
+- Do not record reactions such as surprise, embarrassment, relief, or joy unless they reveal or durably change the character's underlying feelings toward the related person.
+- If the Summary Target shows only a temporary reaction and does not materially change the durable relational state, return no feelings update.
+
+Calibration examples for feelings only; do not copy their content:
+
+Bad:
+- "Relieved by his words"
+- "Embarrassed by his teasing"
+
+Good:
+- "Deepening trust and guarded affection, now strong enough to permit vulnerability, built through his repeated reassurance despite a lingering fear of dependence."
+
+- Keep scalars to a short phrase or one compact sentence and lists to a few useful, non-overlapping entries. Never repeat information across fields.
+${MANUAL_ATLAS_UPDATE_RULE}`,
 });
 
 const V22_DEFAULT_WORLD_EXTRACTION_RULE = V25_DEFAULT_SUMMARY_EXTRACTION_RULES.world
@@ -2226,7 +2260,7 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
             for (const category of ['people', 'items', 'commitments', 'events', 'world']) {
                 const current = String(rules[category] || V25_DEFAULT_SUMMARY_EXTRACTION_RULES[category]);
                 if (current.trim() === V25_DEFAULT_SUMMARY_EXTRACTION_RULES[category].trim()) {
-                    rules[category] = DEFAULT_SUMMARY_EXTRACTION_RULES[category];
+                    rules[category] = V26_DEFAULT_SUMMARY_EXTRACTION_RULES[category];
                 } else if (current.includes(OLD_MANUAL_WORLD_RULE)) {
                     rules[category] = current.replace(OLD_MANUAL_WORLD_RULE, MANUAL_ATLAS_UPDATE_RULE);
                 } else if (!current.includes(MANUAL_ATLAS_UPDATE_RULE)) {
@@ -2236,6 +2270,24 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
             return {
                 ...block,
                 config: { ...block.config, rules },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 27) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const rules = block.config?.rules && typeof block.config.rules === 'object'
+                ? { ...block.config.rules }
+                : {};
+            const current = String(rules.people || V26_DEFAULT_SUMMARY_EXTRACTION_RULES.people);
+            if (current.trim() !== V26_DEFAULT_SUMMARY_EXTRACTION_RULES.people.trim()) return block;
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: { ...rules, people: DEFAULT_SUMMARY_EXTRACTION_RULES.people },
+                },
             };
         });
     }

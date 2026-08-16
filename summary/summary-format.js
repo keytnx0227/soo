@@ -218,7 +218,9 @@ export function buildSummaryJsonContract(
                     targetId: 'Existing related-person ID or null',
                     targetName: 'Related character name',
                     relationship: ['Complete current relationship snapshot'],
-                    feelings: ['Complete current durable-feeling snapshot'],
+                    feelings: [
+                        'Complete continuity-preserving snapshot of durable feelings toward this person, including emotional quality, depth, and a compact accumulated cause; exclude transient moods',
+                    ],
                 }],
             }],
         };
