@@ -502,6 +502,19 @@
     opacity: 0.8;
 }
 
+.stsm-record-llm-hidden,
+.stsm-atlas-card-llm-hidden {
+    opacity: 0.62;
+}
+
+.stsm-llm-hidden-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--SmartThemeQuoteColor);
+    font-size: 0.85em;
+}
+
 .stsm-record-memory-tab {
     width: 100%;
     min-width: 0;

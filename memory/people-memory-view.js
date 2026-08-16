@@ -5,6 +5,7 @@ import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
 import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
+import { getAtlasLlmVisibilityAction, renderAtlasLlmVisibilityState, toggleAtlasLlmVisibility } from './atlas-llm-visibility.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import {
     getAtlasTranslations,
@@ -98,11 +99,12 @@ function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval, o
         className: 'stsm-person-pin',
         pressed: retrievalMetadata.pinned,
     });
+    const visibilityAction = getAtlasLlmVisibilityAction(person);
     const fields = FIELD_DEFINITIONS.map(field => field.list
         ? renderField(field.label, person[field.key])
         : renderScalarField(field.label, person[field.key])).join('');
     return `
-        <article class="stsm-person-card${omitted ? ' stsm-atlas-card-injection-omitted' : ''}" data-atlas-category="people" data-entity-id="${escapeHtml(person.id)}">
+        <article class="stsm-person-card${omitted ? ' stsm-atlas-card-injection-omitted' : ''}${person.llmHidden ? ' stsm-atlas-card-llm-hidden' : ''}" data-atlas-category="people" data-entity-id="${escapeHtml(person.id)}">
             <header>
                 <div>
                     <strong>${escapeHtml(person.name)}</strong>
@@ -110,11 +112,13 @@ function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval, o
                     ${person.provisional ? '<span class="stsm-atlas-correction-state">임시 이름</span>' : ''}
                     ${person.aliases.length ? `<span>${person.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
                     ${renderManualAtlasState(person)}
+                    ${renderAtlasLlmVisibilityState(person)}
                     ${renderCorrectionState(person.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${pinAction}
+                        ${renderAction('toggle-llm-visibility', visibilityAction.icon, visibilityAction.title)}
                         ${renderAction('keywords', 'fa-key', '검색 키워드 편집')}
                         ${renderAction('edit', 'fa-pen', '수정')}
                         ${hasCorrection && !person.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
@@ -169,6 +173,8 @@ async function handleAtlasAction(event, category) {
         if (button.dataset.atlasAction === 'edit') {
             if (person.manual) await showManualAtlasEntryEditor(category, entityId);
             else await showAtlasEditor(category, entityId);
+        } else if (button.dataset.atlasAction === 'toggle-llm-visibility') {
+            await toggleAtlasLlmVisibility(category, person);
         } else if (button.dataset.atlasAction === 'pin') {
             const current = getPersonRetrievalMetadata(entityId);
             await savePersonRetrievalMetadata(entityId, { ...current, pinned: !current.pinned });

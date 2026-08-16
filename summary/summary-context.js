@@ -22,7 +22,7 @@ import {
 } from '../memory/generation-retrieval-snapshot.js';
 import { finalizeRetrievalResult, retrieveLongTermRecords } from '../memory/long-term-retrieval.js';
 import { resolveSegmentedRecall, selectSegmentedRecallWithinBudget } from '../memory/segmented-recall.js';
-import { COMPRESSION_MODES, getCompressionMode, getSummaryRecords } from './summary-store.js';
+import { COMPRESSION_MODES, filterLlmVisibleSummaryRecords, getCompressionMode, getSummaryRecords } from './summary-store.js';
 import { buildContextBlockComposition } from './context-block-composer.js';
 import { getGenerationSearchMessages } from './generation-context.js';
 
@@ -109,7 +109,7 @@ export function buildSummaryContextDetails() {
     }
     const context = SillyTavern.getContext();
     const contextMessages = getGenerationSearchMessages(context.chat);
-    const allRecords = getSummaryRecords();
+    const allRecords = filterLlmVisibleSummaryRecords(getSummaryRecords());
     const compressionMode = getCompressionMode();
     const recallOptions = {
         compressionTemplate: settings.compressionContentTemplate,
@@ -213,7 +213,9 @@ export function buildSummaryRecordsContext(sourceRecords, template, budget = Inf
 }
 
 export function buildSummaryRecordsContextDetails(sourceRecords, template, budget = Infinity) {
-    const records = [...sourceRecords].sort((a, b) => a.startId - b.startId || a.endId - b.endId);
+    const records = [...sourceRecords]
+        .filter(record => !record.llmHidden)
+        .sort((a, b) => a.startId - b.startId || a.endId - b.endId);
     if (!records.length) return createContextDetails({ budget });
 
     const full = renderRecords(records, template);

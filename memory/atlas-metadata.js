@@ -18,8 +18,12 @@ export async function saveAtlasEntityCorrection(category, entityId, fields) {
     const store = getAtlasStore();
     const previous = structuredClone(store.corrections[category]);
     const normalizedFields = normalizeCorrectionFields(fields, category);
-    const excluded = Boolean(store.corrections[category][String(entityId)]?.excluded);
-    setCorrectionEntry(store, category, entityId, { fields: normalizedFields, excluded });
+    const current = store.corrections[category][String(entityId)];
+    setCorrectionEntry(store, category, entityId, {
+        fields: normalizedFields,
+        excluded: Boolean(current?.excluded),
+        llmHidden: Boolean(current?.llmHidden),
+    });
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
@@ -38,6 +42,27 @@ export async function setAtlasEntityExcluded(category, entityId, excluded) {
     setCorrectionEntry(store, category, entityId, {
         fields: current?.fields || {},
         excluded: Boolean(excluded),
+        llmHidden: Boolean(current?.llmHidden),
+    });
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.corrections[category] = previous;
+        throw error;
+    }
+    notifyAtlasChanged();
+    return getAtlasEntityCorrection(category, entityId);
+}
+
+export async function setAtlasEntityLlmHidden(category, entityId, llmHidden) {
+    assertCategory(category);
+    const store = getAtlasStore();
+    const previous = structuredClone(store.corrections[category]);
+    const current = store.corrections[category][String(entityId)];
+    setCorrectionEntry(store, category, entityId, {
+        fields: current?.fields || {},
+        excluded: Boolean(current?.excluded),
+        llmHidden: Boolean(llmHidden),
     });
     try {
         await SillyTavern.getContext().saveMetadata();
@@ -475,15 +500,17 @@ function normalizeCorrection(value, category) {
     if (!value || typeof value !== 'object') return null;
     const fields = normalizeCorrectionFields(value.fields, category);
     const excluded = Boolean(value.excluded);
-    return Object.keys(fields).length || excluded ? { fields, excluded } : null;
+    const llmHidden = Boolean(value.llmHidden);
+    return Object.keys(fields).length || excluded || llmHidden ? { fields, excluded, llmHidden } : null;
 }
 
 function setCorrectionEntry(store, category, entityId, correction) {
     const id = String(entityId);
-    if (Object.keys(correction.fields).length || correction.excluded) {
+    if (Object.keys(correction.fields).length || correction.excluded || correction.llmHidden) {
         store.corrections[category][id] = {
             fields: structuredClone(correction.fields),
             excluded: Boolean(correction.excluded),
+            llmHidden: Boolean(correction.llmHidden),
         };
     } else {
         delete store.corrections[category][id];

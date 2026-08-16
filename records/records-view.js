@@ -4,9 +4,11 @@ import { openSummaryRecordDetail } from './record-detail-view.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
 import { getSummaryRecordSourceStatuses, SOURCE_STATES } from '../summary/source-tracking.js';
 import {
+    filterLlmVisibleSummaryRecords,
     getSummaryRecordIndex,
     getSummaryRecords,
     getSummaryRecordSourceIndex,
+    updateSummaryRecordLlmHidden,
     updateSummaryRecordPinned,
 } from '../summary/summary-store.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
@@ -119,10 +121,15 @@ function renderRecordList(list, direction, memoryView, searchState, pinnedFilter
         return direction === 'id-asc' ? difference : -difference;
     });
     const sourceStatuses = getSummaryRecordSourceStatuses(allRecords);
+    const llmVisibleIds = new Set(filterLlmVisibleSummaryRecords(allRecords).map(record => String(record.id)));
     updateRecordSearchCount(list, records.length, pinnedRecords.length, searchState.query);
 
     list.innerHTML = records.length
-        ? records.map(record => renderSummaryRecord(record, sourceStatuses.get(record.id))).join('')
+        ? records.map(record => renderSummaryRecord(
+            record,
+            sourceStatuses.get(record.id),
+            llmVisibleIds.has(String(record.id)),
+        )).join('')
         : `<div class="stsm-empty">${searchState.query
             ? '검색 결과가 없습니다.'
             : memoryView === 'long-term' ? '저장된 장기기억이 없습니다.' : '저장된 상시기억이 없습니다.'}</div>`;
@@ -157,6 +164,23 @@ function renderRecordList(list, direction, memoryView, searchState, pinnedFilter
                 renderRecordList(list, direction, memoryView, searchState, pinnedFilter, bindRecordEvents);
             } catch (error) {
                 logRecordViewError(error, '장기기억 고정 변경 실패', '장기기억 고정 상태를 변경하지 못했습니다.', {
+                    range: getElementRecordRange(recordElement),
+                });
+                button.disabled = false;
+            }
+        });
+        recordElement.querySelector('.stsm-record-llm-visibility')?.addEventListener('click', async event => {
+            const button = event.currentTarget;
+            const record = getSummaryRecordIndex().find(item => item.id === recordElement.dataset.recordId);
+            if (!record || button.disabled) return;
+            button.disabled = true;
+            try {
+                const updated = await updateSummaryRecordLlmHidden(record.id, !record.llmHidden);
+                if (!updated) throw new Error('눈 감기기 상태를 변경할 요약 레코드를 찾지 못했습니다.');
+                toastr.success(updated.llmHidden ? '이 기억을 LLM에서 감췄습니다.' : '이 기억을 LLM에 다시 표시합니다.');
+                renderRecordList(list, direction, memoryView, searchState, pinnedFilter, bindRecordEvents);
+            } catch (error) {
+                logRecordViewError(error, '요약 레코드 눈 감기기 실패', '눈 감기기 상태를 변경하지 못했습니다.', {
                     range: getElementRecordRange(recordElement),
                 });
                 button.disabled = false;
@@ -490,33 +514,37 @@ function renderContextTokenStatus(details) {
     `;
 }
 
-function renderSummaryRecord(summary, sourceStatus) {
+function renderSummaryRecord(summary, sourceStatus, llmVisible) {
     const hasTranslation = Boolean(summary.translation?.content);
     const tokenCount = getTokenCount(String(summary.content || ''));
     const compressedChild = Boolean(summary.compressedBy);
     const compressionLevel = Number(summary.compression?.level) || 0;
     const compressionModeLabel = summary.compression?.mode === 'segmented' ? '세그먼트형(v3)' : '통합형(v2)';
     return `
-        <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${summary.pinned ? ' stsm-record-pinned' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
+        <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${summary.pinned ? ' stsm-record-pinned' : ''}${!llmVisible ? ' stsm-record-llm-hidden' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
             <header class="stsm-record-header">
                 <div class="stsm-record-range">
                     <strong>#${summary.startId} ~ #${summary.endId}</strong>
                     <span>${tokenCount.toLocaleString()} tokens</span>
                     ${compressionLevel ? `<span class="stsm-record-compression-badge">압축 Lv.${compressionLevel} · ${compressionModeLabel}</span>` : ''}
                     ${compressedChild ? '<span class="stsm-record-compressed-child-badge">장기기억</span>' : ''}
+                    ${summary.llmHidden
+        ? '<span class="stsm-llm-hidden-badge"><i class="fa-solid fa-eye-slash" aria-hidden="true"></i> LLM 비공개</span>'
+        : !llmVisible ? '<span class="stsm-llm-hidden-badge"><i class="fa-solid fa-eye-slash" aria-hidden="true"></i> 상위 기억 비공개</span>' : ''}
                     ${summary.type === 'summary' ? renderRecordMemoryUpdateBadge(summary) : ''}
                     <span class="stsm-record-source-state-slot">${renderSourceState(sourceStatus, summary)}</span>
                 </div>
                 <div class="stsm-record-actions">
                     ${renderIconButton('detail', 'fa-magnifying-glass', '자세히 보기')}
+                    ${renderIconButton('llm-visibility', summary.llmHidden ? 'fa-eye' : 'fa-eye-slash', summary.llmHidden ? 'LLM에 다시 보이기' : 'LLM에서 감추기', Boolean(summary.llmHidden))}
                     ${compressedChild ? renderIconButton('pin', 'fa-thumbtack', summary.pinned ? '장기기억 고정 해제' : '장기기억 고정', Boolean(summary.pinned)) : ''}
                     ${compressedChild ? renderIconButton('tag-edit', 'fa-tags', '검색 태그 편집') : ''}
                     ${renderIconButton('copy', 'fa-copy', '복사')}
                     ${renderIconButton('edit', 'fa-pen', '수정')}
                     ${renderIconButton('translate', 'fa-language', hasTranslation ? '번역 재생성' : '번역')}
                     ${hasTranslation ? renderIconButton('translation-toggle', 'fa-right-left', '원문/번역 전환', true) : ''}
-                    ${compressedChild ? '' : renderIconButton('chat', 'fa-comments', '요약 수정 대화')}
-                    ${compressedChild ? '' : renderIconButton('reroll', 'fa-rotate-right', '재생성')}
+                    ${compressedChild ? '' : renderIconButton('chat', 'fa-comments', summary.llmHidden ? '눈 감기기를 해제한 뒤 수정 대화를 사용할 수 있습니다.' : '요약 수정 대화', null, summary.llmHidden)}
+                    ${compressedChild ? '' : renderIconButton('reroll', 'fa-rotate-right', summary.llmHidden ? '눈 감기기를 해제한 뒤 재생성할 수 있습니다.' : '재생성', null, summary.llmHidden)}
                     ${compressedChild ? '' : renderIconButton('delete', 'fa-trash', '삭제')}
                 </div>
             </header>
@@ -543,10 +571,10 @@ function renderSourceState(status, record) {
     return '<span class="stsm-record-source-state stsm-record-source-untracked" title="fingerprint 기능 추가 전에 만들어진 요약 기록입니다.">추적 전 기록</span>';
 }
 
-function renderIconButton(action, icon, title, pressed = null) {
+function renderIconButton(action, icon, title, pressed = null, disabled = false) {
     const pressedAttribute = pressed === null ? '' : ` aria-pressed="${String(pressed)}"`;
     return `
-        <button class="stsm-record-${action} menu_button menu_button_icon interactable" type="button" title="${title}" aria-label="${title}"${pressedAttribute}>
+        <button class="stsm-record-${action} menu_button menu_button_icon interactable" type="button" title="${title}" aria-label="${title}"${pressedAttribute}${disabled ? ' disabled' : ''}>
             <i class="fa-solid ${icon}"></i>
         </button>
     `;

@@ -263,7 +263,7 @@ function renderSummaryExtractionRules(rules, sections, memorySections) {
 function buildRecentSummaryContent(block, startId) {
     const config = block.config;
     let records = getSummaryRecords()
-        .filter(record => !record.compressedBy && record.endId < startId)
+        .filter(record => !record.llmHidden && !record.compressedBy && record.endId < startId)
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
 
     if (config.countLimit.enabled) records = records.slice(-config.countLimit.value);

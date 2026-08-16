@@ -1,4 +1,4 @@
-import { getAtlasProjection } from './atlas-projection-service.js';
+import { getAtlasProjection, getLlmVisibleAtlasProjection } from './atlas-projection-service.js';
 import { buildCommitmentMemoryPromptContext as serializeCommitmentMemory } from './commitment-memory.js';
 
 export function getCommitmentAtlas(projectionOptions = {}) {
@@ -12,5 +12,5 @@ export function getCommitmentAtlas(projectionOptions = {}) {
 }
 
 export function buildCommitmentMemoryPromptContext(projectionOptions = {}) {
-    return serializeCommitmentMemory(getCommitmentAtlas(projectionOptions).commitments);
+    return serializeCommitmentMemory(getLlmVisibleAtlasProjection(projectionOptions).commitments);
 }

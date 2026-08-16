@@ -42,7 +42,24 @@ export function getSummaryRecordSourceIndex() {
 }
 
 export function getActiveSummaryRecords() {
-    return getSummaryRecords().filter(record => !record.compressedBy);
+    return filterLlmVisibleSummaryRecords(getSummaryRecords()).filter(record => !record.compressedBy);
+}
+
+export function filterLlmVisibleSummaryRecords(records) {
+    const source = Array.isArray(records) ? records : [];
+    const recordsById = new Map(source.map(record => [String(record.id), record]));
+    return source.filter(record => {
+        const visited = new Set();
+        let current = record;
+        while (current) {
+            const id = String(current.id);
+            if (visited.has(id)) return false;
+            visited.add(id);
+            if (current.llmHidden) return false;
+            current = current.compressedBy ? recordsById.get(String(current.compressedBy)) : null;
+        }
+        return true;
+    });
 }
 
 export function getSummaryRecord(recordId) {
@@ -141,6 +158,7 @@ function toRecordIndexEntry(record, mode) {
         integratedCompressedBy: record.compressedBy,
         segmentedCompressedBy: record.segmentedCompressedBy,
         pinned: record.pinned,
+        llmHidden: record.llmHidden,
         batchId: record.batchId,
         startId: record.startId,
         endId: record.endId,
@@ -638,6 +656,34 @@ export async function updateSummaryRecordPinned(recordId, pinned) {
     return hydrateRecord(updatedRecord);
 }
 
+export async function updateSummaryRecordLlmHidden(recordId, llmHidden) {
+    const normalizedId = String(recordId);
+    const store = getStore();
+    const previousRecords = store.records;
+    let updatedRecord = null;
+
+    store.records = store.records.map(record => {
+        if (record.id !== normalizedId) return record;
+        updatedRecord = {
+            ...record,
+            llmHidden: Boolean(llmHidden),
+            updatedAt: new Date().toISOString(),
+        };
+        return updatedRecord;
+    });
+
+    if (!updatedRecord) return null;
+
+    try {
+        await SillyTavern.getContext().saveMetadata();
+    } catch (error) {
+        store.records = previousRecords;
+        throw error;
+    }
+    notifyRecordsChanged();
+    return hydrateRecord(updatedRecord);
+}
+
 export async function updateSummaryRecordRanges(updates) {
     const normalizedUpdates = new Map((Array.isArray(updates) ? updates : []).map(update => [
         String(update.id),
@@ -775,6 +821,7 @@ function normalizeRecords(records) {
                 compressedBy: normalizeOptionalId(record.compressedBy),
                 segmentedCompressedBy: normalizeOptionalId(record.segmentedCompressedBy),
                 pinned: Boolean(record.pinned),
+                llmHidden: Boolean(record.llmHidden),
                 batchId: normalizeOptionalId(record.batchId),
                 startId: Math.max(0, Number(record.startId) || 0),
                 endId: Math.max(0, Number(record.endId) || 0),

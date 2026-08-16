@@ -50,6 +50,10 @@ export async function openRevisionChat(recordId, { onApplied } = {}) {
         toastr.warning('수정할 요약 기록을 찾지 못했습니다.');
         return;
     }
+    if (record.llmHidden) {
+        toastr.info('LLM에서 감춘 요약 기록은 수정 대화를 시작할 수 없습니다.');
+        return;
+    }
 
     if (!isSessionValidForRecord(activeSession, record)) {
         await persistActiveSession();
@@ -187,10 +191,16 @@ async function sendFeedback() {
         session.isGenerating = true;
         renderRevisionSession();
         await persistSession(session);
+        if (getSummaryRecord(session.recordId)?.llmHidden) {
+            throw new Error('LLM에서 감춘 요약 기록은 수정 대화를 계속할 수 없습니다.');
+        }
         const prompt = await buildRevisionPrompt(createRevisionPromptInput(session));
         if (!prompt.trim()) throw new Error('현재 설정으로 조립된 수정 프롬프트가 비어 있습니다.');
         const response = await generateSummary(prompt);
         if (!response) throw new Error('수정 대화 응답이 비어 있습니다.');
+        if (getSummaryRecord(session.recordId)?.llmHidden) {
+            throw new Error('수정 요청 중 요약 기록이 LLM 비공개로 변경되어 결과를 적용하지 않았습니다.');
+        }
         const result = parseRevisionResult(session, response);
         const text = renderRevisionResult(session, result);
         if (activeSession !== session || SillyTavern.getContext().chat !== session.chatRef) return;

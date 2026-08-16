@@ -11,6 +11,7 @@ import {
     showAtlasEditor,
 } from './atlas-editor.js';
 import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
+import { getAtlasLlmVisibilityAction, renderAtlasLlmVisibilityState, toggleAtlasLlmVisibility } from './atlas-llm-visibility.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations, getManualAtlasEntries, updateManualAtlasEntry } from './atlas-metadata.js';
 import { getAtlasProjection } from './atlas-projection-service.js';
@@ -59,17 +60,20 @@ export function renderCommitmentMemory(root) {
 function renderCommitment(commitment, cachedTranslation) {
     const translation = getValidAtlasTranslation('commitments', commitment, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(commitment.manualCorrections || {}).length);
+    const visibilityAction = getAtlasLlmVisibilityAction(commitment);
     return `
-        <article class="stsm-commitment-card" data-atlas-category="commitments" data-entity-id="${escapeHtml(commitment.id)}">
+        <article class="stsm-commitment-card${commitment.llmHidden ? ' stsm-atlas-card-llm-hidden' : ''}" data-atlas-category="commitments" data-entity-id="${escapeHtml(commitment.id)}">
             <header>
                 <div>
                     <strong>${escapeHtml(commitment.title)}</strong>
                     ${renderManualAtlasState(commitment)}
+                    ${renderAtlasLlmVisibilityState(commitment)}
                     ${renderCorrectionState(commitment.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
+                        ${renderAction('toggle-llm-visibility', visibilityAction.icon, visibilityAction.title)}
                         ${hasCorrection && !commitment.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
@@ -123,6 +127,8 @@ async function handleAtlasAction(event, category) {
         if (button.dataset.atlasAction === 'edit') {
             if (commitment.manual) await showManualAtlasEntryEditor(category, entityId);
             else await showAtlasEditor(category, entityId);
+        } else if (button.dataset.atlasAction === 'toggle-llm-visibility') {
+            await toggleAtlasLlmVisibility(category, commitment);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity(category, entityId, commitment.title);
         } else if (button.dataset.atlasAction === 'toggle-translation') {

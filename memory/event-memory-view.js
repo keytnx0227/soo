@@ -6,6 +6,7 @@ import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
 import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
+import { getAtlasLlmVisibilityAction, renderAtlasLlmVisibilityState, toggleAtlasLlmVisibility } from './atlas-llm-visibility.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getEventAtlas } from './event-memory-service.js';
@@ -67,9 +68,10 @@ export function renderEventMemory(root, contextDetails = null) {
 function renderEvent(event, cachedTranslation, omitted) {
     const translation = getValidAtlasTranslation('events', event, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(event.manualCorrections || {}).length);
+    const visibilityAction = getAtlasLlmVisibilityAction(event);
     const major = event.importance === 'major';
     return `
-        <article class="stsm-event-card${major ? ' stsm-event-card-turning-point' : ''}${omitted ? ' stsm-atlas-card-injection-omitted' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
+        <article class="stsm-event-card${major ? ' stsm-event-card-turning-point' : ''}${omitted ? ' stsm-atlas-card-injection-omitted' : ''}${event.llmHidden ? ' stsm-atlas-card-llm-hidden' : ''}" data-atlas-category="events" data-entity-id="${escapeHtml(event.id)}">
             <header>
                 <div>
                     <span class="stsm-event-title-line">
@@ -78,11 +80,13 @@ function renderEvent(event, cachedTranslation, omitted) {
                         ${renderInjectionState(omitted)}
                     </span>
                     ${renderManualAtlasState(event)}
+                    ${renderAtlasLlmVisibilityState(event)}
                     ${renderCorrectionState(event.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
+                        ${renderAction('toggle-llm-visibility', visibilityAction.icon, visibilityAction.title)}
                         ${hasCorrection && !event.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
@@ -135,6 +139,8 @@ async function handleAtlasAction(event) {
         if (button.dataset.atlasAction === 'edit') {
             if (entry.manual) await showManualAtlasEntryEditor('events', entityId);
             else await showAtlasEditor('events', entityId);
+        } else if (button.dataset.atlasAction === 'toggle-llm-visibility') {
+            await toggleAtlasLlmVisibility('events', entry);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity('events', entityId, entry.title);
         } else if (button.dataset.atlasAction === 'toggle-translation') {

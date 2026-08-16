@@ -1,4 +1,4 @@
-import { getAtlasProjection } from './atlas-projection-service.js';
+import { getAtlasProjection, getLlmVisibleAtlasProjection } from './atlas-projection-service.js';
 import { buildPeopleMemoryPromptContext as serializePeopleMemory } from './people-memory.js';
 
 export function getPeopleAtlas(projectionOptions = {}) {
@@ -12,5 +12,5 @@ export function getPeopleAtlas(projectionOptions = {}) {
 }
 
 export function buildPeopleMemoryPromptContext(projectionOptions = {}) {
-    return serializePeopleMemory(getPeopleAtlas(projectionOptions).people);
+    return serializePeopleMemory(getLlmVisibleAtlasProjection(projectionOptions).people);
 }

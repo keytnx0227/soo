@@ -4,7 +4,7 @@ import { generateSummary } from '../connection/generation.js';
 import { buildAtlasReviewPrompt } from '../prompts/prompt-builder.js';
 import { createSummaryChunks } from '../summary/chunking.js';
 import { parseAtlasReviewResponse } from '../summary/summary-format.js';
-import { getSummaryRecords, saveAtlasRecordReviewOverrides } from '../summary/summary-store.js';
+import { filterLlmVisibleSummaryRecords, getSummaryRecords, saveAtlasRecordReviewOverrides } from '../summary/summary-store.js';
 import { validateSummaryRange } from '../summary/summary-service.js';
 import { getCoveredRanges } from '../summary/range-utils.js';
 import { createStableAtlasEntityId } from './atlas-entity-id.js';
@@ -30,7 +30,7 @@ export const ATLAS_REVIEW_MODES = Object.freeze({
 });
 
 export function getAtlasReviewRecordCandidates() {
-    return getSummaryRecords()
+    return filterLlmVisibleSummaryRecords(getSummaryRecords())
         .filter(record => record.type === 'summary' && record.structuredSummary)
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
 }
@@ -62,6 +62,7 @@ export function buildAtlasReviewPromptPreviews({
     endRecordId,
 }) {
     assertCategory(category);
+    const hiddenIds = getHiddenAtlasEntityIds(category);
     if (mode === ATLAS_REVIEW_MODES.RECORD) {
         return selectRecordRange(startRecordId, endRecordId).map(record => {
             const [target] = createSummaryChunks(
@@ -73,11 +74,12 @@ export function buildAtlasReviewPromptPreviews({
             const updates = record.atlasReviewOverrides?.[category]?.memoryUpdates
                 || record.structuredSummary.data.memoryUpdates?.[category]
                 || { created: [], updated: [] };
+            const contribution = attachExistingSourceIds(updates, category, record.id);
             return buildAtlasReviewPrompt(target, category, {
                 mode,
                 projectionOptions: { excludeRecordCategory: { recordId: record.id, category } },
                 currentRecordContribution: JSON.stringify(
-                    attachExistingSourceIds(updates, category, record.id),
+                    omitHiddenAtlasUpdates(contribution, hiddenIds),
                     null,
                     2,
                 ),
@@ -95,7 +97,9 @@ export function buildAtlasReviewPromptPreviews({
     return [buildAtlasReviewPrompt(target, category, {
         mode: ATLAS_REVIEW_MODES.QUICK,
         projectionOptions: previous ? { excludeReviewIds: [previous.id] } : {},
-        currentRecordContribution: previousUpdates ? JSON.stringify(previousUpdates, null, 2) : null,
+        currentRecordContribution: previousUpdates
+            ? JSON.stringify(omitHiddenAtlasUpdates(previousUpdates, hiddenIds), null, 2)
+            : null,
     })];
 }
 
@@ -181,28 +185,39 @@ async function createQuickReviewEntry(draft, { startId, endId, onProgress, signa
     const previousUpdates = previous
         ? attachExistingSourceIds(previous.memoryUpdates, draft.category, reviewId)
         : null;
+    const hiddenIds = getHiddenAtlasEntityIds(draft.category);
+    const visiblePreviousUpdates = previousUpdates
+        ? omitHiddenAtlasUpdates(previousUpdates, hiddenIds)
+        : null;
     throwIfCancelled(signal, draft);
     onProgress?.({ current: 1, total: 1, target });
     const prompt = buildAtlasReviewPrompt(target, draft.category, {
         mode: ATLAS_REVIEW_MODES.QUICK,
         projectionOptions: previous ? { excludeReviewIds: [previous.id] } : {},
-        currentRecordContribution: previousUpdates ? JSON.stringify(previousUpdates, null, 2) : null,
+        currentRecordContribution: visiblePreviousUpdates
+            ? JSON.stringify(visiblePreviousUpdates, null, 2)
+            : null,
     });
     const response = await generateSummary(prompt);
     throwIfCancelled(signal, draft);
     ensureChatUnchanged(draft.sourceChat);
-    const parsed = parseAtlasReviewResponse(response, draft.category);
+    const parsed = stabilizeCreatedSourceIds(
+        parseAtlasReviewResponse(response, draft.category),
+        visiblePreviousUpdates,
+        draft.category,
+    );
     draft.entries.push({
         reviewId,
         startId: start,
         endId: end,
-        memoryUpdates: stabilizeCreatedSourceIds(parsed, previousUpdates, draft.category),
+        memoryUpdates: restoreHiddenAtlasUpdates(parsed, previousUpdates, hiddenIds),
     });
 }
 
 async function createRecordReviewEntries(draft, { startRecordId, endRecordId, onProgress, signal }) {
     const records = selectRecordRange(startRecordId, endRecordId);
     const pendingOverrides = [];
+    const hiddenIds = getHiddenAtlasEntityIds(draft.category);
     for (let index = 0; index < records.length; index += 1) {
         const record = records[index];
         try {
@@ -220,21 +235,27 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
                 || record.structuredSummary.data.memoryUpdates?.[draft.category]
                 || { created: [], updated: [] };
             const contribution = attachExistingSourceIds(originalUpdates, draft.category, record.id);
+            const visibleContribution = omitHiddenAtlasUpdates(contribution, hiddenIds);
             const prompt = buildAtlasReviewPrompt(target, draft.category, {
                 mode: ATLAS_REVIEW_MODES.RECORD,
                 projectionOptions: {
                     draftRecordOverrides: pendingOverrides,
                     excludeRecordCategory: { recordId: record.id, category: draft.category },
                 },
-                currentRecordContribution: JSON.stringify(contribution, null, 2),
+                currentRecordContribution: JSON.stringify(visibleContribution, null, 2),
             });
             const response = await generateSummary(prompt);
             throwIfCancelled(signal, draft);
             ensureChatUnchanged(draft.sourceChat);
-            const memoryUpdates = stabilizeCreatedSourceIds(
+            const visibleMemoryUpdates = stabilizeCreatedSourceIds(
                 parseAtlasReviewResponse(response, draft.category),
-                contribution,
+                visibleContribution,
                 draft.category,
+            );
+            const memoryUpdates = restoreHiddenAtlasUpdates(
+                visibleMemoryUpdates,
+                contribution,
+                hiddenIds,
             );
             const entry = {
                 recordId: record.id,
@@ -310,6 +331,36 @@ function stabilizeCreatedSourceIds(memoryUpdates, previousUpdates, category) {
     return { ...memoryUpdates, created };
 }
 
+function getHiddenAtlasEntityIds(category) {
+    return new Set(getAtlasProjection()[category]
+        .filter(entity => entity.llmHidden)
+        .map(entity => String(entity.id)));
+}
+
+function omitHiddenAtlasUpdates(memoryUpdates, hiddenIds) {
+    if (!memoryUpdates || !hiddenIds.size) return structuredClone(memoryUpdates);
+    return {
+        ...structuredClone(memoryUpdates),
+        created: (memoryUpdates.created || [])
+            .filter(proposal => !hiddenIds.has(String(proposal.sourceId))),
+        updated: (memoryUpdates.updated || [])
+            .filter(proposal => !hiddenIds.has(String(proposal.targetId))),
+    };
+}
+
+function restoreHiddenAtlasUpdates(visibleUpdates, originalUpdates, hiddenIds) {
+    if (!originalUpdates || !hiddenIds.size) return visibleUpdates;
+    const hiddenCreated = (originalUpdates.created || [])
+        .filter(proposal => hiddenIds.has(String(proposal.sourceId)));
+    const hiddenUpdated = (originalUpdates.updated || [])
+        .filter(proposal => hiddenIds.has(String(proposal.targetId)));
+    return {
+        ...visibleUpdates,
+        created: [...(visibleUpdates.created || []), ...structuredClone(hiddenCreated)],
+        updated: [...(visibleUpdates.updated || []), ...structuredClone(hiddenUpdated)],
+    };
+}
+
 function getProposalIdentity(category, proposal) {
     const value = category === 'world'
         ? (proposal.keys || []).join('|')
@@ -322,6 +373,7 @@ function createAtlasStateSignature() {
         id: record.id,
         startId: record.startId,
         endId: record.endId,
+        llmHidden: record.llmHidden,
         updatedAt: record.updatedAt,
         memoryUpdates: record.structuredSummary?.data?.memoryUpdates,
         atlasReviewOverrides: record.atlasReviewOverrides,

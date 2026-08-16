@@ -63,6 +63,7 @@ function applyCategoryCorrections(category, entities, correctionMap, orphanCorre
         const corrected = structuredClone(entity);
         corrected.manualCorrections = structuredClone(fields);
         corrected.excluded = Boolean(correctionMap?.[entity.id]?.excluded);
+        corrected.llmHidden = Boolean(correctionMap?.[entity.id]?.llmHidden);
         if (!Object.keys(fields).length) return corrected;
         const handledFields = category === 'commitments'
             ? applyCommitmentStatusCorrection(corrected, fields)

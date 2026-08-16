@@ -8,6 +8,7 @@ import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/a
 import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
 import { renderManualAtlasState } from './atlas-manual-editor.js';
+import { getAtlasLlmVisibilityAction, renderAtlasLlmVisibilityState, toggleAtlasLlmVisibility } from './atlas-llm-visibility.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getWorldAtlas } from './world-memory-service.js';
@@ -95,20 +96,23 @@ export function renderWorldMemory(root) {
 function renderWorldEntry(entry, cachedTranslation, retrieval, omittedByBudget, blockEnabled, mode) {
     const translation = getValidAtlasTranslation('world', entry, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(entry.manualCorrections || {}).length);
+    const visibilityAction = getAtlasLlmVisibilityAction(entry);
     const unmatched = blockEnabled && mode === 'lorebook' && !retrieval?.eligible;
     const injectionState = unmatched ? 'unmatched' : omittedByBudget ? 'omitted' : null;
     return `
-        <article class="stsm-world-card${injectionState ? ' stsm-atlas-card-injection-omitted' : ''}" data-atlas-category="world" data-entity-id="${escapeHtml(entry.id)}">
+        <article class="stsm-world-card${injectionState ? ' stsm-atlas-card-injection-omitted' : ''}${entry.llmHidden ? ' stsm-atlas-card-llm-hidden' : ''}" data-atlas-category="world" data-entity-id="${escapeHtml(entry.id)}">
             <header>
                 <div class="stsm-world-key-list">
                     ${entry.keys.map(key => `<span>${escapeHtml(key)}</span>`).join('')}
                     ${renderManualAtlasState(entry)}
+                    ${renderAtlasLlmVisibilityState(entry)}
                     ${renderInjectionState(injectionState)}
                     ${renderCorrectionState(entry.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
+                        ${renderAction('toggle-llm-visibility', visibilityAction.icon, visibilityAction.title)}
                         ${hasCorrection && !entry.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
@@ -159,6 +163,8 @@ async function handleAtlasAction(event) {
         if (button.dataset.atlasAction === 'edit') {
             if (entry.manual) await showManualWorldEntryEditor(entityId);
             else await showAtlasEditor('world', entityId);
+        } else if (button.dataset.atlasAction === 'toggle-llm-visibility') {
+            await toggleAtlasLlmVisibility('world', entry);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity('world', entityId, entry.keys.join(', '));
         } else if (button.dataset.atlasAction === 'toggle-translation') {

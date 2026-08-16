@@ -4,6 +4,7 @@ import { beginOperation, endOperation } from '../core/extension-state.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
 import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
+import { getAtlasLlmVisibilityAction, renderAtlasLlmVisibilityState, toggleAtlasLlmVisibility } from './atlas-llm-visibility.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getItemAtlas } from './item-memory-service.js';
@@ -53,18 +54,21 @@ export function renderItemMemory(root) {
 function renderItem(item, cachedTranslation) {
     const translation = getValidAtlasTranslation('items', item, cachedTranslation || null);
     const hasCorrection = Boolean(Object.keys(item.manualCorrections || {}).length);
+    const visibilityAction = getAtlasLlmVisibilityAction(item);
     return `
-        <article class="stsm-item-card" data-atlas-category="items" data-entity-id="${escapeHtml(item.id)}">
+        <article class="stsm-item-card${item.llmHidden ? ' stsm-atlas-card-llm-hidden' : ''}" data-atlas-category="items" data-entity-id="${escapeHtml(item.id)}">
             <header>
                 <div>
                     <strong>${escapeHtml(item.name)}</strong>
                     ${item.aliases.length ? `<span>${item.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
                     ${renderManualAtlasState(item)}
+                    ${renderAtlasLlmVisibilityState(item)}
                     ${renderCorrectionState(item.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
+                        ${renderAction('toggle-llm-visibility', visibilityAction.icon, visibilityAction.title)}
                         ${hasCorrection && !item.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
@@ -110,6 +114,8 @@ async function handleAtlasAction(event, category) {
         if (button.dataset.atlasAction === 'edit') {
             if (item.manual) await showManualAtlasEntryEditor(category, entityId);
             else await showAtlasEditor(category, entityId);
+        } else if (button.dataset.atlasAction === 'toggle-llm-visibility') {
+            await toggleAtlasLlmVisibility(category, item);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity(category, entityId, item.name);
         } else if (button.dataset.atlasAction === 'toggle-translation') {

@@ -1,4 +1,4 @@
-import { getAtlasProjection } from './atlas-projection-service.js';
+import { getAtlasProjection, getLlmVisibleAtlasProjection } from './atlas-projection-service.js';
 import { buildItemMemoryPromptContext as serializeItemMemory } from './item-memory.js';
 
 export function getItemAtlas(projectionOptions = {}) {
@@ -12,5 +12,5 @@ export function getItemAtlas(projectionOptions = {}) {
 }
 
 export function buildItemMemoryPromptContext(projectionOptions = {}) {
-    return serializeItemMemory(getItemAtlas(projectionOptions).items);
+    return serializeItemMemory(getLlmVisibleAtlasProjection(projectionOptions).items);
 }

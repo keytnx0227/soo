@@ -1,4 +1,4 @@
-import { getAtlasProjection } from './atlas-projection-service.js';
+import { getAtlasProjection, getLlmVisibleAtlasProjection } from './atlas-projection-service.js';
 import { buildWorldMemoryPromptContext as serializeWorldMemory } from './world-memory.js';
 
 export function getWorldAtlas(projectionOptions = {}) {
@@ -12,5 +12,5 @@ export function getWorldAtlas(projectionOptions = {}) {
 }
 
 export function buildWorldMemoryPromptContext(projectionOptions = {}) {
-    return serializeWorldMemory(getWorldAtlas(projectionOptions).world);
+    return serializeWorldMemory(getLlmVisibleAtlasProjection(projectionOptions).world);
 }

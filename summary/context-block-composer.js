@@ -1,6 +1,6 @@
 import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
-import { getAtlasProjection } from '../memory/atlas-projection-service.js';
+import { getLlmVisibleAtlasProjection } from '../memory/atlas-projection-service.js';
 import { getPeopleRetrievalMetadata } from '../memory/atlas-metadata.js';
 import { evaluatePeopleRetrieval } from '../memory/people-retrieval.js';
 import { evaluateWorldRetrieval } from '../memory/world-retrieval.js';
@@ -15,7 +15,7 @@ export function buildContextBlockComposition(budget = Infinity, {
     blockKinds = null,
 } = {}) {
     const settings = getSettings().summarization;
-    const atlas = getAtlasProjection();
+    const atlas = getLlmVisibleAtlasProjection();
     const peopleRetrieval = evaluatePeopleRetrieval({
         people: atlas.people,
         messages,

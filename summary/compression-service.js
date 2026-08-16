@@ -20,7 +20,7 @@ import {
 
 export function getCompressionCandidates() {
     return getSummaryRecordIndex()
-        .filter(record => !record.compressedBy)
+        .filter(record => !record.compressedBy && !record.llmHidden)
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
 }
 
@@ -108,8 +108,12 @@ export async function regenerateCompressedSummary(recordId) {
     assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record?.compression) throw new Error('재생성할 압축 요약 기록을 찾지 못했습니다.');
+    if (record.llmHidden) throw new Error('LLM에서 감춘 압축 요약은 재생성할 수 없습니다.');
     const sources = getSummaryRecordsByIds(record.compression.sourceRecordIds);
     if (sources.some(source => !source)) throw new Error('압축 요약의 원본 레코드 일부를 찾지 못했습니다.');
+    if (sources.some(source => source.llmHidden)) {
+        throw new Error('LLM에서 감춘 원본 레코드가 포함되어 압축 요약을 재생성할 수 없습니다.');
+    }
     const snapshot = createSourceSnapshot(sources);
     const mode = getCompressionMode();
     const segmented = mode === COMPRESSION_MODES.SEGMENTED;
@@ -120,6 +124,9 @@ export async function regenerateCompressedSummary(recordId) {
     const response = await generateSummary(prompt);
     if (!response) throw new Error('재생성된 압축 요약 응답이 비어 있습니다.');
     assertSourcesUnchanged(snapshot, record.id);
+    if (getSummaryRecord(recordId)?.llmHidden) {
+        throw new Error('압축 재생성 중 대상 기록이 LLM 비공개로 변경되어 결과를 저장하지 않았습니다.');
+    }
     const data = parseCompressionResponse(response, { segmented, sourceRecords: sources });
     const content = renderCompressionSummary(data, {
         startId: record.startId,
@@ -153,6 +160,7 @@ function createSourceSnapshot(sources) {
         id: record.id,
         contentHash: record.contentHash,
         compressedBy: record.compressedBy,
+        llmHidden: record.llmHidden,
     }));
 }
 
@@ -163,6 +171,9 @@ function assertSourcesUnchanged(snapshot, expectedParentId = null) {
         const current = currentRecords[index];
         if (!current || current.contentHash !== expected.contentHash) {
             throw new Error('압축 요청 중 원본 요약이 변경되어 결과를 저장하지 않았습니다.');
+        }
+        if (current.llmHidden !== expected.llmHidden || current.llmHidden) {
+            throw new Error('압축 요청 중 원본 요약의 LLM 공개 상태가 변경되어 결과를 저장하지 않았습니다.');
         }
         if (expectedParentId === null && current.compressedBy) {
             throw new Error('압축 요청 중 원본 요약의 활성 상태가 변경되어 결과를 저장하지 않았습니다.');

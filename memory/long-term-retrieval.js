@@ -14,7 +14,7 @@ export function retrieveLongTermRecords({
     selectCandidates = selectWithinBudget,
 }) {
     const allRecords = Array.isArray(records) ? records : [];
-    const longTermRecords = allRecords.filter(record => Boolean(record?.compressedBy));
+    const longTermRecords = allRecords.filter(record => Boolean(record?.compressedBy) && !record.llmHidden);
     const normalizedSettings = normalizeRetrievalSettings(settings);
     const contextMessages = getRecentSearchMessages(messages, normalizedSettings.messageCount);
     const base = {

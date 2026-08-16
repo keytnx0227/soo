@@ -174,6 +174,7 @@ export async function regenerateSummaryRecord(recordId) {
     assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record) throw new Error('재생성할 요약 기록을 찾지 못했습니다.');
+    if (record.llmHidden) throw new Error('LLM에서 감춘 요약 기록은 재생성할 수 없습니다.');
     if (record.type === 'compressed') return regenerateCompressedSummary(recordId);
 
     const { start, end, chat } = validateSummaryRange(record.startId, record.endId);
@@ -188,6 +189,9 @@ export async function regenerateSummaryRecord(recordId) {
     const response = await generateSummary(prompt);
     ensureChatUnchanged(chat);
     if (!response) throw new Error('재생성된 요약 응답이 비어 있습니다.');
+    if (getSummaryRecord(recordId)?.llmHidden) {
+        throw new Error('재생성 중 요약 기록이 LLM 비공개로 변경되어 결과를 저장하지 않았습니다.');
+    }
     const structuredData = parseStructuredSummaryResponse(
         response,
         outputConfiguration.sections,

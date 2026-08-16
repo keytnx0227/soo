@@ -1,4 +1,4 @@
-import { getSummaryRecords } from '../summary/summary-store.js';
+import { filterLlmVisibleSummaryRecords, getSummaryRecords } from '../summary/summary-store.js';
 import { getAtlasCorrections, getAtlasReviewRecords, getManualAtlasEntries } from './atlas-metadata.js';
 import { applyAtlasCorrections } from './atlas-corrections.js';
 import { deriveItemAtlas } from './item-memory.js';
@@ -58,9 +58,17 @@ export function getAtlasProjection({
     return structuredClone(cache.corrected);
 }
 
+export function getLlmVisibleAtlasProjection(options = {}) {
+    const atlas = getAtlasProjection(options);
+    for (const category of ['people', 'items', 'commitments', 'events', 'world']) {
+        atlas[category] = atlas[category].filter(entity => !entity.llmHidden);
+    }
+    return atlas;
+}
+
 function prepareSummarySourceRecords(records, draftOverrides = [], excludeRecordCategory = null) {
     const drafts = new Map(draftOverrides.map(entry => [`${entry.recordId}:${entry.category}`, entry.memoryUpdates]));
-    return records.map(record => {
+    return filterLlmVisibleSummaryRecords(records).map(record => {
         if (!record.structuredSummary?.data?.memoryUpdates) return record;
         const memoryUpdates = { ...record.structuredSummary.data.memoryUpdates };
         for (const category of ['people', 'items', 'commitments', 'events', 'world']) {
