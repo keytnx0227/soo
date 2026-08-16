@@ -1,5 +1,5 @@
 import { getSummaryRecords } from '../summary/summary-store.js';
-import { getAtlasCorrections, getAtlasReviewRecords, getManualWorldEntries } from './atlas-metadata.js';
+import { getAtlasCorrections, getAtlasReviewRecords, getManualAtlasEntries } from './atlas-metadata.js';
 import { applyAtlasCorrections } from './atlas-corrections.js';
 import { deriveItemAtlas } from './item-memory.js';
 import { derivePeopleAtlas } from './people-memory.js';
@@ -83,19 +83,35 @@ function prepareSummarySourceRecords(records, draftOverrides = [], excludeRecord
 }
 
 function buildAtlasProjection(summaryRecords, reviewRecords) {
-    const records = [...summaryRecords, ...reviewRecords];
+    const manualEntries = Object.fromEntries(
+        ['people', 'items', 'commitments', 'events', 'world']
+            .map(category => [category, getManualAtlasEntries(category)]),
+    );
+    const manualRecords = Object.entries(manualEntries)
+        .flatMap(([category, entries]) => entries.map(entry => toManualAtlasSourceRecord(category, entry)));
+    const automaticRecords = filterUpdatesBeforeManualBaseline(
+        [...summaryRecords, ...reviewRecords],
+        manualEntries,
+    );
+    const records = [...manualRecords, ...automaticRecords];
+    const manualOnly = {
+        people: derivePeopleAtlas(manualRecords).people,
+        items: deriveItemAtlas(manualRecords).items,
+        commitments: deriveCommitmentAtlas(manualRecords).commitments,
+        events: deriveEventAtlas(manualRecords).events,
+        world: deriveWorldAtlas(manualRecords).world,
+    };
     const people = derivePeopleAtlas(records);
     const items = deriveItemAtlas(records);
     const commitments = deriveCommitmentAtlas(records);
     const events = deriveEventAtlas(records);
     const world = deriveWorldAtlas(records);
-    const manualWorld = getManualWorldEntries().map(toManualWorldAtlasEntry);
     return {
-        people: people.people,
-        items: items.items,
-        commitments: commitments.commitments,
-        events: events.events,
-        world: [...world.world, ...manualWorld].sort(compareWorldEntries),
+        people: applyManualAtlasPolicy(people.people, manualOnly.people, manualEntries.people),
+        items: applyManualAtlasPolicy(items.items, manualOnly.items, manualEntries.items),
+        commitments: applyManualAtlasPolicy(commitments.commitments, manualOnly.commitments, manualEntries.commitments),
+        events: applyManualAtlasPolicy(events.events, manualOnly.events, manualEntries.events),
+        world: applyManualAtlasPolicy(world.world, manualOnly.world, manualEntries.world),
         skippedUpdates: {
             people: people.skippedUpdates,
             items: items.skippedUpdates,
@@ -126,22 +142,75 @@ function toAtlasSourceRecord(review) {
     };
 }
 
-function toManualWorldAtlasEntry(entry) {
+function toManualAtlasSourceRecord(category, entry) {
+    const proposal = structuredClone(entry);
+    proposal.sourceId = entry.id;
     return {
-        ...structuredClone(entry),
-        manual: true,
-        sourceRecordIds: [],
-        firstSeenRange: null,
-        lastUpdatedRange: null,
-        provenance: { fields: {}, values: {} },
+        id: `manual-source:${category}:${entry.id}`,
+        startId: entry.appliedThroughId,
+        endId: entry.appliedThroughId,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+        manualSource: true,
+        structuredSummary: {
+            data: {
+                memoryUpdates: {
+                    [category]: { created: [proposal], updated: [] },
+                },
+            },
+        },
     };
 }
 
-function compareWorldEntries(left, right) {
-    if (Boolean(left.manual) !== Boolean(right.manual)) return left.manual ? 1 : -1;
-    const leftPosition = Number(left.firstSeenRange?.startId) || 0;
-    const rightPosition = Number(right.firstSeenRange?.startId) || 0;
-    return leftPosition - rightPosition
-        || String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
-        || String(left.content || '').localeCompare(String(right.content || ''));
+function filterUpdatesBeforeManualBaseline(records, manualEntries) {
+    const baselineByCategory = Object.fromEntries(Object.entries(manualEntries).map(([category, entries]) => [
+        category,
+        new Map(entries.map(entry => [String(entry.id), Number(entry.appliedThroughId) || 0])),
+    ]));
+    return records.map(record => {
+        const memoryUpdates = record.structuredSummary?.data?.memoryUpdates;
+        if (!memoryUpdates) return record;
+        const effectiveId = Number(record.atlasReview ? record.appliedThroughId : record.endId) || 0;
+        let changed = false;
+        const nextUpdates = { ...memoryUpdates };
+        for (const [category, baselines] of Object.entries(baselineByCategory)) {
+            const categoryUpdates = memoryUpdates[category];
+            if (!categoryUpdates || !Array.isArray(categoryUpdates.updated)) continue;
+            const updated = categoryUpdates.updated.filter(update => {
+                const baseline = baselines.get(String(update?.targetId));
+                return baseline === undefined || effectiveId > baseline;
+            });
+            if (updated.length === categoryUpdates.updated.length) continue;
+            changed = true;
+            nextUpdates[category] = { ...categoryUpdates, updated };
+        }
+        if (!changed) return record;
+        return {
+            ...record,
+            structuredSummary: {
+                ...record.structuredSummary,
+                data: {
+                    ...record.structuredSummary.data,
+                    memoryUpdates: nextUpdates,
+                },
+            },
+        };
+    });
+}
+
+function applyManualAtlasPolicy(derivedEntries, manualBaselineEntries, manualEntries) {
+    const metadataById = new Map(manualEntries.map(entry => [String(entry.id), entry]));
+    const baselineById = new Map(manualBaselineEntries.map(entry => [String(entry.id), entry]));
+    return derivedEntries.map(entry => {
+        const metadata = metadataById.get(String(entry.id));
+        if (!metadata) return entry;
+        const selected = metadata.allowAutoUpdate ? entry : baselineById.get(String(entry.id)) || entry;
+        return {
+            ...structuredClone(selected),
+            manual: true,
+            allowAutoUpdate: Boolean(metadata.allowAutoUpdate),
+            createdAt: metadata.createdAt,
+            updatedAt: metadata.updatedAt,
+        };
+    });
 }

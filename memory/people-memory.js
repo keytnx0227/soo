@@ -23,6 +23,10 @@ export function buildPeopleMemoryPromptContext(people) {
 
 function compactPersonForPrompt(person) {
     const result = { id: person.id, name: person.name };
+    if (person.manual) {
+        result.manual = true;
+        result.allowAutoUpdate = Boolean(person.allowAutoUpdate);
+    }
     if (person.provisional) result.provisional = true;
     for (const field of ['role', 'age', 'occupation', 'appearance', 'voice']) {
         if (person[field]) result[field] = person[field];

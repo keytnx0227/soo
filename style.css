@@ -456,6 +456,52 @@
     gap: 0px;
 }
 
+.stsm-record-pin-filter {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0 0;
+}
+
+.stsm-record-pin-filter[hidden] {
+    display: none;
+}
+
+.stsm-record-pin-filter-button {
+    min-width: 70px;
+}
+
+.stsm-record-pin-filter-button.stsm-record-pin-filter-active {
+    border-color: var(--SmartThemeQuoteColor);
+    color: var(--SmartThemeQuoteColor);
+}
+
+.stsm-manual-auto-update {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+}
+
+.stsm-manual-auto-update > span:first-child {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.stsm-manual-auto-update small {
+    opacity: 0.72;
+}
+
+.stsm-atlas-manual-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.8;
+}
+
 .stsm-record-memory-tab {
     width: 100%;
     min-width: 0;

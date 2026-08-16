@@ -30,6 +30,7 @@ export function renderLongTermRetrievalSettings(root, contextDetails = null) {
     container.querySelector('#stsm-long-term-mode').value = settings.mode;
     container.querySelector('#stsm-long-term-message-count').value = settings.messageCount;
     container.querySelector('#stsm-long-term-max-tokens').value = settings.maxTokens;
+    container.querySelector('#stsm-long-term-pinned-budget').value = settings.pinnedBudgetMode;
     container.querySelector('#stsm-long-term-relevance').value = settings.relevance;
     container.querySelector('#stsm-long-term-message-recency').value = settings.messageRecency;
     container.querySelector('#stsm-long-term-recency-strength').value = settings.messageRecencyStrength;

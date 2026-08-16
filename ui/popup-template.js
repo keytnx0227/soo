@@ -131,6 +131,13 @@ export function buildPopup() {
                             <span>장기기억 최대 토큰</span>
                             <input id="stsm-long-term-max-tokens" data-long-term-setting="maxTokens" class="text_pole" type="number" min="100" max="100000" step="100" />
                         </label>
+                        <label class="stsm-field">
+                            <span>고정 기억 토큰</span>
+                            <select id="stsm-long-term-pinned-budget" data-long-term-setting="pinnedBudgetMode" class="text_pole">
+                                <option value="included">검색 예산에 포함</option>
+                                <option value="separate">검색 예산과 별도</option>
+                            </select>
+                        </label>
                         <label class="stsm-field stsm-long-term-relevance-field">
                             <span>관련도 기준</span>
                             <select id="stsm-long-term-relevance" data-long-term-setting="relevance" class="text_pole">
@@ -621,6 +628,10 @@ export function buildPopup() {
 
 export function renderRecordSearchControls() {
     return `
+        <div class="stsm-record-pin-filter" role="group" aria-label="장기기억 고정 필터" hidden>
+            <button class="stsm-record-pin-filter-button stsm-record-pin-filter-active menu_button interactable" type="button" data-pin-filter="all" aria-pressed="true">전체</button>
+            <button class="stsm-record-pin-filter-button menu_button interactable" type="button" data-pin-filter="pinned" aria-pressed="false"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> 고정</button>
+        </div>
         <div class="stsm-record-search">
             <select class="stsm-record-search-mode text_pole" aria-label="기억 검색 방식">
                 <option value="number">번호</option>
@@ -707,11 +718,9 @@ function renderAtlasHeadingActions(category, countId, initialCount, label) {
     return `
         <span class="stsm-atlas-heading-actions">
             <span id="${countId}">${initialCount}</span>
-            ${category === 'world' ? `
-                <button class="menu_button menu_button_icon interactable" data-world-manual-add type="button" title="세계 설정 직접 추가" aria-label="세계 설정 직접 추가">
-                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                </button>
-            ` : ''}
+            <button class="menu_button menu_button_icon interactable" data-atlas-manual-add="${category}" type="button" title="${label} 직접 추가" aria-label="${label} 직접 추가">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            </button>
             <button class="menu_button menu_button_icon interactable" data-atlas-fullscreen="${category}" type="button" title="${label} 크게 보기" aria-label="${label} 크게 보기">
                 <i class="fa-solid fa-expand" aria-hidden="true"></i>
             </button>

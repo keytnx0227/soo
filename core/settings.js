@@ -29,7 +29,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 25;
+const PROMPT_SCHEMA_VERSION = 26;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -373,7 +373,7 @@ Example: an investigation scene may yield case investigation [사건, 조사, �
 const V14_EVENT_MEMORY_TEMPLATE = '<Current Major Event Memory>\n{{sumiEventMemory}}\n</Current Major Event Memory>';
 const DEFAULT_EVENT_MEMORY_TEMPLATE = '<Current Event Memory>\n{{sumiEventMemory}}\n</Current Event Memory>';
 
-const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+const V25_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V11_DEFAULT_SUMMARY_EXTRACTION_RULES,
     plot: `# Plot
 
@@ -442,8 +442,19 @@ Maintain a compact lorebook of durable world facts newly established by the Summ
 - Return empty created and updated arrays when no durable new setting fact is supported. When in doubt, omit.`,
 });
 
-const V22_DEFAULT_WORLD_EXTRACTION_RULE = DEFAULT_SUMMARY_EXTRACTION_RULES.world
-    .replace('\n- Entries marked manual are user-owned facts. Use them to prevent duplication, but never create an update targeting their IDs.', '');
+const MANUAL_ATLAS_UPDATE_RULE = '- Entries marked manual are user-owned. Update their exact ID only when allowAutoUpdate is true; when false, use them only to prevent duplication and never target their IDs.';
+const OLD_MANUAL_WORLD_RULE = '- Entries marked manual are user-owned facts. Use them to prevent duplication, but never create an update targeting their IDs.';
+const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+    ...V25_DEFAULT_SUMMARY_EXTRACTION_RULES,
+    people: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.people}\n${MANUAL_ATLAS_UPDATE_RULE}`,
+    items: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.items}\n${MANUAL_ATLAS_UPDATE_RULE}`,
+    commitments: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.commitments}\n${MANUAL_ATLAS_UPDATE_RULE}`,
+    events: `${V25_DEFAULT_SUMMARY_EXTRACTION_RULES.events}\n${MANUAL_ATLAS_UPDATE_RULE}`,
+    world: V25_DEFAULT_SUMMARY_EXTRACTION_RULES.world.replace(OLD_MANUAL_WORLD_RULE, MANUAL_ATLAS_UPDATE_RULE),
+});
+
+const V22_DEFAULT_WORLD_EXTRACTION_RULE = V25_DEFAULT_SUMMARY_EXTRACTION_RULES.world
+    .replace(`\n${OLD_MANUAL_WORLD_RULE}`, '');
 
 const LEGACY_SUMMARY_EXTRACTION_IDS = Object.freeze({
     'summary-title': 'title',
@@ -766,6 +777,7 @@ export const defaultSettings = Object.freeze({
             messageRecencyNewestWeight: 2,
             messageRecencyCurve: 'linear',
             messageRecencyCurveExponent: 2,
+            pinnedBudgetMode: 'included',
             relevanceLimitMode: 'all',
             relevanceMaxRecords: 3,
         },
@@ -1601,6 +1613,9 @@ function normalizeLongTermRetrievalSettings(value) {
             ? source.messageRecencyCurve
             : 'linear',
         messageRecencyCurveExponent: clampNumber(source.messageRecencyCurveExponent, 0.1, 10, 2),
+        pinnedBudgetMode: ['included', 'separate'].includes(source.pinnedBudgetMode)
+            ? source.pinnedBudgetMode
+            : 'included',
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };
@@ -2194,6 +2209,29 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
             const current = String(rules.world || V22_DEFAULT_WORLD_EXTRACTION_RULE);
             if (current.trim() === V22_DEFAULT_WORLD_EXTRACTION_RULE.trim()) {
                 rules.world = DEFAULT_SUMMARY_EXTRACTION_RULES.world;
+            }
+            return {
+                ...block,
+                config: { ...block.config, rules },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 26) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const rules = block.config?.rules && typeof block.config.rules === 'object'
+                ? { ...block.config.rules }
+                : {};
+            for (const category of ['people', 'items', 'commitments', 'events', 'world']) {
+                const current = String(rules[category] || V25_DEFAULT_SUMMARY_EXTRACTION_RULES[category]);
+                if (current.trim() === V25_DEFAULT_SUMMARY_EXTRACTION_RULES[category].trim()) {
+                    rules[category] = DEFAULT_SUMMARY_EXTRACTION_RULES[category];
+                } else if (current.includes(OLD_MANUAL_WORLD_RULE)) {
+                    rules[category] = current.replace(OLD_MANUAL_WORLD_RULE, MANUAL_ATLAS_UPDATE_RULE);
+                } else if (!current.includes(MANUAL_ATLAS_UPDATE_RULE)) {
+                    rules[category] = `${current.trim()}\n${MANUAL_ATLAS_UPDATE_RULE}`;
+                }
             }
             return {
                 ...block,

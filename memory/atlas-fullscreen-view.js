@@ -5,6 +5,7 @@ import { bindEventMemoryView, renderEventMemory } from './event-memory-view.js';
 import { bindItemMemoryView, renderItemMemory } from './item-memory-view.js';
 import { bindPeopleMemoryView, renderPeopleMemory } from './people-memory-view.js';
 import { bindWorldMemoryView, renderWorldMemory } from './world-memory-view.js';
+import { bindManualAtlasEntryButtons } from './atlas-manual-editor.js';
 
 const ATLAS_VIEWS = Object.freeze({
     people: {
@@ -100,11 +101,9 @@ async function showAtlasFullscreen(category) {
             <strong>${view.title}</strong>
             <span class="stsm-atlas-heading-actions">
                 <span id="${view.countId}">${view.initialCount}</span>
-                ${category === 'world' ? `
-                    <button class="menu_button menu_button_icon interactable" data-world-manual-add type="button" title="세계 설정 직접 추가" aria-label="세계 설정 직접 추가">
-                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                    </button>
-                ` : ''}
+                <button class="menu_button menu_button_icon interactable" data-atlas-manual-add="${category}" type="button" title="${view.title} 직접 추가" aria-label="${view.title} 직접 추가">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                </button>
             </span>
         </div>
         ${view.tokenUsageId ? `<div id="${view.tokenUsageId}"></div>` : ''}
@@ -117,6 +116,7 @@ async function showAtlasFullscreen(category) {
 
     const render = () => view.render(content);
     view.bind(content);
+    bindManualAtlasEntryButtons(content);
     window.addEventListener('stsm:atlas-changed', render);
     window.addEventListener('stsm:injection-settings-changed', render);
 

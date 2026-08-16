@@ -3,6 +3,7 @@ import { Popup } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getItemAtlas } from './item-memory-service.js';
@@ -58,19 +59,20 @@ function renderItem(item, cachedTranslation) {
                 <div>
                     <strong>${escapeHtml(item.name)}</strong>
                     ${item.aliases.length ? `<span>${item.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
+                    ${renderManualAtlasState(item)}
                     ${renderCorrectionState(item.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
-                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${hasCorrection && !item.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
-                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
+                        ${item.manual ? renderAction('delete-manual', 'fa-trash-can', '직접 추가 항목 삭제') : renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(item.id)}</code>
-                        <span>#${item.firstSeenRange.startId} ~ #${item.lastUpdatedRange.endId}</span>
+                        <span>${item.manual ? '직접 추가' : `#${item.firstSeenRange.startId} ~ #${item.lastUpdatedRange.endId}`}</span>
                     </div>
                 </div>
             </header>
@@ -106,13 +108,16 @@ async function handleAtlasAction(event, category) {
     if (!item) return;
     try {
         if (button.dataset.atlasAction === 'edit') {
-            await showAtlasEditor(category, entityId);
+            if (item.manual) await showManualAtlasEntryEditor(category, entityId);
+            else await showAtlasEditor(category, entityId);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity(category, entityId, item.name);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
         } else if (button.dataset.atlasAction === 'exclude') {
             if (await excludeAtlasEntity(category, entityId, item.name)) toastr.success('아이템을 도감에서 삭제했습니다.');
+        } else if (button.dataset.atlasAction === 'delete-manual') {
+            if (await confirmDeleteManualAtlasEntry(category, entityId, item.name)) toastr.success('직접 추가한 아이템을 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation(category, item);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;

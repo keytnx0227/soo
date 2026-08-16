@@ -5,6 +5,7 @@ import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getEventAtlas } from './event-memory-service.js';
@@ -76,19 +77,20 @@ function renderEvent(event, cachedTranslation, omitted) {
                         <span class="stsm-event-importance ${major ? 'is-turning-point' : ''}">${major ? '<i class="fa-solid fa-bolt" aria-hidden="true"></i> Major' : 'Minor'}</span>
                         ${renderInjectionState(omitted)}
                     </span>
+                    ${renderManualAtlasState(event)}
                     ${renderCorrectionState(event.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
-                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${hasCorrection && !event.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
-                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
+                        ${event.manual ? renderAction('delete-manual', 'fa-trash-can', '직접 추가 항목 삭제') : renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(event.id)}</code>
-                        <span>#${event.firstSeenRange.startId} ~ #${event.lastUpdatedRange.endId}</span>
+                        <span>${event.manual ? '직접 추가' : `#${event.firstSeenRange.startId} ~ #${event.lastUpdatedRange.endId}`}</span>
                     </div>
                 </div>
             </header>
@@ -131,13 +133,16 @@ async function handleAtlasAction(event) {
     if (!entry) return;
     try {
         if (button.dataset.atlasAction === 'edit') {
-            await showAtlasEditor('events', entityId);
+            if (entry.manual) await showManualAtlasEntryEditor('events', entityId);
+            else await showAtlasEditor('events', entityId);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity('events', entityId, entry.title);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
         } else if (button.dataset.atlasAction === 'exclude') {
             if (await excludeAtlasEntity('events', entityId, entry.title)) toastr.success('사건을 도감에서 삭제했습니다.');
+        } else if (button.dataset.atlasAction === 'delete-manual') {
+            if (await confirmDeleteManualAtlasEntry('events', entityId, entry.title)) toastr.success('직접 추가한 사건을 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation('events', entry);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;

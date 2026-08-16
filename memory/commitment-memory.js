@@ -18,6 +18,7 @@ export function buildCommitmentMemoryPromptContext(commitments) {
     return JSON.stringify(commitments.map(commitment => ({
         id: commitment.id,
         title: commitment.title,
+        ...(commitment.manual ? { manual: true, allowAutoUpdate: Boolean(commitment.allowAutoUpdate) } : {}),
         terms: commitment.terms,
         participants: commitment.participants,
         conditions: commitment.conditions,

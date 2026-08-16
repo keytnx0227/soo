@@ -107,7 +107,12 @@ export async function savePersonRetrievalMetadata(entityId, value) {
 }
 
 export function getManualWorldEntries() {
-    return structuredClone(getAtlasStore().manual.world);
+    return getManualAtlasEntries('world');
+}
+
+export function getManualAtlasEntries(category) {
+    assertCategory(category);
+    return structuredClone(getAtlasStore().manual[category]);
 }
 
 export function getAtlasReviewRecords() {
@@ -173,22 +178,26 @@ export async function deleteAtlasReviewRecord(recordId) {
 }
 
 export async function addManualWorldEntry({ keys, content }) {
+    return await addManualAtlasEntry('world', { keys, content, allowAutoUpdate: false });
+}
+
+export async function addManualAtlasEntry(category, value) {
+    assertCategory(category);
     const store = getAtlasStore();
-    const previous = structuredClone(store.manual.world);
+    const previous = structuredClone(store.manual[category]);
     const now = new Date().toISOString();
-    const entry = normalizeManualWorldEntry({
-        id: createId('world-manual'),
-        keys,
-        content,
+    const entry = normalizeManualAtlasEntry(category, {
+        ...value,
+        id: createId(`${category}-manual`),
         createdAt: now,
         updatedAt: now,
     });
-    if (!entry) throw new Error('세계 설정의 키와 내용을 모두 입력해주세요.');
-    store.manual.world = [...store.manual.world, entry];
+    if (!entry) throw new Error('직접 추가할 도감 항목의 필수 정보를 입력해주세요.');
+    store.manual[category] = [...store.manual[category], entry];
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
-        store.manual.world = previous;
+        store.manual[category] = previous;
         throw error;
     }
     notifyAtlasChanged();
@@ -196,28 +205,35 @@ export async function addManualWorldEntry({ keys, content }) {
 }
 
 export async function updateManualWorldEntry(entityId, { keys, content }) {
+    const current = getManualAtlasEntries('world').find(entry => entry.id === String(entityId));
+    return await updateManualAtlasEntry('world', entityId, { ...current, keys, content });
+}
+
+export async function updateManualAtlasEntry(category, entityId, value) {
+    assertCategory(category);
     const store = getAtlasStore();
-    const previousEntries = structuredClone(store.manual.world);
-    const previousTranslations = structuredClone(store.translations.world);
+    const previousEntries = structuredClone(store.manual[category]);
+    const previousTranslations = structuredClone(store.translations[category]);
     const id = String(entityId);
     let updated = null;
-    store.manual.world = store.manual.world.map(entry => {
+    store.manual[category] = store.manual[category].map(entry => {
         if (entry.id !== id) return entry;
-        updated = normalizeManualWorldEntry({
+        updated = normalizeManualAtlasEntry(category, {
             ...entry,
-            keys,
-            content,
+            ...value,
+            id: entry.id,
+            createdAt: entry.createdAt,
             updatedAt: new Date().toISOString(),
         });
         return updated;
     });
-    if (!updated) throw new Error('수정할 직접 추가 세계 설정을 찾지 못했습니다.');
-    delete store.translations.world[id];
+    if (!updated) throw new Error('수정할 직접 추가 도감 항목을 찾지 못했습니다.');
+    delete store.translations[category][id];
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
-        store.manual.world = previousEntries;
-        store.translations.world = previousTranslations;
+        store.manual[category] = previousEntries;
+        store.translations[category] = previousTranslations;
         throw error;
     }
     notifyAtlasChanged();
@@ -225,18 +241,29 @@ export async function updateManualWorldEntry(entityId, { keys, content }) {
 }
 
 export async function deleteManualWorldEntry(entityId) {
+    return await deleteManualAtlasEntry('world', entityId);
+}
+
+export async function deleteManualAtlasEntry(category, entityId) {
+    assertCategory(category);
     const store = getAtlasStore();
     const id = String(entityId);
-    if (!store.manual.world.some(entry => entry.id === id)) return false;
-    const previousEntries = structuredClone(store.manual.world);
-    const previousTranslations = structuredClone(store.translations.world);
-    store.manual.world = store.manual.world.filter(entry => entry.id !== id);
-    delete store.translations.world[id];
+    if (!store.manual[category].some(entry => entry.id === id)) return false;
+    const previousEntries = structuredClone(store.manual[category]);
+    const previousTranslations = structuredClone(store.translations[category]);
+    const previousCorrections = structuredClone(store.corrections[category]);
+    const previousRetrieval = category === 'people' ? structuredClone(store.retrieval.people) : null;
+    store.manual[category] = store.manual[category].filter(entry => entry.id !== id);
+    delete store.translations[category][id];
+    delete store.corrections[category][id];
+    if (category === 'people') delete store.retrieval.people[id];
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
-        store.manual.world = previousEntries;
-        store.translations.world = previousTranslations;
+        store.manual[category] = previousEntries;
+        store.translations[category] = previousTranslations;
+        store.corrections[category] = previousCorrections;
+        if (category === 'people') store.retrieval.people = previousRetrieval;
         throw error;
     }
     notifyAtlasChanged();
@@ -255,7 +282,9 @@ function getAtlasStore() {
     if (!root.atlas.retrieval || typeof root.atlas.retrieval !== 'object') root.atlas.retrieval = {};
     if (!root.atlas.manual || typeof root.atlas.manual !== 'object') root.atlas.manual = {};
     root.atlas.reviews = normalizeAtlasReviewRecords(root.atlas.reviews);
-    root.atlas.manual.world = normalizeManualWorldEntries(root.atlas.manual.world);
+    for (const category of CATEGORIES) {
+        root.atlas.manual[category] = normalizeManualAtlasEntries(category, root.atlas.manual[category]);
+    }
     root.atlas.retrieval.people = normalizeEntityMap(root.atlas.retrieval.people, normalizePersonRetrieval);
     for (const category of CATEGORIES) {
         root.atlas.corrections[category] = normalizeEntityMap(
@@ -298,29 +327,127 @@ function normalizeAtlasReviewRecord(value) {
     };
 }
 
-function normalizeManualWorldEntries(value) {
+function normalizeManualAtlasEntries(category, value) {
     if (!Array.isArray(value)) return [];
     const seen = new Set();
-    return value.map(normalizeManualWorldEntry).filter(entry => {
+    return value.map(entry => normalizeManualAtlasEntry(category, entry)).filter(entry => {
         if (!entry || seen.has(entry.id)) return false;
         seen.add(entry.id);
         return true;
     });
 }
 
-function normalizeManualWorldEntry(value) {
+function normalizeManualAtlasEntry(category, value) {
     if (!value || typeof value !== 'object') return null;
-    const keys = normalizeStringList(value.keys);
-    const content = String(value.content || '').trim();
-    if (!keys.length || !content) return null;
     const createdAt = String(value.createdAt || new Date().toISOString());
-    return {
-        id: String(value.id || createId('world-manual')),
-        keys,
-        content,
+    const common = {
+        id: String(value.id || createId(`${category}-manual`)),
+        allowAutoUpdate: Boolean(value.allowAutoUpdate),
+        appliedThroughId: Math.max(0, Number(value.appliedThroughId) || 0),
         createdAt,
         updatedAt: String(value.updatedAt || createdAt),
     };
+    if (category === 'people') {
+        const name = normalizeNullableString(value.name);
+        if (!name) return null;
+        return {
+            ...common,
+            name,
+            provisional: Boolean(value.provisional),
+            aliases: normalizeStringList(value.aliases),
+            role: normalizeNullableString(value.role),
+            age: normalizeNullableString(value.age),
+            occupation: normalizeNullableString(value.occupation),
+            appearance: normalizeNullableString(value.appearance),
+            affiliations: normalizeStringList(value.affiliations),
+            traits: normalizeStringList(value.traits),
+            voice: normalizeNullableString(value.voice),
+            lastKnownState: {
+                location: normalizeNullableString(value.lastKnownState?.location),
+                physicalCondition: normalizeNullableString(value.lastKnownState?.physicalCondition),
+            },
+            relationships: normalizeManualRelationships(value.relationships),
+        };
+    }
+    if (category === 'items') {
+        const name = normalizeNullableString(value.name);
+        if (!name) return null;
+        return {
+            ...common,
+            name,
+            aliases: normalizeStringList(value.aliases),
+            facts: normalizeStringList(value.facts),
+            functions: normalizeStringList(value.functions),
+            lastKnownState: Object.fromEntries(['owner', 'holder', 'location', 'condition', 'status']
+                .map(field => [field, normalizeNullableString(value.lastKnownState?.[field])])),
+        };
+    }
+    if (category === 'commitments') {
+        const title = normalizeNullableString(value.title);
+        const terms = normalizeNullableString(value.terms);
+        if (!title || !terms) return null;
+        return {
+            ...common,
+            title,
+            terms,
+            participants: normalizeManualParticipants(value.participants),
+            conditions: normalizeStringList(value.conditions),
+            deadline: normalizeNullableString(value.deadline),
+            facts: normalizeStringList(value.facts),
+            status: ['pending', 'fulfilled', 'obsolete'].includes(value.status) ? value.status : 'pending',
+            statusReason: normalizeNullableString(value.statusReason),
+        };
+    }
+    if (category === 'events') {
+        const title = normalizeNullableString(value.title);
+        const summary = normalizeNullableString(value.summary);
+        if (!title || !summary) return null;
+        const importance = value.importance === 'major' ? 'major' : 'minor';
+        return {
+            ...common,
+            title,
+            date: normalizeNullableString(value.date),
+            location: normalizeNullableString(value.location),
+            summary,
+            importance,
+            shift: importance === 'major' ? normalizeNullableString(value.shift) : null,
+        };
+    }
+    const keys = normalizeStringList(value.keys);
+    const content = normalizeNullableString(value.content);
+    if (!keys.length || !content) return null;
+    return { ...common, keys, content };
+}
+
+function normalizeManualRelationships(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(entry => {
+        const targetName = normalizeNullableString(entry?.targetName || entry?.targetId);
+        if (!targetName) return null;
+        return {
+            targetId: normalizeNullableString(entry?.targetId),
+            targetName,
+            relationship: normalizeStringList(entry?.relationship),
+            feelings: normalizeStringList(entry?.feelings),
+        };
+    }).filter(Boolean);
+}
+
+function normalizeManualParticipants(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map(entry => {
+        const personName = normalizeNullableString(entry?.personName || entry?.personId);
+        if (!personName) return null;
+        return {
+            personId: normalizeNullableString(entry?.personId),
+            personName,
+            role: normalizeNullableString(entry?.role),
+        };
+    }).filter(Boolean);
+}
+
+function normalizeNullableString(value) {
+    return String(value || '').trim() || null;
 }
 
 function normalizeStringList(value) {

@@ -10,8 +10,10 @@ import {
     setAtlasFieldValues,
     showAtlasEditor,
 } from './atlas-editor.js';
+import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
-import { getAtlasTranslations } from './atlas-metadata.js';
+import { getAtlasTranslations, getManualAtlasEntries, updateManualAtlasEntry } from './atlas-metadata.js';
+import { getAtlasProjection } from './atlas-projection-service.js';
 import { getCommitmentAtlas } from './commitment-memory-service.js';
 
 const STATUS_LABELS = Object.freeze({
@@ -62,19 +64,20 @@ function renderCommitment(commitment, cachedTranslation) {
             <header>
                 <div>
                     <strong>${escapeHtml(commitment.title)}</strong>
+                    ${renderManualAtlasState(commitment)}
                     ${renderCorrectionState(commitment.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
-                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${hasCorrection && !commitment.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
-                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
+                        ${commitment.manual ? renderAction('delete-manual', 'fa-trash-can', '직접 추가 항목 삭제') : renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(commitment.id)}</code>
-                        <span>#${commitment.firstSeenRange.startId} ~ #${commitment.lastUpdatedRange.endId}</span>
+                        <span>${commitment.manual ? '직접 추가' : `#${commitment.firstSeenRange.startId} ~ #${commitment.lastUpdatedRange.endId}`}</span>
                     </div>
                 </div>
             </header>
@@ -118,13 +121,16 @@ async function handleAtlasAction(event, category) {
     if (!commitment) return;
     try {
         if (button.dataset.atlasAction === 'edit') {
-            await showAtlasEditor(category, entityId);
+            if (commitment.manual) await showManualAtlasEntryEditor(category, entityId);
+            else await showAtlasEditor(category, entityId);
         } else if (button.dataset.atlasAction === 'reset') {
             await resetAtlasEntity(category, entityId, commitment.title);
         } else if (button.dataset.atlasAction === 'toggle-translation') {
             toggleTranslation(card, button);
         } else if (button.dataset.atlasAction === 'exclude') {
             if (await excludeAtlasEntity(category, entityId, commitment.title)) toastr.success('서약을 장부에서 삭제했습니다.');
+        } else if (button.dataset.atlasAction === 'delete-manual') {
+            if (await confirmDeleteManualAtlasEntry(category, entityId, commitment.title)) toastr.success('직접 추가한 서약을 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation(category, commitment);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;
@@ -147,13 +153,28 @@ async function handleAtlasAction(event, category) {
 async function handleStatusChange(event) {
     if (!event.target.matches('.stsm-commitment-status')) return;
     const card = event.target.closest('[data-entity-id]');
-    const previous = getCommitmentAtlas().commitments.find(entity => entity.id === card?.dataset.entityId)?.status;
+    const commitment = getCommitmentAtlas().commitments.find(entity => entity.id === card?.dataset.entityId);
+    const previous = commitment?.status;
     try {
         event.target.disabled = true;
-        await setAtlasFieldValues('commitments', card.dataset.entityId, {
-            status: event.target.value,
-            statusReason: null,
-        });
+        if (commitment?.manual) {
+            const source = getManualAtlasEntries('commitments').find(entry => entry.id === commitment.id);
+            if (!source) throw new Error('직접 추가한 서약 원본을 찾지 못했습니다.');
+            const projection = getAtlasProjection();
+            const current = projection.commitments.find(entry => entry.id === commitment.id) || commitment;
+            await updateManualAtlasEntry('commitments', commitment.id, {
+                ...current,
+                allowAutoUpdate: source.allowAutoUpdate,
+                appliedThroughId: projection.frontierId,
+                status: event.target.value,
+                statusReason: null,
+            });
+        } else {
+            await setAtlasFieldValues('commitments', card.dataset.entityId, {
+                status: event.target.value,
+                statusReason: null,
+            });
+        }
         toastr.success('서약 상태를 변경했습니다.');
     } catch (error) {
         if (previous) event.target.value = previous;

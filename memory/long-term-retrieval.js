@@ -63,11 +63,20 @@ export function retrieveLongTermRecords({
             ? right.score - left.score || right.record.endId - left.record.endId
             : right.record.endId - left.record.endId || right.record.startId - left.record.startId)
     ));
-    const limited = normalizedSettings.mode === 'relevance' && normalizedSettings.relevanceLimitMode === 'top'
-        ? ranked.slice(0, normalizedSettings.relevanceMaxRecords)
-        : ranked;
-    const excludedByRecordLimit = limited.length < ranked.length ? ranked.slice(limited.length) : [];
-    const { selected, omitted } = selectCandidates(limited, normalizedSettings.maxTokens);
+    const rankedPinned = ranked.filter(result => result.pinned);
+    const rankedOrdinary = ranked.filter(result => !result.pinned);
+    const limitedOrdinary = normalizedSettings.mode === 'relevance' && normalizedSettings.relevanceLimitMode === 'top'
+        ? rankedOrdinary.slice(0, normalizedSettings.relevanceMaxRecords)
+        : rankedOrdinary;
+    const limited = [...rankedPinned, ...limitedOrdinary];
+    const excludedByRecordLimit = limitedOrdinary.length < rankedOrdinary.length
+        ? rankedOrdinary.slice(limitedOrdinary.length)
+        : [];
+    const budgeted = normalizedSettings.pinnedBudgetMode === 'separate' ? limitedOrdinary : limited;
+    const { selected: budgetSelected, omitted } = selectCandidates(budgeted, normalizedSettings.maxTokens);
+    const selected = normalizedSettings.pinnedBudgetMode === 'separate'
+        ? [...rankedPinned, ...budgetSelected]
+        : budgetSelected;
 
     return {
         ...base,
@@ -201,6 +210,9 @@ function normalizeRetrievalSettings(value) {
             ? source.messageRecencyCurve
             : 'linear',
         messageRecencyCurveExponent: clampNumber(source.messageRecencyCurveExponent, 0.1, 10, 2),
+        pinnedBudgetMode: ['included', 'separate'].includes(source.pinnedBudgetMode)
+            ? source.pinnedBudgetMode
+            : 'included',
         relevanceLimitMode: ['all', 'top'].includes(source.relevanceLimitMode) ? source.relevanceLimitMode : 'all',
         relevanceMaxRecords: clampInteger(source.relevanceMaxRecords, 1, 100, 3),
     };

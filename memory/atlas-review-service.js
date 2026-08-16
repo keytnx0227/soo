@@ -11,7 +11,7 @@ import { createStableAtlasEntityId } from './atlas-entity-id.js';
 import {
     getAtlasCorrections,
     getAtlasReviewRecords,
-    getManualWorldEntries,
+    getManualAtlasEntries,
     saveAtlasReviewRecord,
 } from './atlas-metadata.js';
 import { getAtlasProjection } from './atlas-projection-service.js';
@@ -330,7 +330,8 @@ function createAtlasStateSignature() {
         records,
         reviews: getAtlasReviewRecords(),
         corrections: getAtlasCorrections(),
-        manualWorld: getManualWorldEntries(),
+        manual: Object.fromEntries(Object.keys(ATLAS_REVIEW_CATEGORIES)
+            .map(category => [category, getManualAtlasEntries(category)])),
     });
 }
 

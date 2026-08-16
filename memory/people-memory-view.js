@@ -4,6 +4,7 @@ import { beginOperation, endOperation } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { confirmDeleteManualAtlasEntry, renderManualAtlasState, showManualAtlasEntryEditor } from './atlas-manual-editor.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import {
     getAtlasTranslations,
@@ -108,6 +109,7 @@ function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval, o
                     ${renderInjectionState(omitted)}
                     ${person.provisional ? '<span class="stsm-atlas-correction-state">임시 이름</span>' : ''}
                     ${person.aliases.length ? `<span>${person.aliases.map(escapeHtml).join(' · ')}</span>` : ''}
+                    ${renderManualAtlasState(person)}
                     ${renderCorrectionState(person.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
@@ -115,14 +117,14 @@ function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval, o
                         ${pinAction}
                         ${renderAction('keywords', 'fa-key', '검색 키워드 편집')}
                         ${renderAction('edit', 'fa-pen', '수정')}
-                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${hasCorrection && !person.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환', { pressed: true }) : ''}
-                        ${renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
+                        ${person.manual ? renderAction('delete-manual', 'fa-trash-can', '직접 추가 항목 삭제') : renderAction('exclude', 'fa-trash-can', '도감에서 삭제')}
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(person.id)}</code>
-                        <span>#${person.firstSeenRange.startId} ~ #${person.lastUpdatedRange.endId}</span>
+                        <span>${person.manual ? '직접 추가' : `#${person.firstSeenRange.startId} ~ #${person.lastUpdatedRange.endId}`}</span>
                     </div>
                 </div>
             </header>
@@ -165,7 +167,8 @@ async function handleAtlasAction(event, category) {
     if (!person) return;
     try {
         if (button.dataset.atlasAction === 'edit') {
-            await showAtlasEditor(category, entityId);
+            if (person.manual) await showManualAtlasEntryEditor(category, entityId);
+            else await showAtlasEditor(category, entityId);
         } else if (button.dataset.atlasAction === 'pin') {
             const current = getPersonRetrievalMetadata(entityId);
             await savePersonRetrievalMetadata(entityId, { ...current, pinned: !current.pinned });
@@ -178,6 +181,8 @@ async function handleAtlasAction(event, category) {
             toggleTranslation(card, button);
         } else if (button.dataset.atlasAction === 'exclude') {
             if (await excludeAtlasEntity(category, entityId, person.name)) toastr.success('인물을 도감에서 삭제했습니다.');
+        } else if (button.dataset.atlasAction === 'delete-manual') {
+            if (await confirmDeleteManualAtlasEntry(category, entityId, person.name)) toastr.success('직접 추가한 인물을 삭제했습니다.');
         } else if (button.dataset.atlasAction === 'translate') {
             const existing = getValidAtlasTranslation(category, person);
             if (existing && !await Popup.show.confirm('번역을 재생성하시겠습니까?', '기존 번역은 덮어씌워집니다.')) return;

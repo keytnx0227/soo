@@ -12,7 +12,7 @@ export function buildWorldMemoryPromptContext(entries) {
         id: entry.id,
         keys: entry.keys,
         content: entry.content,
-        ...(entry.manual ? { manual: true } : {}),
+        ...(entry.manual ? { manual: true, allowAutoUpdate: Boolean(entry.allowAutoUpdate) } : {}),
     })), null, 2);
 }
 

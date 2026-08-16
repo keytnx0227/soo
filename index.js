@@ -18,6 +18,7 @@ import { invalidateAtlasProjection } from './memory/atlas-projection-service.js'
 import { bindCommitmentMemoryView, renderCommitmentMemory } from './memory/commitment-memory-view.js';
 import { bindEventMemoryView, renderEventMemory } from './memory/event-memory-view.js';
 import { bindAtlasFullscreenView } from './memory/atlas-fullscreen-view.js';
+import { bindManualAtlasEntryButtons } from './memory/atlas-manual-editor.js';
 import { bindWorldMemoryView, renderWorldMemory } from './memory/world-memory-view.js';
 import { bindAtlasReview } from './memory/atlas-review-view.js';
 import {
@@ -251,6 +252,7 @@ function bindEvents(root) {
     bindEventMemoryView(root, initialContextDetails);
     bindWorldMemoryView(root);
     bindAtlasFullscreenView(root);
+    bindManualAtlasEntryButtons(root);
     bindAtlasReview(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {

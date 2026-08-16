@@ -33,14 +33,20 @@ export function bindRecordsView(root, bindRecordEvents, initialContextDetails = 
     });
     bindRecordSearch(root, () => renderSummaryRecords(root, bindRecordEvents));
     bindMemoryTabs(root, () => renderSummaryRecords(root, bindRecordEvents));
+    bindPinnedFilter(root, () => renderSummaryRecords(root, bindRecordEvents));
     root.querySelector('#stsm-records-fullscreen').addEventListener('click', () => {
         showRecordsFullscreen(
             root.querySelector('#stsm-record-sort').value,
             getSelectedMemoryView(root),
             getRecordSearchState(root),
+            getPinnedFilter(root),
             bindRecordEvents,
             searchState => {
                 setRecordSearchState(root, searchState);
+                renderSummaryRecords(root, bindRecordEvents);
+            },
+            pinnedFilter => {
+                setPinnedFilter(root, pinnedFilter);
                 renderSummaryRecords(root, bindRecordEvents);
             },
         ).catch(error => {
@@ -68,7 +74,14 @@ export function renderSummaryRecords(root, bindRecordEvents, {
 } = {}) {
     const list = root.querySelector('#stsm-record-list');
     const direction = root.querySelector('#stsm-record-sort').value;
-    renderRecordList(list, direction, getSelectedMemoryView(root), getRecordSearchState(root), bindRecordEvents);
+    renderRecordList(
+        list,
+        direction,
+        getSelectedMemoryView(root),
+        getRecordSearchState(root),
+        getPinnedFilter(root),
+        bindRecordEvents,
+    );
     if (renderContextUsage) renderSummaryContextTokenUsage(root, contextDetails);
     root.dispatchEvent(new CustomEvent('stsm:records-rendered'));
 }
@@ -93,17 +106,20 @@ export function renderSummaryContextTokenUsage(root, contextDetails = null) {
     }
 }
 
-function renderRecordList(list, direction, memoryView, searchState, bindRecordEvents) {
+function renderRecordList(list, direction, memoryView, searchState, pinnedFilter, bindRecordEvents) {
     const allRecords = getSummaryRecords();
     const memoryRecords = allRecords.filter(record => memoryView === 'long-term'
         ? Boolean(record.compressedBy)
         : !record.compressedBy);
-    const records = filterRecords(memoryRecords, searchState).sort((left, right) => {
+    const pinnedRecords = memoryView === 'long-term' && pinnedFilter === 'pinned'
+        ? memoryRecords.filter(record => record.pinned)
+        : memoryRecords;
+    const records = filterRecords(pinnedRecords, searchState).sort((left, right) => {
         const difference = left.startId - right.startId || left.endId - right.endId;
         return direction === 'id-asc' ? difference : -difference;
     });
     const sourceStatuses = getSummaryRecordSourceStatuses(allRecords);
-    updateRecordSearchCount(list, records.length, memoryRecords.length, searchState.query);
+    updateRecordSearchCount(list, records.length, pinnedRecords.length, searchState.query);
 
     list.innerHTML = records.length
         ? records.map(record => renderSummaryRecord(record, sourceStatuses.get(record.id))).join('')
@@ -121,7 +137,7 @@ function renderRecordList(list, direction, memoryView, searchState, bindRecordEv
         recordElement.querySelector('.stsm-record-tag-edit')?.addEventListener('click', () => {
             openRecordTagEditor(recordElement.dataset.recordId)
                 .then(saved => {
-                    if (saved) renderRecordList(list, direction, memoryView, searchState, bindRecordEvents);
+                    if (saved) renderRecordList(list, direction, memoryView, searchState, pinnedFilter, bindRecordEvents);
                 })
                 .catch(error => {
                     logRecordViewError(error, '장기기억 검색 태그 수정 실패', '검색 태그를 저장하지 못했습니다.', {
@@ -138,7 +154,7 @@ function renderRecordList(list, direction, memoryView, searchState, bindRecordEv
                 const updated = await updateSummaryRecordPinned(record.id, !record.pinned);
                 if (!updated) throw new Error('고정 상태를 변경할 장기기억 레코드를 찾지 못했습니다.');
                 toastr.success(updated.pinned ? '장기기억을 고정했습니다.' : '장기기억 고정을 해제했습니다.');
-                renderRecordList(list, direction, memoryView, searchState, bindRecordEvents);
+                renderRecordList(list, direction, memoryView, searchState, pinnedFilter, bindRecordEvents);
             } catch (error) {
                 logRecordViewError(error, '장기기억 고정 변경 실패', '장기기억 고정 상태를 변경하지 못했습니다.', {
                     range: getElementRecordRange(recordElement),
@@ -150,7 +166,15 @@ function renderRecordList(list, direction, memoryView, searchState, bindRecordEv
     });
 }
 
-async function showRecordsFullscreen(initialDirection, initialMemoryView, initialSearchState, bindRecordEvents, onSearchChange) {
+async function showRecordsFullscreen(
+    initialDirection,
+    initialMemoryView,
+    initialSearchState,
+    initialPinnedFilter,
+    bindRecordEvents,
+    onSearchChange,
+    onPinnedFilterChange,
+) {
     const content = document.createElement('div');
     content.className = 'stsm-records-fullscreen';
     content.innerHTML = `
@@ -178,8 +202,16 @@ async function showRecordsFullscreen(initialDirection, initialMemoryView, initia
     sort.value = initialDirection === 'id-asc' ? 'id-asc' : 'id-desc';
     setSelectedMemoryView(content, initialMemoryView);
     setRecordSearchState(content, initialSearchState);
+    setPinnedFilter(content, initialPinnedFilter);
     const render = () => {
-        renderRecordList(list, sort.value, getSelectedMemoryView(content), getRecordSearchState(content), bindRecordEvents);
+        renderRecordList(
+            list,
+            sort.value,
+            getSelectedMemoryView(content),
+            getRecordSearchState(content),
+            getPinnedFilter(content),
+            bindRecordEvents,
+        );
         renderExtensionControls(content, getExtensionState());
     };
     const handleRecordsChanged = () => render();
@@ -190,6 +222,10 @@ async function showRecordsFullscreen(initialDirection, initialMemoryView, initia
         onSearchChange?.(getRecordSearchState(content));
     });
     bindMemoryTabs(content, render);
+    bindPinnedFilter(content, () => {
+        render();
+        onPinnedFilterChange?.(getPinnedFilter(content));
+    });
     window.addEventListener('stsm:records-changed', handleRecordsChanged);
     render();
 
@@ -304,6 +340,38 @@ function bindMemoryTabs(root, onChange) {
     setSelectedMemoryView(root, getSelectedMemoryView(root));
 }
 
+function bindPinnedFilter(root, onChange) {
+    root.querySelectorAll('[data-pin-filter]').forEach(button => {
+        if (button.dataset.bound) return;
+        button.dataset.bound = 'true';
+        button.addEventListener('click', () => {
+            const next = button.dataset.pinFilter === 'pinned' ? 'pinned' : 'all';
+            if (next === getPinnedFilter(root)) return;
+            setPinnedFilter(root, next);
+            onChange();
+        });
+    });
+    setPinnedFilter(root, getPinnedFilter(root));
+}
+
+function getPinnedFilter(root) {
+    return root.dataset.recordPinFilter === 'pinned' ? 'pinned' : 'all';
+}
+
+function setPinnedFilter(root, filter) {
+    const normalized = filter === 'pinned' ? 'pinned' : 'all';
+    root.dataset.recordPinFilter = normalized;
+    const longTerm = getSelectedMemoryView(root) === 'long-term';
+    root.querySelectorAll('.stsm-record-pin-filter').forEach(group => {
+        group.hidden = !longTerm;
+    });
+    root.querySelectorAll('[data-pin-filter]').forEach(button => {
+        const selected = button.dataset.pinFilter === normalized;
+        button.classList.toggle('stsm-record-pin-filter-active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+    });
+}
+
 function getSelectedMemoryView(root) {
     return root.dataset.recordMemoryView === 'long-term' ? 'long-term' : 'active';
 }
@@ -316,6 +384,7 @@ function setSelectedMemoryView(root, memoryView) {
         tab.classList.toggle('stsm-record-memory-tab-active', selected);
         tab.setAttribute('aria-selected', String(selected));
     });
+    setPinnedFilter(root, getPinnedFilter(root));
 }
 
 function logRecordViewError(error, title, message, context = null) {

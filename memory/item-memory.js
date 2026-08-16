@@ -12,6 +12,7 @@ export function buildItemMemoryPromptContext(items) {
     return JSON.stringify(items.map(item => ({
         id: item.id,
         name: item.name,
+        ...(item.manual ? { manual: true, allowAutoUpdate: Boolean(item.allowAutoUpdate) } : {}),
         aliases: item.aliases,
         facts: item.facts,
         functions: item.functions,

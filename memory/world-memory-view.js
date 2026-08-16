@@ -7,6 +7,7 @@ import { buildWorldSettingContextDetails } from '../summary/summary-context.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
 import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 import { excludeAtlasEntity, resetAtlasEntity, restoreAtlasEntity, showAtlasEditor } from './atlas-editor.js';
+import { renderManualAtlasState } from './atlas-manual-editor.js';
 import { renderExcludedAtlasEntries } from './atlas-exclusion-view.js';
 import { getAtlasTranslations } from './atlas-metadata.js';
 import { getWorldAtlas } from './world-memory-service.js';
@@ -101,14 +102,14 @@ function renderWorldEntry(entry, cachedTranslation, retrieval, omittedByBudget, 
             <header>
                 <div class="stsm-world-key-list">
                     ${entry.keys.map(key => `<span>${escapeHtml(key)}</span>`).join('')}
-                    ${entry.manual ? '<span class="stsm-world-manual-state"><i class="fa-solid fa-user-pen" aria-hidden="true"></i> 직접 추가</span>' : ''}
+                    ${renderManualAtlasState(entry)}
                     ${renderInjectionState(injectionState)}
                     ${renderCorrectionState(entry.manualCorrections)}
                 </div>
                 <div class="stsm-atlas-card-side">
                     <div class="stsm-atlas-card-actions">
                         ${renderAction('edit', 'fa-pen', '수정')}
-                        ${hasCorrection ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
+                        ${hasCorrection && !entry.manual ? renderAction('reset', 'fa-rotate-left', '사용자 수정 초기화') : ''}
                         ${renderAction('translate', 'fa-language', translation ? '번역 재생성' : '번역')}
                         ${translation ? renderAction('toggle-translation', 'fa-right-left', '원문/번역 전환') : ''}
                         ${entry.manual

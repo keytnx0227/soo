@@ -18,6 +18,7 @@ export function buildEventMemoryPromptContext(events) {
     return JSON.stringify(events.map(event => ({
         id: event.id,
         title: event.title,
+        ...(event.manual ? { manual: true, allowAutoUpdate: Boolean(event.allowAutoUpdate) } : {}),
         date: event.date,
         location: event.location,
         summary: event.summary,
