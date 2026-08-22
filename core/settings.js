@@ -497,7 +497,7 @@ const EMOTIONAL_WEIGHT_RULE = `## Durable feelings and emotional weight
 - Judge every change by its demonstrated emotional impact and likely durability for this character. Consider how much it changes trust, attachment, defenses, expectations, perception, or future behavior. Do not use external drama, ordinariness, or plot importance as the scale.
 - A quiet everyday moment may produce a substantial change when it reorganizes the character's durable inner state. A dramatic event may produce little or no change when it only confirms an established feeling.
 - Calibration anchors: subtle but durable reinforcement or weakening is often about 0.1-0.4; a clear durable shift is often about 0.5-1.0; a major restructuring may exceed 1.0. These are soft anchors, not limits or mandatory changes.
-- If an existing legacy feeling has no weight, initialize it from its accumulated text and the new evidence. Do not assign a generic default merely because the previous weight is missing.`;
+- If an existing legacy feeling has no weight, infer it from the full accumulated relational and emotional history represented by the existing snapshot and all available prior context, then apply the Summary Target's new evidence. Treat it as already accumulated, not newly formed; never assign a generic or automatically low default.`;
 
 function insertEmotionalWeightRule(content) {
     const current = String(content || '');
