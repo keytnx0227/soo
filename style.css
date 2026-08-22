@@ -1495,9 +1495,54 @@
 
 .stsm-relationship-editor-row {
     display: grid;
-    grid-template-columns: minmax(120px, 0.7fr) minmax(150px, 1fr) minmax(150px, 1fr) auto;
+    grid-template-columns: minmax(120px, 0.6fr) minmax(150px, 1fr) minmax(180px, 1.3fr) auto;
     align-items: start;
     gap: 6px;
+}
+
+.stsm-feeling-editor {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stsm-feeling-editor-heading {
+    display: flex;
+    min-height: 32px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    color: var(--SmartThemeEmColor);
+    font-size: 0.9em;
+}
+
+.stsm-feeling-editor-list {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stsm-feeling-editor-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) 76px auto;
+    align-items: start;
+    gap: 6px;
+}
+
+.stsm-feeling-editor-row [data-feeling-weight] {
+    width: 76px;
+    min-width: 0;
+}
+
+.stsm-feeling-editor-heading .menu_button,
+.stsm-feeling-editor-row .menu_button {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
 }
 
 .stsm-participant-editor-row {
@@ -4139,7 +4184,11 @@
         grid-template-columns: 1fr auto;
     }
 
-    .stsm-relationship-editor-row textarea {
+    .stsm-relationship-editor-row > textarea {
+        grid-column: 1 / -1;
+    }
+
+    .stsm-relationship-editor-row > .stsm-feeling-editor {
         grid-column: 1 / -1;
     }
 

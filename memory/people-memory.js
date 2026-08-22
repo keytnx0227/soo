@@ -4,6 +4,7 @@ import {
     getAtlasSourceRange,
 } from './atlas-source-record.js';
 import { getCreatedAtlasEntityId } from './atlas-entity-id.js';
+import { normalizeFeelings } from './people-feelings.js';
 
 const REPLACE_FIELDS = Object.freeze([
     'provisional',
@@ -42,7 +43,7 @@ function compactPersonForPrompt(person) {
         if (relationship.targetId) item.targetId = relationship.targetId;
         if (relationship.targetName) item.targetName = relationship.targetName;
         if (relationship.relationship?.length) item.relationship = relationship.relationship;
-        if (relationship.feelings?.length) item.feelings = relationship.feelings;
+        if (relationship.feelings?.length) item.feelings = normalizeFeelings(relationship.feelings);
         return item;
     }).filter(item => Object.keys(item).length);
     if (relationships.length) result.relationships = relationships;
@@ -205,7 +206,7 @@ function applyRelationshipUpdates(person, updates, range, peopleById) {
             targetId: resolvedTargetId,
             targetName: update.targetName || peopleById.get(resolvedTargetId)?.name || null,
             relationship: dedupeStrings(update.relationship),
-            feelings: dedupeStrings(update.feelings),
+            feelings: normalizeFeelings(update.feelings),
             lastObservedRange: { ...range },
         };
         if (existingIndex >= 0) person.relationships[existingIndex] = relationship;

@@ -8,6 +8,7 @@ import {
     updateManualAtlasEntry,
 } from './atlas-metadata.js';
 import { getAtlasProjection } from './atlas-projection-service.js';
+import { handleFeelingEditorClick, readFeelingEditor, renderFeelingEditor } from './people-feelings-view.js';
 
 const CATEGORY_CONFIG = Object.freeze({
     people: {
@@ -202,7 +203,7 @@ function renderRelationshipRow(value = {}) {
         <div class="stsm-relationship-editor-row">
             <input class="text_pole" data-target-name type="text" value="${escapeHtml(value.targetName || value.targetId || '')}" placeholder="대상" />
             <textarea class="text_pole" data-relationship rows="2" placeholder="관계 · 한 줄에 하나">${escapeHtml((value.relationship || []).join('\n'))}</textarea>
-            <textarea class="text_pole" data-feelings rows="2" placeholder="감정 · 한 줄에 하나">${escapeHtml((value.feelings || []).join('\n'))}</textarea>
+            ${renderFeelingEditor(value.feelings)}
             ${renderDeleteButton()}
         </div>
     `;
@@ -237,6 +238,7 @@ function renderDeleteButton() {
 
 function bindRepeatingRows(form) {
     form.addEventListener('click', event => {
+        if (handleFeelingEditorClick(event)) return;
         const add = event.target.closest('[data-add-manual-row]');
         if (add?.dataset.addManualRow === 'relationship') {
             form.querySelector('.stsm-relationship-editor-list').insertAdjacentHTML('beforeend', renderRelationshipRow());
@@ -265,7 +267,7 @@ function readRelationships(form) {
             targetId: null,
             targetName,
             relationship: parseList(row.querySelector('[data-relationship]').value),
-            feelings: parseList(row.querySelector('[data-feelings]').value),
+            feelings: readFeelingEditor(row.querySelector('[data-feeling-editor]')),
         } : null;
     }).filter(Boolean);
 }

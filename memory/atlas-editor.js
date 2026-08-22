@@ -7,6 +7,7 @@ import {
     setAtlasEntityExcluded,
 } from './atlas-metadata.js';
 import { getAtlasProjection } from './atlas-projection-service.js';
+import { handleFeelingEditorClick, readFeelingEditor, renderFeelingEditor } from './people-feelings-view.js';
 
 const PEOPLE_FIELDS = Object.freeze([
     { path: 'name', label: '이름', type: 'scalar' },
@@ -286,7 +287,7 @@ function renderRelationshipRow(relationship = {}) {
         <div class="stsm-relationship-editor-row" data-target-id="${escapeHtml(relationship.targetId || '')}" data-target-name="${escapeHtml(relationship.targetName || relationship.targetId || '')}">
             <input class="text_pole" data-relationship-target type="text" value="${escapeHtml(relationship.targetName || relationship.targetId || '')}" placeholder="대상" />
             <textarea class="text_pole" data-relationship-state rows="2" placeholder="관계 · 한 줄에 하나">${escapeHtml((relationship.relationship || []).join('\n'))}</textarea>
-            <textarea class="text_pole" data-relationship-feelings rows="2" placeholder="감정 · 한 줄에 하나">${escapeHtml((relationship.feelings || []).join('\n'))}</textarea>
+            ${renderFeelingEditor(relationship.feelings)}
             <button class="menu_button menu_button_icon interactable" data-delete-relationship type="button" title="관계 삭제" aria-label="관계 삭제">
                 <i class="fa-solid fa-trash"></i>
             </button>
@@ -306,6 +307,7 @@ function renderLock(locked = false) {
 function bindEditor(form) {
     const editor = form.querySelector('.stsm-relationship-editor');
     editor?.addEventListener('click', event => {
+        if (handleFeelingEditorClick(event)) return;
         if (event.target.closest('[data-add-relationship]')) {
             editor.querySelector('.stsm-relationship-editor-list').insertAdjacentHTML('beforeend', renderRelationshipRow());
         } else if (event.target.closest('[data-delete-relationship]')) {
@@ -359,7 +361,7 @@ function readRelationships(editor) {
             targetId: originalTargetId,
             targetName,
             relationship: parseList(row.querySelector('[data-relationship-state]').value),
-            feelings: parseList(row.querySelector('[data-relationship-feelings]').value),
+            feelings: readFeelingEditor(row.querySelector('[data-feeling-editor]')),
             lastObservedRange: null,
         };
     }).filter(Boolean);

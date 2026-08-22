@@ -18,6 +18,7 @@ import { evaluatePeopleRetrieval } from './people-retrieval.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
 import { getValidAtlasTranslation, translateAtlasEntity } from '../translation/atlas-translation-service.js';
 import { renderTokenUsageBar } from '../ui/token-usage-view.js';
+import { formatFeelings } from './people-feelings.js';
 
 const FIELD_DEFINITIONS = Object.freeze([
     { key: 'role', label: '극중 역할' },
@@ -325,7 +326,7 @@ function renderRelationships(relationships) {
     const values = relationships.map(item => {
         const target = item.targetName || item.targetId || '알 수 없는 인물';
         const relationship = item.relationship.length ? `관계: ${item.relationship.join(', ')}` : '';
-        const feelings = item.feelings.length ? `감정: ${item.feelings.join(', ')}` : '';
+        const feelings = item.feelings.length ? `감정: ${formatFeelings(item.feelings).join(', ')}` : '';
         return `${target}${relationship || feelings ? ` (${[relationship, feelings].filter(Boolean).join(' / ')})` : ''}`;
     });
     return renderField('관계 및 감정', values);

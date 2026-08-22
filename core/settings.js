@@ -29,7 +29,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 27;
+const PROMPT_SCHEMA_VERSION = 28;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -453,7 +453,7 @@ const V26_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     world: V25_DEFAULT_SUMMARY_EXTRACTION_RULES.world.replace(OLD_MANUAL_WORLD_RULE, MANUAL_ATLAS_UPDATE_RULE),
 });
 
-const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+const V27_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V26_DEFAULT_SUMMARY_EXTRACTION_RULES,
     people: `# People Memory Updates
 
@@ -485,6 +485,46 @@ Good:
 
 - Keep scalars to a short phrase or one compact sentence and lists to a few useful, non-overlapping entries. Never repeat information across fields.
 ${MANUAL_ATLAS_UPDATE_RULE}`,
+});
+
+const EMOTIONAL_WEIGHT_RULE = `## Durable feelings and emotional weight
+
+- Each feelings entry contains text and weight. text is a compact, continuity-preserving description of one durable emotional current and its accumulated contextual basis. weight is a non-negative number with one decimal place.
+- weight represents accumulated emotional weight: how strongly this feeling durably shapes the character's perception, expectations, decisions, and behavior toward the related person. It does not measure momentary emotional intensity and has no fixed upper limit.
+- Use the existing feelings snapshot as the baseline. When a feeling is naturally rephrased or evolves, carry its previous weight forward before adjusting it. A wording or emotional-label change alone must not reset the weight.
+- Keep independently coexisting or conflicting emotional currents as separate entries. Merge, split, add, or omit entries only when the complete current emotional snapshot genuinely requires it. Never mechanically add weights when merging or duplicate a previous weight when splitting.
+- Preserve the previous weight when the target merely repeats an established feeling without materially changing its accumulated significance.
+- Judge every change by its demonstrated emotional impact and likely durability for this character. Consider how much it changes trust, attachment, defenses, expectations, perception, or future behavior. Do not use external drama, ordinariness, or plot importance as the scale.
+- A quiet everyday moment may produce a substantial change when it reorganizes the character's durable inner state. A dramatic event may produce little or no change when it only confirms an established feeling.
+- Calibration anchors: subtle but durable reinforcement or weakening is often about 0.1-0.4; a clear durable shift is often about 0.5-1.0; a major restructuring may exceed 1.0. These are soft anchors, not limits or mandatory changes.
+- If an existing legacy feeling has no weight, initialize it from its accumulated text and the new evidence. Do not assign a generic default merely because the previous weight is missing.`;
+
+function insertEmotionalWeightRule(content) {
+    const current = String(content || '');
+    if (current.includes('## Durable feelings and emotional weight')) return current;
+
+    const anchors = [
+        '\nCalibration examples for feelings only',
+        '\n- Keep scalars to a short phrase',
+        `\n${MANUAL_ATLAS_UPDATE_RULE}`,
+    ];
+    const anchorIndex = anchors
+        .map(anchor => current.indexOf(anchor))
+        .find(index => index >= 0);
+
+    if (anchorIndex !== undefined) {
+        return `${current.slice(0, anchorIndex)}\n\n${EMOTIONAL_WEIGHT_RULE}${current.slice(anchorIndex)}`;
+    }
+    return `${current.trimEnd()}\n\n${EMOTIONAL_WEIGHT_RULE}`;
+}
+
+const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
+    ...V27_DEFAULT_SUMMARY_EXTRACTION_RULES,
+    people: insertEmotionalWeightRule(V27_DEFAULT_SUMMARY_EXTRACTION_RULES.people
+        .replace(
+            '- Each feeling must communicate its emotional quality, depth or intensity, and a compact accumulated cause. Keep the cause self-contained, but do not recount event chronology.',
+            '- Each feeling text must communicate its emotional quality, durable depth, and compact accumulated basis without recounting event chronology.',
+        )),
 });
 
 const V22_DEFAULT_WORLD_EXTRACTION_RULE = V25_DEFAULT_SUMMARY_EXTRACTION_RULES.world
@@ -2287,6 +2327,26 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
                 config: {
                     ...block.config,
                     rules: { ...rules, people: DEFAULT_SUMMARY_EXTRACTION_RULES.people },
+                },
+            };
+        });
+    }
+
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 28) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES) return block;
+            const rules = block.config?.rules && typeof block.config.rules === 'object'
+                ? { ...block.config.rules }
+                : {};
+            const current = String(rules.people || V27_DEFAULT_SUMMARY_EXTRACTION_RULES.people);
+            const people = current.trim() === V27_DEFAULT_SUMMARY_EXTRACTION_RULES.people.trim()
+                ? DEFAULT_SUMMARY_EXTRACTION_RULES.people
+                : insertEmotionalWeightRule(current);
+            return {
+                ...block,
+                config: {
+                    ...block.config,
+                    rules: { ...rules, people },
                 },
             };
         });

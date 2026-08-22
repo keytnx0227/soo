@@ -4,6 +4,7 @@ import { assertExtensionEnabled } from '../core/extension-state.js';
 import { getSettings } from '../core/settings.js';
 import { getAtlasTranslation, saveAtlasTranslation } from '../memory/atlas-metadata.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
+import { formatFeelings } from '../memory/people-feelings.js';
 
 const CATEGORY_COLLECTIONS = Object.freeze({
     people: 'people',
@@ -110,7 +111,7 @@ export function serializeAtlasEntity(category, entity) {
                 const target = relationship.targetName || relationship.targetId || 'unknown';
                 const parts = [];
                 if (relationship.relationship?.length) parts.push(`relationship: ${relationship.relationship.join(', ')}`);
-                if (relationship.feelings?.length) parts.push(`feelings: ${relationship.feelings.join(', ')}`);
+                if (relationship.feelings?.length) parts.push(`feelings: ${formatFeelings(relationship.feelings).join(', ')}`);
                 lines.push(`  - ${target}: ${parts.join('; ')}`);
             }
         }

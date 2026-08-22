@@ -2,8 +2,9 @@ import {
     DEFAULT_SUMMARY_CONTENT_TEMPLATE,
     renderSummaryContentTemplate,
 } from './summary-record-template.js';
+import { normalizeFeelings } from '../memory/people-feelings.js';
 
-export const SUMMARY_FORMAT_VERSION = 4;
+export const SUMMARY_FORMAT_VERSION = 5;
 
 export const SUMMARY_LANGUAGE_MODES = Object.freeze({
     ENGLISH: 'english',
@@ -191,7 +192,10 @@ export function buildSummaryJsonContract(
                     targetId: null,
                     targetName: 'Related character name',
                     relationship: ['Current relationship description'],
-                    feelings: ['Current durable feeling toward the target'],
+                    feelings: [{
+                        text: 'Compact description of a current durable feeling toward the target',
+                        weight: 1.0,
+                    }],
                 }],
             }],
             updated: [{
@@ -218,9 +222,10 @@ export function buildSummaryJsonContract(
                     targetId: 'Existing related-person ID or null',
                     targetName: 'Related character name',
                     relationship: ['Complete current relationship snapshot'],
-                    feelings: [
-                        'Complete continuity-preserving snapshot of durable feelings toward this person, including emotional quality, depth, and a compact accumulated cause; exclude transient moods',
-                    ],
+                    feelings: [{
+                        text: 'Complete continuity-preserving description of one durable emotional current toward this person',
+                        weight: 2.6,
+                    }],
                 }],
             }],
         };
@@ -740,7 +745,7 @@ function normalizeRelationships(value) {
             targetId,
             targetName,
             relationship: normalizeStringList(item.relationship),
-            feelings: normalizeStringList(item.feelings),
+            feelings: normalizeFeelings(item.feelings),
         };
     }).filter(Boolean);
 }

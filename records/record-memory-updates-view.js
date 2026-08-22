@@ -1,4 +1,5 @@
 import { escapeHtml } from '../core/utils.js';
+import { formatFeelings } from '../memory/people-feelings.js';
 
 const FIELD_LABELS = Object.freeze({
     provisional: '임시 이름',
@@ -297,7 +298,7 @@ function renderRelationships(label, relationships) {
     const values = relationships.map(item => {
         const target = item.targetName || item.targetId || '알 수 없는 인물';
         const relationship = item.relationship?.length ? `관계: ${item.relationship.join(', ')}` : '';
-        const feelings = item.feelings?.length ? `감정: ${item.feelings.join(', ')}` : '';
+        const feelings = item.feelings?.length ? `감정: ${formatFeelings(item.feelings).join(', ')}` : '';
         return `${target}${relationship || feelings ? ` (${[relationship, feelings].filter(Boolean).join(' / ')})` : ''}`;
     });
     return renderValueRow(label, values);

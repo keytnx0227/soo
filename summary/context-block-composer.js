@@ -2,6 +2,7 @@ import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { getLlmVisibleAtlasProjection } from '../memory/atlas-projection-service.js';
 import { getPeopleRetrievalMetadata } from '../memory/atlas-metadata.js';
+import { formatFeelings } from '../memory/people-feelings.js';
 import { evaluatePeopleRetrieval } from '../memory/people-retrieval.js';
 import { evaluateWorldRetrieval } from '../memory/world-retrieval.js';
 import { getActiveSummaryRecords } from './summary-store.js';
@@ -194,7 +195,7 @@ function renderPersonValues(person) {
         const target = relationship.targetName || relationship.targetId || 'unknown';
         const details = [
             relationship.relationship?.length ? `relationship: ${relationship.relationship.join(', ')}` : '',
-            relationship.feelings?.length ? `feelings: ${relationship.feelings.join(', ')}` : '',
+            relationship.feelings?.length ? `feelings: ${formatFeelings(relationship.feelings).join(', ')}` : '',
         ].filter(Boolean).join('; ');
         return details ? `${target} (${details})` : target;
     });

@@ -1,4 +1,5 @@
 import { createId } from '../core/utils.js';
+import { normalizeFeelings } from './people-feelings.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 const CATEGORIES = Object.freeze(['people', 'items', 'commitments', 'events', 'world']);
@@ -453,7 +454,7 @@ function normalizeManualRelationships(value) {
             targetId: normalizeNullableString(entry?.targetId),
             targetName,
             relationship: normalizeStringList(entry?.relationship),
-            feelings: normalizeStringList(entry?.feelings),
+            feelings: normalizeFeelings(entry?.feelings),
         };
     }).filter(Boolean);
 }
@@ -545,9 +546,11 @@ function normalizePeopleCorrectionPaths(fields) {
             speechPatterns: 'voice',
         }[path] || path;
         if (!allowed.has(mappedPath) || Object.hasOwn(normalized, mappedPath)) continue;
-        const value = ['role', 'voice'].includes(mappedPath) && Array.isArray(entry.value)
-            ? entry.value.map(item => String(item || '').trim()).filter(Boolean).join('; ') || null
-            : entry.value;
+        const value = mappedPath === 'relationships'
+            ? normalizeManualRelationships(entry.value)
+            : ['role', 'voice'].includes(mappedPath) && Array.isArray(entry.value)
+                ? entry.value.map(item => String(item || '').trim()).filter(Boolean).join('; ') || null
+                : entry.value;
         normalized[mappedPath] = { ...entry, value };
     }
     return normalized;
