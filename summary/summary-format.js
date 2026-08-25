@@ -193,7 +193,7 @@ export function buildSummaryJsonContract(
                     targetName: 'Related character name',
                     relationship: ['Current relationship description'],
                     feelings: [{
-                        text: 'Compact description of a current durable feeling toward the target',
+                        text: 'One distinct enduring emotion, named directly and explained with its accumulated context',
                         weight: 1.0,
                     }],
                 }],
@@ -223,7 +223,7 @@ export function buildSummaryJsonContract(
                     targetName: 'Related character name',
                     relationship: ['Complete current relationship snapshot'],
                     feelings: [{
-                        text: 'Complete continuity-preserving description of one durable emotional current toward this person',
+                        text: 'One distinct enduring emotion, named directly and explained with its accumulated context',
                         weight: 2.6,
                     }],
                 }],
