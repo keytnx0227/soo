@@ -27,6 +27,7 @@ export const ATLAS_REVIEW_CATEGORIES = Object.freeze({
 export const ATLAS_REVIEW_MODES = Object.freeze({
     QUICK: 'quick',
     RECORD: 'record',
+    CHRONOLOGICAL: 'chronological',
 });
 
 export function getAtlasReviewRecordCandidates() {
@@ -63,7 +64,7 @@ export function buildAtlasReviewPromptPreviews({
 }) {
     assertCategory(category);
     const hiddenIds = getHiddenAtlasEntityIds(category);
-    if (mode === ATLAS_REVIEW_MODES.RECORD) {
+    if (isRecordReviewMode(mode)) {
         return selectRecordRange(startRecordId, endRecordId).map(record => {
             const [target] = createSummaryChunks(
                 SillyTavern.getContext().chat,
@@ -77,7 +78,9 @@ export function buildAtlasReviewPromptPreviews({
             const contribution = attachExistingSourceIds(updates, category, record.id);
             return buildAtlasReviewPrompt(target, category, {
                 mode,
-                projectionOptions: { excludeRecordCategory: { recordId: record.id, category } },
+                projectionOptions: mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                    ? { beforeStartId: record.startId, includeCorrections: false }
+                    : { excludeRecordCategory: { recordId: record.id, category } },
                 currentRecordContribution: JSON.stringify(
                     omitHiddenAtlasUpdates(contribution, hiddenIds),
                     null,
@@ -132,7 +135,7 @@ export async function createAtlasReviewDraft({
     };
 
     try {
-        if (mode === ATLAS_REVIEW_MODES.RECORD) {
+        if (isRecordReviewMode(mode)) {
             await createRecordReviewEntries(draft, { startRecordId, endRecordId, onProgress, signal });
         } else {
             await createQuickReviewEntry(draft, { startId, endId, onProgress, signal });
@@ -153,7 +156,7 @@ export async function applyAtlasReviewDraft(draft) {
         throw error;
     }
 
-    if (draft.mode === ATLAS_REVIEW_MODES.RECORD) {
+    if (isRecordReviewMode(draft.mode)) {
         await saveAtlasRecordReviewOverrides(draft.entries.map(entry => ({
             recordId: entry.recordId,
             category: draft.category,
@@ -237,11 +240,17 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
             const contribution = attachExistingSourceIds(originalUpdates, draft.category, record.id);
             const visibleContribution = omitHiddenAtlasUpdates(contribution, hiddenIds);
             const prompt = buildAtlasReviewPrompt(target, draft.category, {
-                mode: ATLAS_REVIEW_MODES.RECORD,
-                projectionOptions: {
-                    draftRecordOverrides: pendingOverrides,
-                    excludeRecordCategory: { recordId: record.id, category: draft.category },
-                },
+                mode: draft.mode,
+                projectionOptions: draft.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                    ? {
+                        draftRecordOverrides: pendingOverrides,
+                        beforeStartId: record.startId,
+                        includeCorrections: false,
+                    }
+                    : {
+                        draftRecordOverrides: pendingOverrides,
+                        excludeRecordCategory: { recordId: record.id, category: draft.category },
+                    },
                 currentRecordContribution: JSON.stringify(visibleContribution, null, 2),
             });
             const response = await generateSummary(prompt);
@@ -273,7 +282,7 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
 }
 
 function finalizeDraft(draft) {
-    const projectionOptions = draft.mode === ATLAS_REVIEW_MODES.RECORD
+    const projectionOptions = isRecordReviewMode(draft.mode)
         ? {
             draftRecordOverrides: draft.entries.map(entry => ({
                 recordId: entry.recordId,
@@ -295,6 +304,10 @@ function finalizeDraft(draft) {
         } : {};
     draft.after = structuredClone(getAtlasProjection(projectionOptions)[draft.category]);
     return draft;
+}
+
+function isRecordReviewMode(mode) {
+    return mode === ATLAS_REVIEW_MODES.RECORD || mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL;
 }
 
 function selectRecordRange(startRecordId, endRecordId) {

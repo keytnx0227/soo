@@ -89,29 +89,38 @@ export function buildAtlasReviewPrompt(
         sumiEndId: endId,
         sumiSummaryLanguageInstruction: getSummaryLanguageInstruction(getSettings().summarization.outputLanguage),
         sumiAtlasReviewJsonContract: buildAtlasReviewJsonContract(category, {
-            includeCreatedSourceIds: mode === 'record' || Boolean(currentRecordContribution),
+            includeCreatedSourceIds: mode !== 'quick' || Boolean(currentRecordContribution),
         }),
     };
+    const chronological = mode === 'chronological';
     const target = renderSummaryMessages(messageBlock.content, { messages, startId, endId }, SillyTavern.getContext());
     const currentMemory = memoryBlock
         ? renderDataBlock(memoryBlock, definition.macro, definition.buildContext(projectionOptions), values)
         : '';
     const rule = String(extractionBlock?.config?.rules?.[category] || '').trim();
+    const recentSummaryParts = chronological
+        ? buildAtlasReviewRecentSummaryParts(preset, startId, values)
+        : [];
     const parts = [
-        mainBlock ? renderTemplate(mainBlock.content, values) : '',
-        mode === 'record' ? `# Record Atlas Replacement Review
+        chronological ? '' : mainBlock ? renderTemplate(mainBlock.content, values) : '',
+        chronological ? `# Chronological Record Atlas Reconstruction
+
+Reconstruct only the selected atlas category contribution for this one summary record. Use prior summaries and the atlas state immediately before the target only as chronological context; only <Atlas Review Target> may create or change data. Return a complete replacement for this record's category contribution, not an incremental patch.
+
+Copy each retained created entry's exact sourceId from <Current Record Atlas Contribution>; use null only for an identity genuinely first established by the target. Do not reuse a sourceId for a different identity. Updated entries must use an exact targetId from the atlas state before the target. Preserve continuity from the prior state without importing future knowledge. Return empty created and updated arrays when the target supports no contribution.` : mode === 'record' ? `# Record Atlas Replacement Review
 
 Review only the selected atlas category for this one summary record. Return a complete replacement for this record's category contribution, not an incremental patch to the old contribution. The current atlas is the present-day source of truth. In created entries, copy each retained entry's exact sourceId from <Current Record Atlas Contribution>; use null only for genuinely new entries. Do not reuse a sourceId for a different identity. Updated entries must use exact current-atlas targetId values. Retain every valid created entry from the current record contribution; omit one only when the target messages show that it was incorrectly attributed to this record. Any omission will be shown to the user before approval. Return empty arrays when this record supports no contribution.` : `# Atlas Retrospective Review
 
 Review only the selected atlas category using the messages inside <Atlas Review Target> as evidence. The current atlas is the present-day source of truth and is provided to resolve identity and prevent duplicates. Recover durable information that was previously missed, but never regress a current mutable snapshot to an older historical state merely because it appears in the review target. Create unmatched entries or update an exact existing targetId only when the target supports a useful durable addition or factual correction. Never delete an entry. Return empty created and updated arrays when no proposal is supported.`,
         values.sumiSummaryLanguageInstruction,
+        ...recentSummaryParts,
         `<Atlas Review Target range="#${startId} ~ #${endId}">\n${target}\n</Atlas Review Target>`,
         currentMemory,
         mode === 'quick' && currentRecordContribution
             ? 'This exact review range already has a replaceable prior contribution. Copy its sourceId for every retained created identity; use null only for genuinely new identities.'
             : '',
         currentRecordContribution
-            ? mode === 'record'
+            ? mode === 'record' || chronological
                 ? `<Current Record Atlas Contribution>\n${currentRecordContribution}\n</Current Record Atlas Contribution>`
                 : `<Previous Review Contribution>\n${currentRecordContribution}\n</Previous Review Contribution>`
             : '',
@@ -119,6 +128,26 @@ Review only the selected atlas category using the messages inside <Atlas Review 
         values.sumiAtlasReviewJsonContract,
     ];
     return parts.map(part => String(part || '').trim()).filter(Boolean).join('\n\n');
+}
+
+function buildAtlasReviewRecentSummaryParts(preset, startId, values) {
+    const contentBlock = preset.blocks.find(block => (
+        block.enabled && isPromptBlockApplicable(block) && block.kind === BLOCK_KINDS.RECENT_SUMMARIES
+    ));
+    if (!contentBlock) return [];
+    const recentSummaries = buildRecentSummaryContent(contentBlock, startId);
+    if (!recentSummaries.trim()) return [];
+
+    return preset.blocks
+        .filter(block => block.enabled && isPromptBlockApplicable(block) && (
+            block.kind === BLOCK_KINDS.RECENT_SUMMARIES
+            || block.kind === BLOCK_KINDS.RECENT_SUMMARY_SEPARATOR
+        ))
+        .map(block => block.kind === BLOCK_KINDS.RECENT_SUMMARIES
+            ? renderDataBlock(block, 'sumiRecentSummaries', recentSummaries, values)
+            : renderTemplate(block.content, values))
+        .map(content => String(content || '').trim())
+        .filter(Boolean);
 }
 
 function isSummaryBlockEnabled(block, sections) {

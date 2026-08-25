@@ -139,11 +139,14 @@ async function openAtlasReviewPopup() {
                 ...input,
                 signal: abortController.signal,
                 onProgress: ({ current, total, target }) => {
+                    const actionLabel = input.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                        ? '시간순 재구축 중'
+                        : '재검토 중';
                     updateOperation(
                         operationToken,
-                        `#${target.startId} ~ #${target.endId} ${ATLAS_REVIEW_CATEGORIES[input.category]} 재검토 중`,
+                        `#${target.startId} ~ #${target.endId} ${ATLAS_REVIEW_CATEGORIES[input.category]} ${actionLabel}`,
                     );
-                    content.querySelector('.stsm-atlas-review-run').textContent = `재검토 중 ${current}/${total}`;
+                    content.querySelector('.stsm-atlas-review-run').textContent = `${actionLabel} ${current}/${total}`;
                 },
             });
             renderDraftResult(content, draft, draftInterruptionMessage, reviewTranslation, showingTranslation);
@@ -238,6 +241,7 @@ function buildReviewMarkup() {
         <div class="stsm-atlas-review-mode-tabs" role="tablist" aria-label="재검토 방식">
             <button class="stsm-atlas-review-mode menu_button interactable" data-mode="quick" type="button">빠른 일괄 검토</button>
             <button class="stsm-atlas-review-mode menu_button interactable" data-mode="record" type="button">레코드별 정밀 검토</button>
+            <button class="stsm-atlas-review-mode menu_button interactable" data-mode="chronological" type="button">시간순 레코드 재구축</button>
         </div>
         <label class="stsm-field">
             <span>재검토할 도감</span>
@@ -288,11 +292,14 @@ function renderMode(content, mode) {
         button.classList.toggle('stsm-atlas-review-mode-active', active);
         button.setAttribute('aria-selected', String(active));
     });
+    const recordMode = mode === ATLAS_REVIEW_MODES.RECORD || mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL;
     content.querySelector('.stsm-atlas-review-quick-fields').hidden = mode !== ATLAS_REVIEW_MODES.QUICK;
-    content.querySelector('.stsm-atlas-review-record-fields').hidden = mode !== ATLAS_REVIEW_MODES.RECORD;
+    content.querySelector('.stsm-atlas-review-record-fields').hidden = !recordMode;
     content.querySelector('.stsm-atlas-review-help').textContent = mode === ATLAS_REVIEW_MODES.QUICK
         ? '선택한 메시지 범위 전체를 한 번에 검토합니다. 결과는 요청 시점의 도감 계산 흐름에 적용됩니다.'
-        : '선택한 일반 요약 레코드를 하나씩 정밀 검토합니다. 승인하면 각 레코드의 해당 도감 변경안이 복원 가능한 재검토판으로 교체됩니다.';
+        : mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+            ? '선택한 요약 레코드를 시간순으로 다시 읽으며, 각 시점 직전의 도감과 이전 요약을 바탕으로 해당 도감 변경안만 재구축합니다.'
+            : '선택한 일반 요약 레코드를 하나씩 정밀 검토합니다. 승인하면 각 레코드의 해당 도감 변경안이 복원 가능한 재검토판으로 교체됩니다.';
 }
 
 function renderRecordOptions(content) {
@@ -508,7 +515,7 @@ function readReviewInput(content, mode) {
 }
 
 function hasCompleteInput(input) {
-    return input.mode === ATLAS_REVIEW_MODES.RECORD
+    return input.mode === ATLAS_REVIEW_MODES.RECORD || input.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
         ? Boolean(input.startRecordId && input.endRecordId)
         : String(input.startId).trim() !== '' && String(input.endId).trim() !== '';
 }

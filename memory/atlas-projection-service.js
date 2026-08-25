@@ -21,13 +21,21 @@ export function getAtlasProjection({
     draftReviewRecords = [],
     draftRecordOverrides = [],
     excludeRecordCategory = null,
+    beforeStartId = null,
 } = {}) {
     const chat = SillyTavern.getContext().chat;
     const excluded = new Set((Array.isArray(excludeReviewIds) ? excludeReviewIds : []).map(String));
-    const hasDraft = draftReviewRecords.length || draftRecordOverrides.length || excludeRecordCategory;
+    const cutoff = beforeStartId === null || beforeStartId === undefined || beforeStartId === ''
+        ? null
+        : Number(beforeStartId);
+    const hasCutoff = Number.isFinite(cutoff);
+    const hasDraft = draftReviewRecords.length || draftRecordOverrides.length || excludeRecordCategory || hasCutoff;
     if (excluded.size || hasDraft) {
+        const sourceRecords = hasCutoff
+            ? getSummaryRecords().filter(record => Number(record.endId) < cutoff)
+            : getSummaryRecords();
         const summaryRecords = prepareSummarySourceRecords(
-            getSummaryRecords(),
+            sourceRecords,
             draftRecordOverrides,
             excludeRecordCategory,
         );
@@ -37,8 +45,9 @@ export function getAtlasProjection({
             ...draftReviewRecords,
         ]
             .filter(review => !excluded.has(review.id))
+            .filter(review => !hasCutoff || Number(review.appliedThroughId ?? review.endId) < cutoff)
             .map(toAtlasSourceRecord);
-        const projection = buildAtlasProjection(summaryRecords, reviewRecords);
+        const projection = buildAtlasProjection(summaryRecords, reviewRecords, { beforeStartId: cutoff });
         return structuredClone(includeCorrections
             ? applyAtlasCorrections(projection, getAtlasCorrections())
             : projection);
@@ -90,10 +99,12 @@ function prepareSummarySourceRecords(records, draftOverrides = [], excludeRecord
     });
 }
 
-function buildAtlasProjection(summaryRecords, reviewRecords) {
+function buildAtlasProjection(summaryRecords, reviewRecords, { beforeStartId = null } = {}) {
+    const hasCutoff = Number.isFinite(beforeStartId);
     const manualEntries = Object.fromEntries(
         ['people', 'items', 'commitments', 'events', 'world']
-            .map(category => [category, getManualAtlasEntries(category)]),
+            .map(category => [category, getManualAtlasEntries(category)
+                .filter(entry => !hasCutoff || Number(entry.appliedThroughId) < beforeStartId)]),
     );
     const manualRecords = Object.entries(manualEntries)
         .flatMap(([category, entries]) => entries.map(entry => toManualAtlasSourceRecord(category, entry)));
