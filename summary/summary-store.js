@@ -266,6 +266,8 @@ export async function saveAtlasRecordReviewOverrides(entries) {
                 [category]: {
                     memoryUpdates: structuredClone(entry.memoryUpdates),
                     reviewedAt,
+                    reviewMode: String(entry.reviewMode || 'record'),
+                    reviewBatchId: String(entry.reviewBatchId || createId('atlas-review-batch')),
                 },
             },
             updatedAt: reviewedAt,
@@ -983,6 +985,8 @@ function normalizeAtlasReviewOverrides(value) {
         return [category, {
             memoryUpdates: structuredClone(entry.memoryUpdates),
             reviewedAt: String(entry.reviewedAt || new Date().toISOString()),
+            reviewMode: entry.reviewMode ? String(entry.reviewMode) : null,
+            reviewBatchId: entry.reviewBatchId ? String(entry.reviewBatchId) : null,
         }];
     }).filter(([, entry]) => entry));
 }

@@ -161,6 +161,8 @@ export async function applyAtlasReviewDraft(draft) {
             recordId: entry.recordId,
             category: draft.category,
             memoryUpdates: entry.memoryUpdates,
+            reviewMode: draft.mode,
+            reviewBatchId: draft.id,
         })));
         return;
     }
@@ -239,18 +241,20 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
                 || { created: [], updated: [] };
             const contribution = attachExistingSourceIds(originalUpdates, draft.category, record.id);
             const visibleContribution = omitHiddenAtlasUpdates(contribution, hiddenIds);
+            const beforeProjectionOptions = draft.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                ? {
+                    draftRecordOverrides: pendingOverrides,
+                    beforeStartId: record.startId,
+                    includeCorrections: false,
+                }
+                : {
+                    draftRecordOverrides: pendingOverrides,
+                    excludeRecordCategory: { recordId: record.id, category: draft.category },
+                };
+            const beforeStep = getAtlasProjection(beforeProjectionOptions)[draft.category];
             const prompt = buildAtlasReviewPrompt(target, draft.category, {
                 mode: draft.mode,
-                projectionOptions: draft.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
-                    ? {
-                        draftRecordOverrides: pendingOverrides,
-                        beforeStartId: record.startId,
-                        includeCorrections: false,
-                    }
-                    : {
-                        draftRecordOverrides: pendingOverrides,
-                        excludeRecordCategory: { recordId: record.id, category: draft.category },
-                    },
+                projectionOptions: beforeProjectionOptions,
                 currentRecordContribution: JSON.stringify(visibleContribution, null, 2),
             });
             const response = await generateSummary(prompt);
@@ -272,8 +276,16 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
                 endId: record.endId,
                 memoryUpdates,
             };
-            draft.entries.push(entry);
             pendingOverrides.push({ recordId: record.id, category: draft.category, memoryUpdates });
+            const afterStep = getAtlasProjection(draft.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                ? {
+                    draftRecordOverrides: pendingOverrides,
+                    beforeStartId: record.endId + 1,
+                    includeCorrections: false,
+                }
+                : { draftRecordOverrides: pendingOverrides })[draft.category];
+            entry.stepChanges = compareAtlasStates(beforeStep, afterStep);
+            draft.entries.push(entry);
         } catch (error) {
             if (error?.code === 'STSM_ATLAS_REVIEW_CANCELLED') throw error;
             throw createRecordBatchError(error, record, draft.entries, records.slice(index + 1));
@@ -308,6 +320,42 @@ function finalizeDraft(draft) {
 
 function isRecordReviewMode(mode) {
     return mode === ATLAS_REVIEW_MODES.RECORD || mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL;
+}
+
+function compareAtlasStates(before, after) {
+    const beforeMap = new Map((before || []).map(item => [item.id, toSemanticAtlasValue(item)]));
+    const afterMap = new Map((after || []).map(item => [item.id, toSemanticAtlasValue(item)]));
+    const created = [];
+    const updated = [];
+    const removed = [];
+    for (const [id, value] of afterMap) {
+        const previous = beforeMap.get(id);
+        if (!previous) created.push({ type: 'created', label: '신규', name: getAtlasValueName(value), value });
+        else if (JSON.stringify(previous) !== JSON.stringify(value)) {
+            updated.push({
+                type: 'updated',
+                label: '변경',
+                name: getAtlasValueName(value),
+                value: { before: previous, after: value },
+            });
+        }
+    }
+    for (const [id, value] of beforeMap) {
+        if (!afterMap.has(id)) removed.push({ type: 'removed', label: '제외', name: getAtlasValueName(value), value });
+    }
+    return { created, updated, removed };
+}
+
+function toSemanticAtlasValue(value) {
+    if (Array.isArray(value)) return value.map(toSemanticAtlasValue);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value)
+        .filter(([key]) => !['sourceRecordIds', 'firstSeenRange', 'lastUpdatedRange', 'lastObservedRange', 'provenance', 'manualCorrections', 'excluded'].includes(key))
+        .map(([key, entry]) => [key, toSemanticAtlasValue(entry)]));
+}
+
+function getAtlasValueName(value) {
+    return value?.name || value?.title || value?.content || value?.id || '항목';
 }
 
 function selectRecordRange(startRecordId, endRecordId) {

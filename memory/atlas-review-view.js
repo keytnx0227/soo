@@ -75,6 +75,7 @@ async function openAtlasReviewPopup() {
         renderStatus(content);
         renderMode(content, mode);
         renderRecordOptions(content);
+        renderRecordReviewProgress(content, mode);
         renderOverview(content);
         renderHistory(content, { onChanged: render });
         scheduleTokenEstimate();
@@ -121,6 +122,8 @@ async function openAtlasReviewPopup() {
     });
     content.querySelector('.stsm-atlas-review-category').addEventListener('change', render);
     content.querySelectorAll('input, select').forEach(element => element.addEventListener('input', scheduleTokenEstimate));
+    content.querySelectorAll('.stsm-atlas-review-record-start, .stsm-atlas-review-record-end')
+        .forEach(element => element.addEventListener('change', () => renderRecordReviewProgress(content, mode)));
     content.querySelector('.stsm-atlas-review-cancel').addEventListener('click', () => abortController?.abort());
     content.querySelector('.stsm-atlas-review-run').addEventListener('click', async () => {
         if (abortController) return;
@@ -257,6 +260,7 @@ function buildReviewMarkup() {
             <label class="stsm-field"><span>시작 요약 레코드</span><select class="stsm-atlas-review-record-start text_pole"></select></label>
             <label class="stsm-field"><span>종료 요약 레코드</span><select class="stsm-atlas-review-record-end text_pole"></select></label>
         </div>
+        <div class="stsm-atlas-review-record-progress" hidden></div>
         <p class="stsm-atlas-review-help"></p>
         <div class="stsm-atlas-review-token"><span>프롬프트 입력 토큰</span><strong class="stsm-atlas-review-token-value">입력 완료 후 계산</strong></div>
         <div class="stsm-atlas-review-actions">
@@ -306,7 +310,14 @@ function renderRecordOptions(content) {
     const category = content.querySelector('.stsm-atlas-review-category').value;
     const records = getAtlasReviewRecordCandidates();
     const options = records.map(record => {
-        const reviewed = record.atlasReviewOverrides?.[category] ? ' · 재검토됨' : '';
+        const override = record.atlasReviewOverrides?.[category];
+        const reviewed = !override
+            ? ''
+            : override.reviewMode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                ? ' · 시간순 완료'
+                : override.reviewMode === ATLAS_REVIEW_MODES.RECORD
+                    ? ' · 정밀 검토됨'
+                    : ' · 기존 재검토됨(방식 미기록)';
         return `<option value="${escapeHtml(record.id)}">#${record.startId} ~ #${record.endId}${reviewed}</option>`;
     }).join('');
     for (const select of content.querySelectorAll('.stsm-atlas-review-record-start, .stsm-atlas-review-record-end')) {
@@ -314,6 +325,36 @@ function renderRecordOptions(content) {
         select.innerHTML = `<option value="">선택</option>${options}`;
         if ([...select.options].some(option => option.value === previous)) select.value = previous;
     }
+}
+
+function renderRecordReviewProgress(content, mode) {
+    const output = content.querySelector('.stsm-atlas-review-record-progress');
+    const recordMode = mode === ATLAS_REVIEW_MODES.RECORD || mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL;
+    output.hidden = !recordMode;
+    if (!recordMode) return;
+    const category = content.querySelector('.stsm-atlas-review-category').value;
+    const matching = getAtlasReviewRecordCandidates().filter(record => {
+        const reviewMode = record.atlasReviewOverrides?.[category]?.reviewMode;
+        return mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+            ? reviewMode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+            : reviewMode === ATLAS_REVIEW_MODES.RECORD;
+    });
+    const label = mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL ? '시간순 재구축 완료 범위' : '정밀 검토 완료 범위';
+    const records = getAtlasReviewRecordCandidates();
+    const startId = content.querySelector('.stsm-atlas-review-record-start').value;
+    const endId = content.querySelector('.stsm-atlas-review-record-end').value;
+    const startIndex = records.findIndex(record => record.id === startId);
+    const endIndex = records.findIndex(record => record.id === endId);
+    const selected = startIndex >= 0 && endIndex >= 0
+        ? records.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
+        : [];
+    const selectedLabel = selected.length
+        ? `#${selected[0].startId} ~ #${selected.at(-1).endId} · ${selected.length}개 레코드`
+        : '시작과 종료 레코드를 선택해주세요';
+    output.innerHTML = `
+        <div><strong>${label}</strong><span>${escapeHtml(formatRanges(getCoveredRanges(matching)))}</span></div>
+        <div><strong>현재 선택 범위</strong><span>${escapeHtml(selectedLabel)}</span></div>
+    `;
 }
 
 function renderOverview(content) {
@@ -330,6 +371,7 @@ function renderHistory(content, { onChanged }) {
     const category = content.querySelector('.stsm-atlas-review-category').value;
     const quick = getAtlasReviewRecords().filter(record => record.category === category);
     const recordOverrides = getAtlasReviewRecordCandidates().filter(record => record.atlasReviewOverrides?.[category]);
+    const reviewBatches = groupRecordReviewBatches(recordOverrides, category);
     const list = content.querySelector('.stsm-atlas-review-history-list');
     list.innerHTML = [
         ...quick.map(record => historyItem({
@@ -338,14 +380,9 @@ function renderHistory(content, { onChanged }) {
             title: `일괄 검토 · #${record.startId} ~ #${record.endId}`,
             detail: `#${record.appliedThroughId} 시점에 적용`,
         })),
-        ...recordOverrides.map(record => historyItem({
-            id: record.id,
-            type: 'record',
-            title: `레코드별 검토 · #${record.startId} ~ #${record.endId}`,
-            detail: '원본 도감 변경안으로 초기화 가능',
-        })),
+        ...reviewBatches.map(batch => recordReviewBatchItem(batch, category)),
     ].join('') || '<div class="stsm-empty">적용된 재검토 기록이 없습니다.</div>';
-    list.querySelectorAll('[data-review-id] button').forEach(button => {
+    list.querySelectorAll('[data-review-id] .stsm-atlas-review-history-delete').forEach(button => {
         button.addEventListener('click', async () => {
             const row = button.closest('[data-review-id]');
             const isQuick = row.dataset.reviewType === 'quick';
@@ -369,6 +406,55 @@ function renderHistory(content, { onChanged }) {
             }
         });
     });
+}
+
+function groupRecordReviewBatches(records, category) {
+    const batches = new Map();
+    for (const record of records) {
+        const override = record.atlasReviewOverrides[category];
+        const batchId = override.reviewBatchId || `legacy:${record.id}`;
+        const batch = batches.get(batchId) || {
+            id: batchId,
+            mode: override.reviewMode || 'legacy',
+            reviewedAt: override.reviewedAt,
+            records: [],
+        };
+        batch.records.push(record);
+        if (String(override.reviewedAt || '') > String(batch.reviewedAt || '')) batch.reviewedAt = override.reviewedAt;
+        batches.set(batchId, batch);
+    }
+    return [...batches.values()]
+        .map(batch => ({
+            ...batch,
+            records: batch.records.sort((left, right) => left.startId - right.startId || left.endId - right.endId),
+        }))
+        .sort((left, right) => String(right.reviewedAt || '').localeCompare(String(left.reviewedAt || '')));
+}
+
+function recordReviewBatchItem(batch, category) {
+    const first = batch.records[0];
+    const last = batch.records.at(-1);
+    const modeLabel = batch.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+        ? '시간순 레코드 재구축'
+        : batch.mode === ATLAS_REVIEW_MODES.RECORD
+            ? '레코드별 정밀 검토'
+            : '기존 재검토 · 방식 미기록';
+    const reviewedAt = batch.reviewedAt ? new Date(batch.reviewedAt).toLocaleString() : '시각 정보 없음';
+    return `<details class="stsm-atlas-review-history-batch">
+        <summary>
+            <span><strong>${modeLabel} · #${first.startId} ~ #${last.endId}</strong><small>${batch.records.length}개 레코드 · ${escapeHtml(reviewedAt)}</small></span>
+        </summary>
+        <div class="stsm-atlas-review-history-batch-records">
+            ${batch.records.map(record => {
+        const override = record.atlasReviewOverrides[category];
+        return `<details class="stsm-atlas-review-history-record" data-review-id="${escapeHtml(record.id)}" data-review-type="record">
+                    <summary>#${record.startId} ~ #${record.endId}</summary>
+                    <pre>${escapeHtml(JSON.stringify(override.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre>
+                    <button class="stsm-atlas-review-history-delete menu_button interactable" type="button"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>이 레코드 재검토판 초기화</span></button>
+                </details>`;
+    }).join('')}
+        </div>
+    </details>`;
 }
 
 async function showReviewRemovalConfirmation({ record, category, isQuick }) {
@@ -429,7 +515,7 @@ function renderRemovalChanges(changes) {
 function historyItem({ id, type, title, detail }) {
     return `<div class="stsm-atlas-review-history-item" data-review-id="${escapeHtml(id)}" data-review-type="${type}">
         <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></span>
-        <button class="menu_button menu_button_icon interactable" type="button" title="재검토 결과 초기화" aria-label="재검토 결과 초기화"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+        <button class="stsm-atlas-review-history-delete menu_button menu_button_icon interactable" type="button" title="재검토 결과 초기화" aria-label="재검토 결과 초기화"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
     </div>`;
 }
 
@@ -453,6 +539,7 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
                 <details><summary><span class="stsm-atlas-review-change-${change.type}">${escapeHtml(change.label)}</span> ${escapeHtml(change.name)}</summary><pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre></details>
             `).join('') || '<div class="stsm-empty">도감 계산 결과에 달라지는 항목이 없습니다.</div>'}
         </div>
+        ${renderDraftStepHistory(draft)}
         ${translation ? `<pre class="stsm-atlas-review-result-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.content)}</pre>` : ''}
         ${changeCount === 0 && draft.entries.length ? '<p class="stsm-atlas-review-no-effect">재검토 변경안은 생성됐지만 현재 최종 도감에는 영향을 주지 않습니다. 같은 값이 이미 반영됐거나 이후 레코드·사용자 수정이 해당 값을 덮고 있을 수 있습니다.</p>' : ''}
         <details class="stsm-atlas-review-stored-update">
@@ -471,6 +558,28 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
             <button class="stsm-atlas-review-discard menu_button interactable" type="button">폐기</button>
         </div>
     `;
+}
+
+function renderDraftStepHistory(draft) {
+    const entries = draft.entries.filter(entry => entry.stepChanges);
+    if (!entries.length) return '';
+    return `<section class="stsm-atlas-review-step-history">
+        <strong>레코드별 중간 변화</strong>
+        <p>각 레코드를 반영한 직후, 해당 시점의 도감이 어떻게 달라졌는지 보여줍니다.</p>
+        <div class="stsm-atlas-review-step-list">
+            ${entries.map((entry, index) => {
+        const changes = entry.stepChanges;
+        return `<details${index === 0 ? ' open' : ''}>
+                    <summary>#${entry.startId} ~ #${entry.endId} · 신규 ${changes.created.length} · 변경 ${changes.updated.length} · 제외 ${changes.removed.length}</summary>
+                    <div class="stsm-atlas-review-step-changes">
+                        ${[...changes.created, ...changes.updated, ...changes.removed].map(change => `
+                            <details><summary><span class="stsm-atlas-review-change-${change.type}">${escapeHtml(change.label)}</span> ${escapeHtml(change.name)}</summary><pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre></details>
+                        `).join('') || '<div class="stsm-empty">이 레코드를 거치며 달라진 도감 항목이 없습니다.</div>'}
+                    </div>
+                </details>`;
+    }).join('')}
+        </div>
+    </section>`;
 }
 
 function compareAtlas(before, after) {
