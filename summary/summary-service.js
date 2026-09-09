@@ -171,15 +171,24 @@ function formatChunkList(chunks) {
 }
 
 export async function regenerateSummaryRecord(recordId) {
+    const record = getSummaryRecord(recordId);
+    if (record?.type === 'compressed') return regenerateCompressedSummary(recordId);
+    const draft = await createSummaryRegenerationDraft(recordId);
+    return applySummaryRegenerationDraft(draft);
+}
+
+export async function createSummaryRegenerationDraft(recordId) {
     assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record) throw new Error('재생성할 요약 기록을 찾지 못했습니다.');
     if (record.llmHidden) throw new Error('LLM에서 감춘 요약 기록은 재생성할 수 없습니다.');
-    if (record.type === 'compressed') return regenerateCompressedSummary(recordId);
+    if (record.type === 'compressed') throw new Error('압축 요약은 일반 요약 재생성 미리보기를 사용할 수 없습니다.');
 
     const { start, end, chat } = validateSummaryRange(record.startId, record.endId);
     const [chunk] = createSummaryChunks(chat, start, end, end - start + 1);
     if (!chunk) throw new Error('현재 채팅의 해당 범위에 요약할 메시지가 없습니다.');
+    const baselineRecordSignature = createRegenerationRecordSignature(record);
+    const sourceFingerprint = createSourceFingerprint(chunk.messages);
 
     const outputConfiguration = getSummaryOutputConfiguration();
     const prompt = await buildSummaryPrompt(chunk, outputConfiguration);
@@ -189,8 +198,13 @@ export async function regenerateSummaryRecord(recordId) {
     const response = await generateSummary(prompt);
     ensureChatUnchanged(chat);
     if (!response) throw new Error('재생성된 요약 응답이 비어 있습니다.');
-    if (getSummaryRecord(recordId)?.llmHidden) {
-        throw new Error('재생성 중 요약 기록이 LLM 비공개로 변경되어 결과를 저장하지 않았습니다.');
+    const currentRecord = getSummaryRecord(recordId);
+    if (!currentRecord || createRegenerationRecordSignature(currentRecord) !== baselineRecordSignature) {
+        throw new Error('재생성 중 대상 요약 레코드가 변경되어 초안을 만들지 않았습니다.');
+    }
+    const [currentChunk] = createSummaryChunks(chat, start, end, end - start + 1);
+    if (!currentChunk || JSON.stringify(createSourceFingerprint(currentChunk.messages)) !== JSON.stringify(sourceFingerprint)) {
+        throw new Error('재생성 중 원본 메시지가 변경되어 초안을 만들지 않았습니다.');
     }
     const structuredData = parseStructuredSummaryResponse(
         response,
@@ -204,9 +218,14 @@ export async function regenerateSummaryRecord(recordId) {
         outputSections: getSettings().summarization.summaryOutputSections,
     });
 
-    const updatedRecord = await updateSummaryRecordContent(record.id, content, {
-        contentEdited: false,
-        sourceFingerprint: createSourceFingerprint(chunk.messages),
+    return {
+        id: createId('summary-regeneration-draft'),
+        recordId: record.id,
+        sourceChat: chat,
+        baselineRecordSignature,
+        sourceFingerprint,
+        previousRecord: structuredClone(record),
+        content,
         structuredSummary: {
             version: SUMMARY_FORMAT_VERSION,
             languageMode: outputConfiguration.languageMode,
@@ -214,9 +233,51 @@ export async function regenerateSummaryRecord(recordId) {
             memorySections: outputConfiguration.memorySections,
             data: structuredData,
         },
+    };
+}
+
+export async function applySummaryRegenerationDraft(draft) {
+    if (!draft?.recordId || !draft.structuredSummary || !String(draft.content || '').trim()) {
+        throw new Error('적용할 요약 재생성 초안이 없습니다.');
+    }
+    if (SillyTavern.getContext().chat !== draft.sourceChat) {
+        throw new Error('재생성 초안 생성 후 채팅방이 변경되었습니다. 다시 재생성해주세요.');
+    }
+    const record = getSummaryRecord(draft.recordId);
+    if (!record || createRegenerationRecordSignature(record) !== draft.baselineRecordSignature) {
+        throw new Error('재생성 초안 생성 후 대상 요약 레코드가 변경되었습니다. 다시 재생성해주세요.');
+    }
+    const [chunk] = createSummaryChunks(
+        draft.sourceChat,
+        record.startId,
+        record.endId,
+        record.endId - record.startId + 1,
+    );
+    if (!chunk || JSON.stringify(createSourceFingerprint(chunk.messages)) !== JSON.stringify(draft.sourceFingerprint)) {
+        throw new Error('재생성 초안 생성 후 원본 메시지가 변경되었습니다. 다시 재생성해주세요.');
+    }
+
+    const updatedRecord = await updateSummaryRecordContent(record.id, draft.content, {
+        contentEdited: false,
+        sourceFingerprint: draft.sourceFingerprint,
+        structuredSummary: draft.structuredSummary,
     });
     if (!updatedRecord) throw new Error('재생성 결과를 저장할 요약 기록을 찾지 못했습니다.');
     return updatedRecord;
+}
+
+function createRegenerationRecordSignature(record) {
+    return JSON.stringify({
+        id: record.id,
+        startId: record.startId,
+        endId: record.endId,
+        llmHidden: record.llmHidden,
+        updatedAt: record.updatedAt,
+        sourceFingerprint: record.sourceFingerprint,
+        structuredSummary: record.structuredSummary,
+        atlasReviewOverrides: record.atlasReviewOverrides,
+        legacyContent: record.legacyContent,
+    });
 }
 
 function validateUncoveredRange(startId, endId) {

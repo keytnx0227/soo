@@ -38,6 +38,7 @@ import { bindRangeAdjustment } from './records/range-adjustment-view.js';
 import { bindRangeDeletion } from './records/range-deletion-view.js';
 import { openStructuredSummaryEditor } from './records/structured-summary-editor.js';
 import { openStructuredCompressionEditor } from './records/structured-compression-editor.js';
+import { showSummaryRegenerationPreview } from './records/summary-regeneration-preview.js';
 import {
     bindRecordsView,
     refreshSummaryRecordSourceStates,
@@ -75,7 +76,12 @@ import {
     renderCompressionTemplateSettings,
 } from './summary/compression-template-view.js';
 import { bindCompressionView } from './summary/compression-view.js';
-import { regenerateSummaryRecord, summarizeRange } from './summary/summary-service.js';
+import {
+    applySummaryRegenerationDraft,
+    createSummaryRegenerationDraft,
+    regenerateSummaryRecord,
+    summarizeRange,
+} from './summary/summary-service.js';
 import {
     deleteSummaryRecord,
     deleteIntegratedCompressionData,
@@ -1072,11 +1078,16 @@ async function rerollRecord(record) {
     const recordId = record.dataset.recordId;
     if (busyRecordIds.has(recordId)) return;
 
-    const confirmed = await showConfirmation('정말 재생성하시겠습니까? 기존 요약은 새 결과로 대체됩니다.', '재생성');
+    const sourceRecord = getSummaryRecord(recordId);
+    const confirmed = await showConfirmation(
+        sourceRecord?.type === 'compressed'
+            ? '정말 재생성하시겠습니까? 기존 압축 요약은 새 결과로 대체됩니다.'
+            : '재생성 초안을 만들까요? 결과를 확인하고 적용하기 전까지 기존 요약과 도감은 변경되지 않습니다.',
+        '재생성',
+    );
     if (!confirmed) return;
     if (busyRecordIds.has(recordId)) return;
 
-    const sourceRecord = getSummaryRecord(recordId);
     let operationToken = null;
     try {
         operationToken = beginOperation(
@@ -1084,7 +1095,20 @@ async function rerollRecord(record) {
             sourceRecord ? `#${sourceRecord.startId} ~ #${sourceRecord.endId} 재생성 중` : '요약 재생성 중',
         );
         setRecordBusy(record, true);
-        const updatedRecord = await regenerateSummaryRecord(recordId);
+        let updatedRecord;
+        if (sourceRecord?.type === 'compressed') {
+            updatedRecord = await regenerateSummaryRecord(recordId);
+        } else {
+            const draft = await createSummaryRegenerationDraft(recordId);
+            updateOperation(operationToken, `#${sourceRecord.startId} ~ #${sourceRecord.endId} 재생성 결과 확인 대기`);
+            const accepted = await showSummaryRegenerationPreview(draft);
+            if (!accepted) {
+                toastr.info('재생성 초안을 폐기했습니다. 기존 요약과 도감은 변경되지 않았습니다.');
+                return;
+            }
+            updateOperation(operationToken, `#${sourceRecord.startId} ~ #${sourceRecord.endId} 재생성 결과 저장 중`);
+            updatedRecord = await applySummaryRegenerationDraft(draft);
+        }
         await autoTranslateRecord(updatedRecord, operationToken);
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
         toastr.success('요약을 재생성했습니다.');
