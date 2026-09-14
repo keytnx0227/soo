@@ -3707,6 +3707,34 @@
     opacity: 0.65;
 }
 
+.stsm-record-token-breakdown {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    margin: 0 0 4px 16px;
+    padding: 4px 0 4px 10px;
+    border-left: 2px solid var(--SmartThemeBorderColor);
+}
+
+.stsm-record-token-track {
+    display: flex;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: rgb(128 128 128 / 16%);
+}
+
+.stsm-record-token-track > span {
+    flex-basis: 0;
+    min-width: 0;
+}
+
+.stsm-record-token-note {
+    font-size: 0.9em;
+    opacity: 0.65;
+    overflow-wrap: anywhere;
+}
+
 .stsm-token-usage[data-level="warning"] .stsm-token-usage-track > span {
     background-color: var(--warning-color, #dba457);
 }

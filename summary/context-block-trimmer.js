@@ -60,12 +60,29 @@ export function composeAtomicContext(sourceBlocks, budget, countTokens) {
                 budget: source.unitBudget,
                 sourceTokenCount: countTokens(sourceContent),
                 outputTokenCount: countTokens(outputContent),
+                recordTokenBreakdown: source.kind === 'records'
+                    ? getRecordTokenBreakdown(output, countTokens)
+                    : null,
                 sourceCount: source.units.length,
                 outputCount: output?.units.length || 0,
                 omittedItems: omitted.map(unit => ({ id: unit.id, label: unit.label })),
             };
         }),
     };
+}
+
+function getRecordTokenBreakdown(block, countTokens) {
+    const result = { always: 0, longTerm: 0, pinned: 0 };
+    for (const unit of block?.enabled ? block.units : []) {
+        const tokens = countTokens(unit.content);
+        if (unit.retrieved) {
+            result.longTerm += tokens;
+            if (unit.pinned) result.pinned += tokens;
+        } else {
+            result.always += tokens;
+        }
+    }
+    return result;
 }
 
 function createPriorityRemovalPlan(block, blockIndex) {
