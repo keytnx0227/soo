@@ -91,17 +91,21 @@ export function renderSummaryRecords(root, bindRecordEvents, {
 export function renderSummaryContextTokenUsage(root, contextDetails = null) {
     const host = root.querySelector('#stsm-summary-context-token-usage');
     if (!host) return;
+    const breakdownOpen = host.querySelector('.stsm-token-breakdown')?.open || false;
     try {
         const details = contextDetails || buildSummaryContextDetails();
         host.innerHTML = `
             ${renderTokenUsageBar({
                 label: '{{sumiSummary}} 합본',
+                blocks: details.blocks || [],
                 used: details.outputTokenCount,
                 max: details.budget,
                 enabled: details.enabled,
             })}
             ${details.truncated ? `<div class="stsm-summary-context-token-note"><i class="fa-solid fa-scissors" aria-hidden="true"></i><span>원본 ${details.originalTokenCount.toLocaleString()} tokens에서 일부 항목이 제외됐어요.</span></div>` : ''}
         `;
+        const breakdown = host.querySelector('.stsm-token-breakdown');
+        if (breakdown) breakdown.open = breakdownOpen;
     } catch (error) {
         host.innerHTML = '<div class="stsm-summary-context-token-note stsm-summary-context-token-error">합본 토큰을 계산하지 못했어요.</div>';
         console.error('[Chat Summarizer] Failed to render summary context token usage:', error);
@@ -451,6 +455,7 @@ async function showSummaryContextPreview() {
             <div class="stsm-section-title">{{sumiSummary}} 미리보기</div>
             ${renderTokenUsageBar({
                 label: '요약 합본',
+                blocks: details.blocks || [],
                 used: details.outputTokenCount,
                 max: details.budget,
                 enabled: details.enabled,
@@ -462,10 +467,11 @@ async function showSummaryContextPreview() {
             ? '<textarea class="text_pole monospace" rows="24" readonly></textarea>'
             : '<div class="stsm-empty">토큰 제한 또는 레코드 포맷 설정으로 실제 전송 결과가 비어 있습니다.</div>';
         content.innerHTML = `
-            <label class="stsm-field">
+            <div class="stsm-field">
                 <span class="stsm-section-title">{{sumiSummary}} 미리보기</span>
                 ${renderTokenUsageBar({
                     label: '요약 합본',
+                    blocks: details.blocks || [],
                     used: details.outputTokenCount,
                     max: details.budget,
                     enabled: details.enabled,
@@ -473,7 +479,7 @@ async function showSummaryContextPreview() {
                 ${renderContextTokenStatus(details)}
                 ${renderLongTermRetrievalPreview(details.retrieval)}
                 ${preview}
-            </label>
+            </div>
         `;
         if (details.content) content.querySelector('textarea').value = details.content;
     }
