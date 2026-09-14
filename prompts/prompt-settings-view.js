@@ -1,4 +1,4 @@
-import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import {
     buildCompressionJsonContract,
 } from '../summary/compression-format.js';
@@ -430,6 +430,7 @@ async function showPromptBlockPopup({ title, okButton, block = null, type }) {
     form.className = 'stsm-prompt-form';
     form.innerHTML = `
         <div class="stsm-section-title">${escapeHtml(title)}</div>
+        <div class="stsm-prompt-form-validation" role="alert" hidden></div>
         <label class="stsm-field">
             <span>프롬프트 이름</span>
             <input class="stsm-block-name text_pole" type="text" />
@@ -484,15 +485,57 @@ async function showPromptBlockPopup({ title, okButton, block = null, type }) {
         updateDisabledState();
     }
 
-    const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', { okButton, cancelButton: '취소' });
+    const validation = form.querySelector('.stsm-prompt-form-validation');
+    const showValidationError = (message, target) => {
+        validation.textContent = message;
+        validation.hidden = false;
+        target?.focus();
+    };
+    form.addEventListener('input', () => {
+        validation.hidden = true;
+    });
+
+    const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
+        okButton,
+        cancelButton: '취소',
+        onClosing: currentPopup => {
+            if (currentPopup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+
+            const nameInput = form.querySelector('.stsm-block-name');
+            const contentInput = form.querySelector('.stsm-block-content');
+            if (!nameInput.value.trim()) {
+                showValidationError('프롬프트 이름을 입력해주세요.', nameInput);
+                return false;
+            }
+            if (!contentInput.value.trim()) {
+                showValidationError('프롬프트 내용을 입력해주세요.', contentInput);
+                return false;
+            }
+
+            if (isRecentSummary) {
+                const countEnabled = form.querySelector('.stsm-recent-count-enabled').checked;
+                const countInput = form.querySelector('.stsm-recent-count-value');
+                const countValue = Number(countInput.value);
+                const tokenEnabled = form.querySelector('.stsm-recent-token-enabled').checked;
+                const tokenInput = form.querySelector('.stsm-recent-token-value');
+                const tokenValue = Number(tokenInput.value);
+                if (countEnabled && (!Number.isInteger(countValue) || countValue < 1)) {
+                    showValidationError('최근 요약 개수 제한은 1 이상의 정수로 입력해주세요.', countInput);
+                    return false;
+                }
+                if (tokenEnabled && (!Number.isInteger(tokenValue) || tokenValue < 100)) {
+                    showValidationError('최근 요약 토큰 제한은 100 이상의 정수로 입력해주세요.', tokenInput);
+                    return false;
+                }
+            }
+
+            return true;
+        },
+    });
     if (await popup.show() !== 1) return null;
 
     const name = form.querySelector('.stsm-block-name').value.trim();
     const content = form.querySelector('.stsm-block-content').value.trim();
-    if (!name || !content) {
-        toastr.info('프롬프트 이름과 내용을 모두 입력해주세요.');
-        return null;
-    }
 
     const scope = scopeSelect?.value === PROMPT_SCOPE_TYPES.CHARACTER && currentTarget
         ? { type: PROMPT_SCOPE_TYPES.CHARACTER, ...currentTarget }
@@ -504,12 +547,6 @@ async function showPromptBlockPopup({ title, okButton, block = null, type }) {
     const countValue = Number(form.querySelector('.stsm-recent-count-value').value);
     const tokenEnabled = form.querySelector('.stsm-recent-token-enabled').checked;
     const tokenValue = Number(form.querySelector('.stsm-recent-token-value').value);
-    if ((countEnabled && (!Number.isInteger(countValue) || countValue < 1))
-        || (tokenEnabled && (!Number.isInteger(tokenValue) || tokenValue < 100))) {
-        toastr.info('활성화한 최근 요약 제한값을 올바르게 입력해주세요.');
-        return null;
-    }
-
     return {
         name,
         content,

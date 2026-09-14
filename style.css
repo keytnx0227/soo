@@ -150,6 +150,15 @@
     opacity: 0.68;
 }
 
+.stsm-prompt-form-validation {
+    padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--fullred), transparent 45%);
+    border-radius: 5px;
+    color: var(--fullred);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+
 .stsm-error-meta,
 .stsm-error-description,
 .stsm-error-reason,
@@ -2254,6 +2263,28 @@
 .stsm-structured-emotion-header {
     display: grid;
     grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr) 36px;
+}
+
+.stsm-structured-row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 36px;
+    grid-column: -2 / -1;
+    grid-row: 1 / span 2;
+}
+
+.stsm-structured-row-actions > .menu_button {
+    box-sizing: border-box;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    margin: 0;
+}
+
+.stsm-structured-row-actions > button:disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
 .stsm-structured-remove {

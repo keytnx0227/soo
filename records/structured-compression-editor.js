@@ -4,6 +4,7 @@ import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { parseCompressionResponse, renderCompressionSummary } from '../summary/compression-format.js';
 import { getSummaryRecord, updateSummaryRecordContent } from '../summary/summary-store.js';
+import { moveEditorItem, refreshEditorOrderControls } from './structured-editor-order.js';
 
 export async function openStructuredCompressionEditor(recordId) {
     const record = getSummaryRecord(recordId);
@@ -232,11 +233,14 @@ function renderRemoveButton(label, target = 'row') {
 }
 
 function bindEditorActions(form) {
+    refreshEditorOrderControls(form);
     form.addEventListener('click', event => {
+        moveEditorItem(event.target);
         const add = event.target.closest('[data-editor-add]')?.dataset.editorAdd;
         if (add) addEditorItem(form, event.target, add);
         const remove = event.target.closest('[data-editor-remove]')?.dataset.editorRemove;
         if (remove) removeEditorItem(event.target, remove);
+        refreshEditorOrderControls(form);
     });
 }
 
