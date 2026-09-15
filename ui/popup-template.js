@@ -222,6 +222,9 @@ export function buildPopup() {
                         <i class="fa-solid fa-eye"></i>
                         <span>미리보기</span>
                     </button>
+                    <button id="stsm-memory-conversation" class="menu_button interactable" type="button">
+                        <i class="fa-solid fa-comments" aria-hidden="true"></i><span>기억과 대화</span>
+                    </button>
                     <button id="stsm-adjust-record-ranges" class="menu_button interactable" type="button">
                         <i class="fa-solid fa-arrows-left-right"></i>
                         <span>범위 일괄 교정</span>

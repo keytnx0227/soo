@@ -21,8 +21,12 @@ import { renderTokenUsageBar } from '../ui/token-usage-view.js';
 import { renderExtensionControls } from '../ui/extension-status-view.js';
 import { renderRecordSearchControls } from '../ui/popup-template.js';
 import { renderLongTermRetrievalPreview } from '../memory/long-term-retrieval-view.js';
+import { openMemoryConversation } from '../memory/conversation-view.js';
 
 export function bindRecordsView(root, bindRecordEvents, initialContextDetails = null) {
+    root.querySelector('#stsm-memory-conversation').addEventListener('click', () => {
+        openMemoryConversation().catch(error => toastr.error(error.message));
+    });
     root.querySelector('#stsm-preview-summary-context').addEventListener('click', async () => {
         try {
             await showSummaryContextPreview();
