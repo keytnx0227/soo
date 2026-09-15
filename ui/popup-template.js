@@ -214,22 +214,22 @@ export function buildPopup() {
         <section id="stsm-panel-records" class="stsm-panel" role="tabpanel" hidden>
             <div class="stsm-records-toolbar">
                 <div class="stsm-records-toolbar-actions">
-                    <button id="stsm-open-compression" class="menu_button interactable" type="button">
+                    <button id="stsm-open-compression" class="menu_button interactable" type="button" title="압축하기" aria-label="압축하기">
                         <i class="fa-solid fa-compress" aria-hidden="true"></i>
                         <span>압축하기</span>
                     </button>
-                    <button id="stsm-preview-summary-context" class="menu_button interactable" type="button">
+                    <button id="stsm-preview-summary-context" class="menu_button interactable" type="button" title="미리보기" aria-label="미리보기">
                         <i class="fa-solid fa-eye"></i>
                         <span>미리보기</span>
                     </button>
-                    <button id="stsm-memory-conversation" class="menu_button interactable" type="button">
+                    <button id="stsm-memory-conversation" class="menu_button interactable" type="button" title="기억과 대화" aria-label="기억과 대화">
                         <i class="fa-solid fa-comments" aria-hidden="true"></i><span>기억과 대화</span>
                     </button>
-                    <button id="stsm-adjust-record-ranges" class="menu_button interactable" type="button">
+                    <button id="stsm-adjust-record-ranges" class="menu_button interactable" type="button" title="범위 일괄 교정" aria-label="범위 일괄 교정">
                         <i class="fa-solid fa-arrows-left-right"></i>
                         <span>범위 일괄 교정</span>
                     </button>
-                    <button id="stsm-delete-record-range" class="menu_button interactable" type="button">
+                    <button id="stsm-delete-record-range" class="menu_button interactable" type="button" title="범위 삭제" aria-label="범위 삭제">
                         <i class="fa-solid fa-trash" aria-hidden="true"></i>
                         <span>범위 삭제</span>
                     </button>

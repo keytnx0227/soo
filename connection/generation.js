@@ -17,10 +17,14 @@ const CHAT_COMPLETION_PROVIDERS = Object.freeze({
     openrouter: { source: chat_completion_sources.OPENROUTER, modelKey: 'openrouter_model' },
 });
 
-export async function generateSummary(prompt) {
+export async function generateSummary(prompt, { maxTokens } = {}) {
     assertExtensionEnabled();
     const settings = getSettings();
-    const connection = settings.connection[settings.connectionMode] ?? settings.connection.profile;
+    const connection = { ...(settings.connection[settings.connectionMode] ?? settings.connection.profile) };
+    if (maxTokens !== undefined) {
+        if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 200000) throw new Error('출력 토큰은 1~200,000 사이의 정수여야 합니다.');
+        connection.maxTokens = maxTokens;
+    }
 
     if (settings.connectionMode === 'custom' && main_api !== 'openai') {
         toastr.warning('현재 연결 프로필이 Chat Completion 계열이 아니어서 프로바이더/모델을 임시 변경하지 않습니다.');

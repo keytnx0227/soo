@@ -1,7 +1,9 @@
-import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../../../../scripts/popup.js';
 import { collectChatRangeMessages, renderChatMessage } from './chat-message-view.js';
 import { getSummaryRecordSourceStatus, SOURCE_STATES } from '../summary/source-tracking.js';
-import { getSummaryRecord } from '../summary/summary-store.js';
+import { getSummaryRecord, updateSummaryRecordContent } from '../summary/summary-store.js';
+import { openStructuredSummaryEditor } from './structured-summary-editor.js';
+import { openStructuredCompressionEditor } from './structured-compression-editor.js';
 import { escapeHtml } from '../core/utils.js';
 import { renderRecordTagDetails } from './record-tags-view.js';
 import { renderRecordMemoryUpdateDetails } from './record-memory-updates-view.js';
@@ -33,7 +35,7 @@ export async function openSummaryRecordDetail(recordId) {
             ${renderSourceNotice(record, sourceStatus, displayRange)}
         </header>
         <section class="stsm-record-detail-section">
-            <div class="stsm-record-detail-section-title">요약 내용</div>
+            ${renderEditableHeading('요약 내용')}
             <div class="stsm-record-detail-summary">${escapeHtml(record.content)}</div>
         </section>
         ${renderRecordTagDetails(record)}
@@ -51,6 +53,7 @@ export async function openSummaryRecordDetail(recordId) {
         </section>
     `;
 
+    bindDetailEdit(content, record.id);
     await new Popup(content, POPUP_TYPE.TEXT, '', {
         okButton: '닫기',
         wide: true,
@@ -71,7 +74,7 @@ async function openCompressedRecordDetail(record) {
             </div>
         </header>
         <section class="stsm-record-detail-section">
-            <div class="stsm-record-detail-section-title">압축 내용</div>
+            ${renderEditableHeading('압축 내용')}
             <div class="stsm-record-detail-summary">${escapeHtml(record.content)}</div>
         </section>
         <section class="stsm-record-detail-section">
@@ -89,12 +92,68 @@ async function openCompressedRecordDetail(record) {
             </div>
         </section>
     `;
+    bindDetailEdit(content, record.id);
     await new Popup(content, POPUP_TYPE.TEXT, '', {
         okButton: '닫기',
         wide: true,
         large: true,
         allowVerticalScrolling: true,
     }).show();
+}
+
+function renderEditableHeading(label) {
+    return `<div class="stsm-record-detail-section-title"><span>${label}</span>
+        <button type="button" class="menu_button menu_button_icon stsm-detail-edit" title="레코드 수정" aria-label="레코드 수정"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+    </div>`;
+}
+
+function bindDetailEdit(content, recordId) {
+    const owner = SillyTavern.getContext().chatMetadata;
+    const button = content.querySelector('.stsm-detail-edit');
+    button.addEventListener('click', async () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+            if (SillyTavern.getContext().chatMetadata !== owner) throw new Error('채팅이 바뀌었습니다. 상세 화면을 다시 열어주세요.');
+            const record = getSummaryRecord(recordId);
+            if (!record) throw new Error('수정할 레코드를 찾지 못했습니다.');
+            let updated;
+            if (record.type === 'compressed' && record.compression?.data && !record.contentEdited) {
+                updated = await openStructuredCompressionEditor(recordId);
+            } else if (record.type === 'summary' && record.structuredSummary?.data) {
+                updated = await openStructuredSummaryEditor(recordId);
+            } else {
+                updated = await editDetailText(record, owner);
+            }
+            if (updated) {
+                content.querySelector('.stsm-record-detail-summary').textContent = updated.content;
+                toastr.success('레코드를 수정했습니다.');
+            }
+        } catch (error) { toastr.error(error.message || '레코드 수정에 실패했습니다.'); }
+        finally { button.disabled = false; }
+    });
+}
+
+async function editDetailText(record, owner) {
+    const editor = document.createElement('textarea');
+    editor.className = 'text_pole';
+    editor.rows = 16;
+    editor.value = record.content;
+    editor.setAttribute('aria-label', '레코드 내용 수정');
+    let updated = null;
+    await new Popup(editor, POPUP_TYPE.CONFIRM, '', {
+        okButton: '수정하기', cancelButton: '취소', wider: true, allowVerticalScrolling: true,
+        onClosing: async popup => {
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            try {
+                if (SillyTavern.getContext().chatMetadata !== owner) throw new Error('채팅이 바뀌어 저장할 수 없습니다.');
+                updated = await updateSummaryRecordContent(record.id, editor.value, { contentEdited: true });
+                if (!updated) throw new Error('수정할 레코드를 찾지 못했습니다.');
+                return true;
+            } catch (error) { toastr.error(error.message || '저장에 실패했습니다.'); return false; }
+        },
+    }).show();
+    return updated;
 }
 
 function getDisplayRange(record, sourceStatus) {

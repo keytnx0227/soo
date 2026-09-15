@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { packTexts, planConversation, runConversation, REVIEW_PROMPT } from '../memory/conversation-engine.js';
+import { packTexts, planConversation, planConversationAsync, runConversation, REVIEW_PROMPT } from '../memory/conversation-engine.js';
 
 const count = text => text.length;
 const records = Array.from({ length: 5 }, (_, i) => ({id:`r${i}`,startId:i*20,endId:i*20+19,content:'scene '.repeat(230)}));
@@ -10,6 +10,11 @@ const review = prompt => {
     const data = JSON.parse(prompt.slice(REVIEW_PROMPT.length).trim());
     return JSON.stringify({answer:'There is a scene.',recordIds:[data.records[0].id]});
 };
+
+test('asynchronous preview matches execution batching including oversized records', async () => {
+    const source = [...records, { id:'huge',content:'large '.repeat(3000) }];
+    assert.deepEqual(await planConversationAsync(source,'question',4000,async text=>count(text)),planConversation(source,'question',4000,count));
+});
 
 test('planned batches fit actual prompts, preserve all records and count requests', async () => {
     const job = fresh();

@@ -41,6 +41,25 @@ export function planConversation(records, question, budget, count) {
     return { batches, requests: batches.length + 1 };
 }
 
+export async function planConversationAsync(records, question, budget, count) {
+    const prompt = values => reviewInput(question, values);
+    if (await count(prompt([])) >= budget) throw new Error('질문·대화 지시문이 입력 예산보다 큽니다. 예산을 늘려주세요.');
+    const batches = [];
+    const pending = [...records];
+    let current = [];
+    while (pending.length) {
+        const item = pending.shift();
+        if (await count(prompt([...current, item])) <= budget) { current.push(item); continue; }
+        if (current.length) { batches.push(current); current = []; pending.unshift(item); continue; }
+        const chars = Array.from(item.content);
+        if (chars.length < 2) throw new Error('레코드 정보를 담기에는 입력 예산이 너무 작습니다.');
+        const middle = Math.ceil(chars.length / 2);
+        pending.unshift({ ...item, content: chars.slice(0, middle).join('') }, { ...item, content: chars.slice(middle).join('') });
+    }
+    if (current.length) batches.push(current);
+    return { batches, requests: batches.length + 1 };
+}
+
 export async function runConversation(job, { generate, count, save, progress, check, fingerprint = text => text }) {
     const { records, budget, question } = job;
     const request = async (prompt, label, json = false) => {
