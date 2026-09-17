@@ -2485,6 +2485,10 @@
     scrollbar-width: none;
 }
 
+.stsm-regeneration-preview-popup > * {
+    flex-shrink: 0;
+}
+
 .stsm-regeneration-preview-popup::-webkit-scrollbar,
 .stsm-regeneration-preview-panel pre::-webkit-scrollbar,
 .stsm-regeneration-preview-memory::-webkit-scrollbar {
@@ -2551,7 +2555,25 @@
 
 .stsm-regeneration-preview-memory {
     display: grid;
+    grid-auto-rows: max-content;
+    align-content: start;
     gap: 8px;
+    white-space: normal;
+}
+
+.stsm-regeneration-preview-memory .stsm-record-detail-section {
+    min-height: auto;
+    min-width: 0;
+}
+
+.stsm-regeneration-preview-memory .stsm-record-detail-section-title,
+.stsm-regeneration-preview-memory .stsm-memory-update-card > header {
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+}
+
+.stsm-regeneration-preview-memory .stsm-memory-update-row > div span {
+    white-space: pre-wrap;
 }
 
 .stsm-regeneration-preview-notice {
