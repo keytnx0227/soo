@@ -9,6 +9,8 @@ import {
     updateOperation,
 } from './core/extension-state.js';
 import { bindExtensionStatus } from './ui/extension-status-view.js';
+import { bindRegenerationPending } from './ui/regeneration-pending-view.js';
+import { getPendingRegenerations, queueRegeneration } from './records/regeneration-review.js';
 import { bindDataTransfer } from './ui/data-transfer-view.js';
 import { buildPopup } from './ui/popup-template.js';
 import { bindSectionTooltips } from './ui/section-tooltip.js';
@@ -176,6 +178,7 @@ async function openSummarizerPopup() {
 }
 
 function bindEvents(root) {
+    const unbindRegenerationPending = bindRegenerationPending(root, reviewPendingRegeneration);
     const unbindSummaryErrorView = bindSummaryErrorView(root);
     const unbindSectionTooltips = bindSectionTooltips();
     const unbindExtensionStatus = bindExtensionStatus(root, async enabled => {
@@ -285,6 +288,7 @@ function bindEvents(root) {
         unbindLongTermRetrieval?.();
         unbindSummaryErrorView();
         unbindExtensionStatus();
+        unbindRegenerationPending();
         unbindSectionTooltips();
     };
 }
@@ -1077,6 +1081,10 @@ async function saveRecordEdit(record) {
 async function rerollRecord(record) {
     const recordId = record.dataset.recordId;
     if (busyRecordIds.has(recordId)) return;
+    if (getPendingRegenerations().some(draft => draft.recordId === recordId)) {
+        toastr.info('이 기록에는 검토 대기 중인 초안이 있어요. 먼저 적용하거나 버려주세요.');
+        return;
+    }
 
     const sourceRecord = getSummaryRecord(recordId);
     const confirmed = await showConfirmation(
@@ -1100,14 +1108,9 @@ async function rerollRecord(record) {
             updatedRecord = await regenerateSummaryRecord(recordId);
         } else {
             const draft = await createSummaryRegenerationDraft(recordId);
-            updateOperation(operationToken, `#${sourceRecord.startId} ~ #${sourceRecord.endId} 재생성 결과 확인 대기`);
-            const accepted = await showSummaryRegenerationPreview(draft);
-            if (!accepted) {
-                toastr.info('재생성 초안을 폐기했습니다. 기존 요약과 도감은 변경되지 않았습니다.');
-                return;
-            }
-            updateOperation(operationToken, `#${sourceRecord.startId} ~ #${sourceRecord.endId} 재생성 결과 저장 중`);
-            updatedRecord = await applySummaryRegenerationDraft(draft);
+            await queueRegeneration(draft);
+            toastr.info('재생성이 완료됐어요. 상태바 아래에서 결과와 도감 연결을 검토해주세요.');
+            return;
         }
         await autoTranslateRecord(updatedRecord, operationToken);
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
@@ -1127,6 +1130,28 @@ async function rerollRecord(record) {
             endOperation(operationToken);
         }
     }
+}
+
+async function reviewPendingRegeneration(pending) {
+    const context = SillyTavern.getContext();
+    const sourceChat = context.chat;
+    await showSummaryRegenerationPreview(pending, async resolved => {
+        if (SillyTavern.getContext().chat !== sourceChat) throw new Error('채팅방이 변경되었습니다.');
+        if (!getPendingRegenerations().some(item => item.id === pending.id)) throw new Error('초안이 변경되거나 삭제되었습니다. 다시 검토해주세요.');
+        const operationToken = beginOperation('rerolling', '재생성 검토 결과 저장 중');
+        const previous = context.chatMetadata.stsmRegenerationDrafts;
+        try {
+            // Persist the record and removal of its pending draft in the same metadata save.
+            context.chatMetadata.stsmRegenerationDrafts = previous.filter(item => item.id !== pending.id);
+            let updated;
+            try { updated = await applySummaryRegenerationDraft({ ...resolved, sourceChat }); }
+            catch (error) { context.chatMetadata.stsmRegenerationDrafts = previous; throw error; }
+            document.dispatchEvent(new Event('stsm:regeneration-pending'));
+            await autoTranslateRecord(updated, operationToken);
+            if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
+            toastr.success('재생성 결과를 적용했습니다.');
+        } finally { endOperation(operationToken); }
+    });
 }
 
 async function autoTranslateRecord(record, operationToken) {

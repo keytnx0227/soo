@@ -1,6 +1,7 @@
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { escapeHtml } from '../core/utils.js';
 import { renderRecordMemoryUpdateDetails } from './record-memory-updates-view.js';
+import { getRegenerationReferences, regenerationReferenceSignature, resolveRegeneration, validateResolvedRegeneration } from './regeneration-review.js';
 
 const MEMORY_CATEGORIES = Object.freeze([
     ['people', '인물 도감'],
@@ -10,7 +11,9 @@ const MEMORY_CATEGORIES = Object.freeze([
     ['world', '세계 설정'],
 ]);
 
-export async function showSummaryRegenerationPreview(draft) {
+export async function showSummaryRegenerationPreview(draft, onApply) {
+    const requirements = getRegenerationReferences(draft);
+    const baseline = regenerationReferenceSignature(draft);
     const previousRecord = draft.previousRecord;
     const previousBaseRecord = { ...previousRecord, atlasReviewOverrides: {} };
     const nextBaseRecord = {
@@ -57,14 +60,63 @@ export async function showSummaryRegenerationPreview(draft) {
         </section>
     `;
 
+    const choices = {};
+    const connections = document.createElement('section');
+    connections.className = 'stsm-regeneration-connections';
+    if (requirements.length) {
+        const heading = document.createElement('strong');
+        heading.textContent = `도감 연결 확인 ${requirements.length}건`;
+        connections.append(heading);
+    }
+    for (const requirement of requirements) {
+        const { category, id, proposal, references } = requirement;
+        const row = document.createElement('label');
+        row.className = 'stsm-regeneration-connection';
+        const title = document.createElement('strong');
+        title.textContent = `${MEMORY_CATEGORIES.find(([key]) => key === category)[1]} · ${entryLabel(proposal)}`;
+        const detail = document.createElement('span');
+        detail.textContent = `참조: ${references.join(', ')}`;
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', `${entryLabel(proposal)} 연결 대상`);
+        select.add(new Option('연결 대상을 선택해주세요', ''));
+        for (const entry of draft.structuredSummary.data.memoryUpdates[category]?.created || []) {
+            select.add(new Option(`새 항목: ${entryLabel(entry)}`, entry.sourceId));
+        }
+        select.add(new Option('기존 생성 항목 그대로 유지', 'keep'));
+        select.add(new Option('연결하지 않기 (참조 끊김 유지 · 비권장)', 'disconnect'));
+        select.addEventListener('change', () => { choices[`${category}:${id}`] = select.value; });
+        row.append(title, detail, select);
+        connections.append(row);
+    }
+    content.prepend(connections);
+
     const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
         okButton: '적용',
-        cancelButton: '폐기',
+        cancelButton: '나중에',
         wide: true,
         large: true,
         allowVerticalScrolling: true,
+        onClosing: async popup => {
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            try {
+                if (regenerationReferenceSignature(draft) !== baseline) {
+                    throw new Error('검토 중 기록이나 도감이 변경되었습니다. 창을 닫고 다시 검토해주세요.');
+                }
+                const resolved = resolveRegeneration(draft, requirements, choices);
+                validateResolvedRegeneration(resolved, requirements, choices);
+                await onApply?.(resolved);
+                return true;
+            } catch (error) {
+                toastr.error(error.message);
+                return false;
+            }
+        },
     });
     return await popup.show() === POPUP_RESULT.AFFIRMATIVE;
+}
+
+function entryLabel(entry) {
+    return entry.name || entry.title || entry.keys?.join(', ') || entry.sourceId || '이름 없음';
 }
 
 function renderTextPanel(title, value) {
