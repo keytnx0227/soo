@@ -45,7 +45,11 @@ export function getSummaryOutputConfiguration() {
     };
 }
 
-export async function buildSummaryPrompt({ messages, startId, endId }, outputConfiguration = getSummaryOutputConfiguration()) {
+export async function buildSummaryPrompt(
+    { messages, startId, endId },
+    outputConfiguration = getSummaryOutputConfiguration(),
+    { atlasProjectionOptions = {} } = {},
+) {
     const preset = getActivePreset(PROMPT_TYPES.SUMMARY);
     const recentSummaryBlock = preset.blocks.find(block => (
         block.enabled && isPromptBlockApplicable(block) && block.kind === BLOCK_KINDS.RECENT_SUMMARIES
@@ -58,7 +62,7 @@ export async function buildSummaryPrompt({ messages, startId, endId }, outputCon
     for (const block of preset.blocks.filter(block => (
         isPromptBlockApplicable(block) && isSummaryBlockEnabled(block, sections)
     ))) {
-        const content = await renderSummaryBlock(block, chunk);
+        const content = await renderSummaryBlock(block, chunk, atlasProjectionOptions);
         if (content.trim()) parts.push(content.trim());
     }
 
@@ -237,7 +241,7 @@ function renderCompressionBlock(block, values) {
     return renderTemplate(block.content, values);
 }
 
-async function renderSummaryBlock(block, chunk) {
+async function renderSummaryBlock(block, chunk, atlasProjectionOptions = {}) {
     const context = SillyTavern.getContext();
     const character = context.characters?.[context.characterId] || {};
     const commonValues = {
@@ -265,15 +269,15 @@ async function renderSummaryBlock(block, chunk) {
         case BLOCK_KINDS.SUMMARY_MESSAGES:
             return renderSummaryMessages(block.content, chunk, context);
         case BLOCK_KINDS.PEOPLE_MEMORY:
-            return renderDataBlock(block, 'sumiPeopleMemory', buildPeopleMemoryPromptContext(), commonValues);
+            return renderDataBlock(block, 'sumiPeopleMemory', buildPeopleMemoryPromptContext(atlasProjectionOptions), commonValues);
         case BLOCK_KINDS.ITEM_MEMORY:
-            return renderDataBlock(block, 'sumiItemMemory', buildItemMemoryPromptContext(), commonValues);
+            return renderDataBlock(block, 'sumiItemMemory', buildItemMemoryPromptContext(atlasProjectionOptions), commonValues);
         case BLOCK_KINDS.COMMITMENT_MEMORY:
-            return renderDataBlock(block, 'sumiCommitmentMemory', buildCommitmentMemoryPromptContext(), commonValues);
+            return renderDataBlock(block, 'sumiCommitmentMemory', buildCommitmentMemoryPromptContext(atlasProjectionOptions), commonValues);
         case BLOCK_KINDS.EVENT_MEMORY:
-            return renderDataBlock(block, 'sumiEventMemory', buildEventMemoryPromptContext(), commonValues);
+            return renderDataBlock(block, 'sumiEventMemory', buildEventMemoryPromptContext(atlasProjectionOptions), commonValues);
         case BLOCK_KINDS.WORLD_MEMORY:
-            return renderDataBlock(block, 'sumiWorldMemory', buildWorldMemoryPromptContext(), commonValues);
+            return renderDataBlock(block, 'sumiWorldMemory', buildWorldMemoryPromptContext(atlasProjectionOptions), commonValues);
         case BLOCK_KINDS.SUMMARY_EXTRACTION_RULES:
             return renderSummaryExtractionRules(block.config.rules, chunk.sections, chunk.memorySections);
         default:

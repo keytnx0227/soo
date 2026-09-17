@@ -191,7 +191,9 @@ export async function createSummaryRegenerationDraft(recordId) {
     const sourceFingerprint = createSourceFingerprint(chunk.messages);
 
     const outputConfiguration = getSummaryOutputConfiguration();
-    const prompt = await buildSummaryPrompt(chunk, outputConfiguration);
+    const prompt = await buildSummaryPrompt(chunk, outputConfiguration, {
+        atlasProjectionOptions: { beforeStartId: chunk.startId },
+    });
     ensureChatUnchanged(chat);
     if (!prompt.trim()) throw new Error('현재 설정으로 조립된 재생성 프롬프트가 비어 있습니다.');
 
