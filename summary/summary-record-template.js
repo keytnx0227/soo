@@ -71,10 +71,13 @@ export const SUMMARY_CONTENT_TEMPLATE_MACROS = Object.freeze([
     ['sumiSummaryTags', '검색 태그 배열. canonical, matchTerms 사용. 기본 템플릿에서는 출력하지 않음'],
 ]);
 
+import { rangeAwareTemplate } from './record-placement.js';
+
 export function renderSummaryContentTemplate(template, summary, { startId, endId }) {
+    template = rangeAwareTemplate(template, 'sumiSummary', startId, endId);
     const values = {
-        sumiSummaryStartId: startId,
-        sumiSummaryEndId: endId,
+        sumiSummaryStartId: startId ?? 'supplement',
+        sumiSummaryEndId: endId ?? 'supplement',
         sumiSummaryTitle: summary.title,
         sumiSummaryContextFlow: summary.contextFlow,
         sumiSummaryDateFlow: createFlow(summary.contextFlow, 'date'),

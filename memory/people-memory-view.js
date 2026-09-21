@@ -1,4 +1,5 @@
 import { escapeHtml } from '../core/utils.js';
+import { formatAtlasSourceRange } from './atlas-source-record.js';
 import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
@@ -129,7 +130,7 @@ function renderPerson(person, cachedTranslation, retrievalMetadata, retrieval, o
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(person.id)}</code>
-                        <span>${person.manual ? '직접 추가' : `#${person.firstSeenRange.startId} ~ #${person.lastUpdatedRange.endId}`}</span>
+                        <span>${person.manual ? '직접 추가' : formatAtlasSourceRange(person.firstSeenRange, person.lastUpdatedRange)}</span>
                     </div>
                 </div>
             </header>
@@ -341,7 +342,7 @@ function renderSkippedUpdates(updates, orphanCorrections) {
         </div>
         ${updates.length ? `<div>미적용 변경안 ${updates.length.toLocaleString()}개</div>` : ''}
         ${updates.map(update => `
-            <div>#${update.range.startId} ~ #${update.range.endId} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>
+            <div>${formatAtlasSourceRange(update.range)} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>
         `).join('')}
         ${orphanCorrections.length ? `<div>대상을 찾지 못한 사용자 수정: ${orphanCorrections.map(escapeHtml).join(', ')}</div>` : ''}
     `;

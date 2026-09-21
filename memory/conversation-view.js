@@ -1,4 +1,5 @@
 import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { compareRecordPosition, recordRangeLabel } from '../summary/record-placement.js';
 import { getTokenCount, getTokenCountAsync } from '../../../../../scripts/tokenizers.js';
 import { getStringHash } from '../../../../../scripts/utils.js';
 import { generateSummary } from '../connection/generation.js';
@@ -76,7 +77,7 @@ async function showConversation(context) {
     };
     const records = () => filterLlmVisibleSummaryRecords(getSummaryRecords())
         .filter(record => record.type === 'summary' && String(record.content || '').trim())
-        .sort((a, b) => a.startId - b.startId || a.endId - b.endId)
+        .sort(compareRecordPosition)
         .map(record => ({ id: String(record.id), startId: record.startId, endId: record.endId, content: record.content }));
     const check = () => {
         if (!sameChat()) throw new Error('채팅이 바뀌었습니다. 원래 채팅에서 이어서 시도해주세요.');
@@ -245,6 +246,6 @@ async function showConversation(context) {
 function renderAnswer(text, byId) {
     return escapeHtml(text).replace(/\[\[([^\]\n]+)\]\]/g, (_, id) => {
         const record = byId.get(id);
-        return record ? `<button class="stsm-memory-citation" type="button" data-record-id="${id}">#${record.startId}~${record.endId}</button>` : `[${id}]`;
+        return record ? `<button class="stsm-memory-citation" type="button" data-record-id="${id}">${recordRangeLabel(record)}</button>` : `[${id}]`;
     });
 }

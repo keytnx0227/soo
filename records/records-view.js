@@ -1,4 +1,5 @@
 import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { compareRecordPosition, hasMessageRange, recordRangeLabel } from '../summary/record-placement.js';
 import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { openSummaryRecordDetail } from './record-detail-view.js';
 import { buildSummaryContextDetails } from '../summary/summary-context.js';
@@ -125,7 +126,7 @@ function renderRecordList(list, direction, memoryView, searchState, pinnedFilter
         ? memoryRecords.filter(record => record.pinned)
         : memoryRecords;
     const records = filterRecords(pinnedRecords, searchState).sort((left, right) => {
-        const difference = left.startId - right.startId || left.endId - right.endId;
+        const difference = compareRecordPosition(left, right);
         return direction === 'id-asc' ? difference : -difference;
     });
     const sourceStatuses = getSummaryRecordSourceStatuses(allRecords);
@@ -334,7 +335,7 @@ function filterRecords(records, { mode, query }) {
     if (mode === 'number') {
         const messageId = Number(query);
         if (!Number.isInteger(messageId) || messageId < 0) return [];
-        return records.filter(record => record.startId <= messageId && messageId <= record.endId);
+        return records.filter(record => hasMessageRange(record) && record.startId <= messageId && messageId <= record.endId);
     }
 
     return records.filter(record => {
@@ -534,7 +535,8 @@ function renderSummaryRecord(summary, sourceStatus, llmVisible) {
         <article class="stsm-record${compressedChild ? ' stsm-record-compressed-child stsm-record-long-term' : ''}${summary.pinned ? ' stsm-record-pinned' : ''}${!llmVisible ? ' stsm-record-llm-hidden' : ''}${compressionLevel ? ' stsm-record-compression' : ''}" data-record-id="${escapeHtml(summary.id)}">
             <header class="stsm-record-header">
                 <div class="stsm-record-range">
-                    <strong>#${summary.startId} ~ #${summary.endId}</strong>
+                    <strong>${recordRangeLabel(summary)}</strong>
+                    ${summary.manual ? '<span class="stsm-record-manual-badge" data-manual-marker><i class="fa-solid fa-user-pen" aria-hidden="true"></i> 직접 추가</span>' : ''}
                     <span>${tokenCount.toLocaleString()} tokens</span>
                     ${compressionLevel ? `<span class="stsm-record-compression-badge">압축 Lv.${compressionLevel} · ${compressionModeLabel}</span>` : ''}
                     ${compressedChild ? '<span class="stsm-record-compressed-child-badge">장기기억</span>' : ''}
@@ -554,7 +556,7 @@ function renderSummaryRecord(summary, sourceStatus, llmVisible) {
                     ${renderIconButton('translate', 'fa-language', hasTranslation ? '번역 재생성' : '번역')}
                     ${hasTranslation ? renderIconButton('translation-toggle', 'fa-right-left', '원문/번역 전환', true) : ''}
                     ${compressedChild ? '' : renderIconButton('chat', 'fa-comments', summary.llmHidden ? '눈 감기기를 해제한 뒤 수정 대화를 사용할 수 있습니다.' : '요약 수정 대화', null, summary.llmHidden)}
-                    ${compressedChild ? '' : renderIconButton('reroll', 'fa-rotate-right', summary.llmHidden ? '눈 감기기를 해제한 뒤 재생성할 수 있습니다.' : '재생성', null, summary.llmHidden)}
+                    ${compressedChild ? '' : renderIconButton('reroll', 'fa-rotate-right', summary.manual ? '직접 추가한 레코드는 재생성할 수 없습니다.' : summary.llmHidden ? '눈 감기기를 해제한 뒤 재생성할 수 있습니다.' : '재생성', null, summary.llmHidden || Boolean(summary.manual))}
                     ${compressedChild ? '' : renderIconButton('delete', 'fa-trash', '삭제')}
                 </div>
             </header>
@@ -570,6 +572,7 @@ function renderSummaryRecord(summary, sourceStatus, llmVisible) {
 }
 
 function renderSourceState(status, record) {
+    if (record?.manual) return record.manual.includeInCompression === false ? '<span class="stsm-record-source-state">압축 제외</span>' : '';
     if (record?.type === 'compressed') return '';
     if (!status || status.state === SOURCE_STATES.CURRENT) return '';
     if (status.state === SOURCE_STATES.MOVED) {

@@ -1,4 +1,5 @@
 import { substituteParams } from '../../../../../script.js';
+import { compareRecordPosition, recordRangeLabel, recordPosition } from '../summary/record-placement.js';
 import { getWorldInfoPrompt, world_info_include_names } from '../../../../world-info.js';
 import { isMessageAutoHiddenBySummarizer } from '../visibility/message-visibility-state.js';
 import {
@@ -213,12 +214,12 @@ export async function buildRevisionPrompt({
 export function buildCompressionPrompt(records, languageMode = getSettings().summarization.outputLanguage, mode = getCompressionMode()) {
     const preset = getActivePreset(PROMPT_TYPES.COMPRESSION);
     const sourceRecords = [...(Array.isArray(records) ? records : [])]
-        .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
+        .sort(compareRecordPosition);
     const values = {
         sumiCompressionStartId: sourceRecords[0]?.startId ?? '',
         sumiCompressionEndId: sourceRecords.at(-1)?.endId ?? '',
         sumiCompressionSources: sourceRecords.map((record, index) => (
-            `[Source ${index + 1} | #${record.startId}-#${record.endId}]\n${String(record.content || '').trim()}`
+            `[Source ${index + 1} | ${recordRangeLabel(record)}]\n${String(record.content || '').trim()}`
         )).join('\n\n'),
         sumiSummaryLanguageInstruction: getSummaryLanguageInstruction(languageMode),
         sumiCompressionJsonContract: buildCompressionJsonContract({
@@ -296,8 +297,8 @@ function renderSummaryExtractionRules(rules, sections, memorySections) {
 function buildRecentSummaryContent(block, startId) {
     const config = block.config;
     let records = getSummaryRecords()
-        .filter(record => !record.llmHidden && !record.compressedBy && record.endId < startId)
-        .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
+        .filter(record => !record.llmHidden && !record.compressedBy && (record.endId ?? recordPosition(record)) < startId)
+        .sort(compareRecordPosition);
 
     if (config.countLimit.enabled) records = records.slice(-config.countLimit.value);
 

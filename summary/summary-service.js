@@ -181,6 +181,7 @@ export async function createSummaryRegenerationDraft(recordId) {
     assertExtensionEnabled();
     const record = getSummaryRecord(recordId);
     if (!record) throw new Error('재생성할 요약 기록을 찾지 못했습니다.');
+    if (record.manual) throw new Error('직접 추가한 레코드는 재생성할 수 없습니다. 수정 기능을 사용해주세요.');
     if (record.llmHidden) throw new Error('LLM에서 감춘 요약 기록은 재생성할 수 없습니다.');
     if (record.type === 'compressed') throw new Error('압축 요약은 일반 요약 재생성 미리보기를 사용할 수 없습니다.');
 

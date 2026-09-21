@@ -1,4 +1,5 @@
 import { getRecordTags } from '../records/record-tags.js';
+import { compareRecordPosition, recordPosition } from '../summary/record-placement.js';
 
 const RELEVANCE_THRESHOLDS = Object.freeze({
     loose: 1,
@@ -60,8 +61,8 @@ export function retrieveLongTermRecords({
     const ranked = [...eligible].sort((left, right) => (
         Number(right.pinned) - Number(left.pinned)
         || (normalizedSettings.mode === 'relevance'
-            ? right.score - left.score || right.record.endId - left.record.endId
-            : right.record.endId - left.record.endId || right.record.startId - left.record.startId)
+            ? right.score - left.score || (right.record.endId ?? recordPosition(right.record)) - (left.record.endId ?? recordPosition(left.record))
+            : (right.record.endId ?? recordPosition(right.record)) - (left.record.endId ?? recordPosition(left.record)) || compareRecordPosition(right.record, left.record))
     ));
     const rankedPinned = ranked.filter(result => result.pinned);
     const rankedOrdinary = ranked.filter(result => !result.pinned);
@@ -83,7 +84,7 @@ export function retrieveLongTermRecords({
         candidates,
         excludedByThreshold,
         excludedByRecordLimit,
-        selected: selected.sort((left, right) => left.record.startId - right.record.startId || left.record.endId - right.record.endId),
+        selected: selected.sort((left, right) => compareRecordPosition(left.record, right.record)),
         omittedByRetrievalBudget: omitted,
     };
 }

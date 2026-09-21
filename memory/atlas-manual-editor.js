@@ -86,14 +86,14 @@ export function bindManualAtlasEntryButtons(root) {
     });
 }
 
-export async function showManualAtlasEntryEditor(category, entityId = null) {
+export async function showManualAtlasEntryEditor(category, entityId = null, { draft = false, initial = null } = {}) {
     const config = getConfig(category);
     const source = entityId
         ? getManualAtlasEntries(category).find(entry => entry.id === String(entityId))
         : null;
     if (entityId && !source) throw new Error('수정할 직접 추가 도감 항목을 찾지 못했습니다.');
     const projection = getAtlasProjection();
-    const current = entityId
+    const current = draft ? initial : entityId
         ? projection[getCollectionName(category)].find(entry => entry.id === String(entityId)) || source
         : null;
 
@@ -118,14 +118,38 @@ export async function showManualAtlasEntryEditor(category, entityId = null) {
         </div>
     `;
     bindRepeatingRows(form);
+    if (draft) form.querySelector('.stsm-manual-auto-update').hidden = true;
 
     const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
         okButton: current ? '수정하기' : '추가',
         cancelButton: '취소',
         wide: true,
+        onClosing: draft ? currentPopup => {
+            if (currentPopup.result !== 1) return true;
+            try {
+                readManualAtlasForm(form, category, projection);
+                return true;
+            } catch (error) {
+                toastr.error(error.message);
+                return false;
+            }
+        } : undefined,
     });
     if (await popup.show() !== 1) return false;
 
+    const value = readManualAtlasForm(form, category, projection);
+    if (draft) {
+        delete value.allowAutoUpdate;
+        delete value.appliedThroughId;
+        return value;
+    }
+    if (current) await updateManualAtlasEntry(category, current.id, value);
+    else await addManualAtlasEntry(category, value);
+    return true;
+}
+
+function readManualAtlasForm(form, category, projection) {
+    const config = getConfig(category);
     const value = {
         allowAutoUpdate: form.querySelector('[data-manual-auto-update]').checked,
         appliedThroughId: projection.frontierId,
@@ -141,9 +165,7 @@ export async function showManualAtlasEntryEditor(category, entityId = null) {
     if (required.some(path => isEmptyRequired(getPath(value, path)))) {
         throw new Error(`${config.label} 도감의 필수 정보를 입력해주세요.`);
     }
-    if (current) await updateManualAtlasEntry(category, current.id, value);
-    else await addManualAtlasEntry(category, value);
-    return true;
+    return value;
 }
 
 export async function confirmDeleteManualAtlasEntry(category, entityId, label) {

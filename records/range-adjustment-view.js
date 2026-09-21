@@ -78,7 +78,7 @@ async function openRangeAdjustmentPopup(onApplied) {
                 id: change.id,
                 startId: change.startId,
                 endId: change.endId,
-            })));
+            })), { threshold: proposal.threshold, delta: proposal.delta });
             try {
                 await onApplied?.(updatedRecords);
             } catch (error) {

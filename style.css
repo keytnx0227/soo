@@ -394,7 +394,7 @@
 @media (max-width: 700px) {
     .stsm-records-toolbar-actions {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         width: 100%;
         gap: 6px;
     }
@@ -4889,3 +4889,19 @@
 .stsm-regeneration-connection > span { overflow-wrap: anywhere; }
 .stsm-regeneration-connection > span { font-size: 0.85em; opacity: 0.8; }
 .stsm-regeneration-connection select { width: 100%; min-width: 0; max-width: 100%; }
+
+.stsm-manual-record-options { display: grid; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--SmartThemeBorderColor, #8888); text-align: left; }
+.stsm-manual-record-options > label:not(.stsm-field),
+.stsm-manual-record-compression { display: flex; align-items: center; gap: 8px; }
+.stsm-manual-record-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stsm-manual-record-editor [hidden], .stsm-compression-exclusions [hidden], .stsm-manual-atlas-editor [hidden] { display: none !important; }
+.stsm-manual-record-editor .text_pole, .stsm-compression-exclusion .text_pole { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.stsm-manual-atlas-actions { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; gap: 8px; }
+.stsm-manual-atlas-draft { display: grid; grid-template-columns: minmax(0, 1fr) 30px 30px; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--SmartThemeBorderColor, #8888); }
+.stsm-manual-atlas-draft > span { overflow-wrap: anywhere; text-align: left; }
+.stsm-manual-atlas-actions button, .stsm-manual-atlas-draft button { width: 30px; height: 30px; min-width: 0; padding: 0; margin: 0; display: grid; place-items: center; }
+.stsm-compression-exclusions { display: grid; gap: 12px; }
+.stsm-compression-exclusion { display: grid; gap: 8px; min-width: 0; padding: 10px 0; text-align: left; border-top: 1px solid var(--SmartThemeBorderColor, #8888); }
+.stsm-record-manual-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8em; color: var(--SmartThemeQuoteColor, #719b84); }
+#stsm-add-record { min-width: 32px; min-height: 32px; }
+.stsm-compression-exclusion > strong { overflow-wrap: anywhere; }

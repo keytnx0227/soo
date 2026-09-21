@@ -5,6 +5,7 @@ import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { normalizeStructuredSummaryData, renderStructuredSummary } from '../summary/summary-format.js';
 import { getSummaryRecord, updateSummaryRecordContent } from '../summary/summary-store.js';
 import { moveEditorItem, refreshEditorOrderControls } from './structured-editor-order.js';
+import { recordRangeLabel } from '../summary/record-placement.js';
 
 export async function openStructuredSummaryEditor(recordId) {
     const record = getSummaryRecord(recordId);
@@ -36,6 +37,7 @@ export async function openStructuredSummaryEditor(recordId) {
                     outputSections: settings.summaryOutputSections,
                 });
                 updatedRecord = await updateSummaryRecordContent(record.id, content, {
+                    ...(record.manual ? { manual: { ...record.manual, includeInCompression: form.querySelector('[data-summary-compression]').checked } } : {}),
                     contentEdited: false,
                     structuredSummary: {
                         ...record.structuredSummary,
@@ -61,13 +63,14 @@ export async function openStructuredSummaryEditor(recordId) {
     return updatedRecord;
 }
 
-function renderEditor(record) {
+export function renderEditor(record) {
     const data = record.structuredSummary.data;
     return `
         <header class="stsm-structured-editor-header">
             <strong>요약 레코드 수정</strong>
-            <span>#${record.startId} ~ #${record.endId}</span>
+            <span>${recordRangeLabel(record)}</span>
         </header>
+        ${record.manual ? `<label class="stsm-manual-record-compression"><input type="checkbox" data-summary-compression ${record.manual.includeInCompression !== false ? 'checked' : ''} /> 압축 대상에 포함</label>` : ''}
         <section class="stsm-structured-editor-section">
             <div class="stsm-structured-editor-title">제목</div>
             <input class="text_pole" data-summary-title type="text" value="${escapeHtml(data.title || '')}" placeholder="제목 없음" />
@@ -202,7 +205,7 @@ function renderRemoveButton(label, target = 'row') {
     `;
 }
 
-function bindEditorActions(form) {
+export function bindEditorActions(form) {
     refreshEditorOrderControls(form);
     form.addEventListener('click', event => {
         moveEditorItem(event.target);
@@ -233,7 +236,7 @@ function appendHtml(container, html) {
     container.lastElementChild?.querySelector('input, textarea')?.focus();
 }
 
-function collectEditorData(form, original) {
+export function collectEditorData(form, original) {
     const data = structuredClone(original);
     data.title = form.querySelector('[data-summary-title]').value.trim() || null;
     data.contextFlow = [...form.querySelectorAll('[data-editor-list="context"] [data-editor-row]')]

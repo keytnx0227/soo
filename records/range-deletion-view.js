@@ -7,6 +7,7 @@ import {
     getSummaryRecordIndex,
 } from '../summary/summary-store.js';
 import { escapeHtml } from '../core/utils.js';
+import { compareRecordPosition, recordRangeLabel } from '../summary/record-placement.js';
 
 export function bindRangeDeletion(root, { onApplied } = {}) {
     root.querySelector('#stsm-delete-record-range')?.addEventListener('click', async () => {
@@ -186,7 +187,7 @@ function renderRecordOption(record) {
 
 function formatRecordRange(record) {
     const level = Number(record.compression?.level) || 0;
-    return `#${record.startId} ~ #${record.endId}${level ? ` · 압축 Lv.${level}` : ''}`;
+    return `${recordRangeLabel(record)}${level ? ` · 압축 Lv.${level}` : ''}`;
 }
 
 function renderPlanGroup(title, records) {
@@ -198,7 +199,7 @@ function renderPlanGroup(title, records) {
                 ${records.map(record => `
                     <span>
                         <i class="fa-solid ${record.type === 'compressed' ? 'fa-compress' : 'fa-file-lines'}" aria-hidden="true"></i>
-                        #${record.startId} ~ #${record.endId}${record.level ? ` · 압축 Lv.${record.level}` : ''}
+                        ${recordRangeLabel(record)}${record.level ? ` · 압축 Lv.${record.level}` : ''}
                     </span>
                 `).join('')}
             </div>
@@ -215,7 +216,7 @@ function renderContentPreviewGroup(title, planRecords, recordsById) {
                 <summary>
                     <i class="stsm-range-deletion-record-chevron fa-solid fa-chevron-right" aria-hidden="true"></i>
                     <i class="fa-solid ${planRecord.type === 'compressed' ? 'fa-compress' : 'fa-file-lines'}" aria-hidden="true"></i>
-                    <span>#${planRecord.startId} ~ #${planRecord.endId}${planRecord.level ? ` · 압축 Lv.${planRecord.level} · ${planRecord.mode === 'segmented' ? 'v3' : 'v2'}` : ''}</span>
+                    <span>${recordRangeLabel(planRecord)}${planRecord.level ? ` · 압축 Lv.${planRecord.level} · ${planRecord.mode === 'segmented' ? 'v3' : 'v2'}` : ''}</span>
                 </summary>
                 <div class="stsm-range-deletion-record-content">${escapeHtml(record?.content || '내용이 없습니다.')}</div>
             </details>
@@ -232,7 +233,7 @@ function renderContentPreviewGroup(title, planRecords, recordsById) {
 }
 
 function compareRecords(left, right) {
-    return left.startId - right.startId || left.endId - right.endId || left.id.localeCompare(right.id);
+    return compareRecordPosition(left, right);
 }
 
 function logRangeDeletionError(error, title, message) {

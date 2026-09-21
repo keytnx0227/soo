@@ -1,4 +1,5 @@
 import { Popup } from '../../../../../scripts/popup.js';
+import { formatAtlasSourceRange } from './atlas-source-record.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
@@ -124,7 +125,7 @@ function renderWorldEntry(entry, cachedTranslation, retrieval, omittedByBudget, 
                         <code>${escapeHtml(entry.id)}</code>
                         ${entry.manual
         ? '<span>직접 추가</span>'
-        : `<span>#${entry.firstSeenRange.startId} ~ #${entry.lastUpdatedRange.endId}</span>`}
+        : `<span>${formatAtlasSourceRange(entry.firstSeenRange, entry.lastUpdatedRange)}</span>`}
                     </div>
                 </div>
             </header>
@@ -249,7 +250,7 @@ function renderCorrectionState(corrections) {
 
 function renderWarnings(skippedUpdates, orphanCorrections) {
     const entries = [
-        ...skippedUpdates.map(update => `#${update.range.startId} ~ #${update.range.endId} · ${update.targetId} · ${update.reason}`),
+        ...skippedUpdates.map(update => `${formatAtlasSourceRange(update.range)} · ${update.targetId} · ${update.reason}`),
         ...orphanCorrections.map(id => `${id} · 현재 도감에서 원본 항목을 찾지 못한 사용자 수정`),
     ];
     if (!entries.length) return '';

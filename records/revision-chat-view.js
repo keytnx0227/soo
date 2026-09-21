@@ -1,4 +1,6 @@
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { attachCompressionReferences, getCompressionInputSources, compressionDataForModel } from '../summary/compression-references.js';
+import { hasMessageRange, recordRangeLabel } from '../summary/record-placement.js';
 import {
     beginOperation,
     endOperation,
@@ -185,7 +187,7 @@ async function sendFeedback() {
 
     let operationToken = null;
     try {
-        operationToken = beginOperation('revising', `#${session.startId} ~ #${session.endId} 수정안 생성 중`);
+        operationToken = beginOperation('revising', `${recordRangeLabel(session)} 수정안 생성 중`);
         session.messages.push({ role: 'user', text: feedback });
         input.value = '';
         session.isGenerating = true;
@@ -227,7 +229,7 @@ async function sendFeedback() {
 
 function renderRevisionSession() {
     if (!revisionRoot || !activeSession) return;
-    revisionRoot.querySelector('.stsm-revision-title').textContent = `#${activeSession.startId} ~ #${activeSession.endId} 요약 수정`;
+    revisionRoot.querySelector('.stsm-revision-title').textContent = `${recordRangeLabel(activeSession)} 요약 수정`;
     const messages = revisionRoot.querySelector('.stsm-revision-messages');
     messages.innerHTML = activeSession.messages.length
         ? activeSession.messages.map(renderMessage).join('')
@@ -324,7 +326,7 @@ async function restoreRecentConversation() {
     const content = document.createElement('div');
     content.className = 'stsm-recent-revision-popup';
     content.innerHTML = `
-        <strong>최근 수정 대화 · #${recent.startId} ~ #${recent.endId}</strong>
+        <strong>최근 수정 대화 · ${recordRangeLabel(recent)}</strong>
         <div class="stsm-recent-revision-messages">${recent.messages.map(renderMessage).join('')}</div>
     `;
     const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
@@ -345,7 +347,7 @@ async function restoreRecentConversation() {
         toastr.warning('원본 요약이 변경되어 최근 수정 대화를 불러올 수 없습니다.');
         return;
     }
-    if (!await Popup.show.confirm('현재 수정 대화를 최근 대화로 교체할까요?', `#${recent.startId} ~ #${recent.endId}`)) return;
+    if (!await Popup.show.confirm('현재 수정 대화를 최근 대화로 교체할까요?', recordRangeLabel(recent))) return;
 
     activeSession = {
         ...structuredClone(recent),
@@ -363,16 +365,14 @@ async function restoreRecentConversation() {
 
 function buildCompressionSourceContent(record) {
     if (record?.type !== 'compressed' || !Array.isArray(record.compression?.sourceRecordIds)) return '';
-    return record.compression.sourceRecordIds
-        .map(getSummaryRecord)
-        .filter(Boolean)
-        .map(source => `[#${source.startId}-#${source.endId}]\n${String(source.content || '').trim()}`)
+    return getCompressionInputSources(record.compression.sourceRecordIds.map(getSummaryRecord).filter(Boolean), record.compression.data)
+        .map(source => `[${recordRangeLabel(source)}]\n${String(source.content || '').trim()}`)
         .filter(Boolean)
         .join('\n\n');
 }
 
 function buildSummarySource(record) {
-    if (record?.type !== 'summary') return null;
+    if (record?.type !== 'summary' || !hasMessageRange(record)) return null;
     const chat = SillyTavern.getContext().chat;
     if (!Array.isArray(chat)) return null;
     const startId = Number(record.startId);
@@ -405,6 +405,7 @@ async function persistSession(session) {
 }
 
 function getSessionRange(session) {
+    if (!hasMessageRange(session)) return null;
     const startId = Number(session?.startId);
     const endId = Number(session?.endId);
     return Number.isInteger(startId) && Number.isInteger(endId) ? { startId, endId } : null;
@@ -424,11 +425,13 @@ function createRevisionPromptInput(session) {
     const currentData = getCurrentStructuredData(session);
     const isCompressed = session.recordType === 'compressed';
     const compressionRecord = isCompressed ? getSummaryRecord(session.recordId) : null;
-    const compressionSources = compressionRecord?.compression?.sourceRecordIds.map(getSummaryRecord).filter(Boolean) || [];
+    const compressionSources = getCompressionInputSources(
+        compressionRecord?.compression?.sourceRecordIds.map(getSummaryRecord).filter(Boolean) || [], compressionRecord?.compression?.data,
+    );
     const segmented = compressionRecord?.compression?.mode === 'segmented';
     const sections = isCompressed ? null : getRevisionSections(session);
     const sourceData = isCompressed
-        ? currentData
+        ? compressionDataForModel(currentData)
         : parseStructuredSummaryResponse(JSON.stringify(currentData), sections, NO_MEMORY_SECTIONS);
     return {
         ...session,
@@ -445,10 +448,10 @@ function parseRevisionResult(session, response) {
         const sourceRecords = record?.compression?.sourceRecordIds.map(getSummaryRecord).filter(Boolean) || [];
         return {
             type: 'compressed',
-            data: parseCompressionResponse(response, {
+            data: attachCompressionReferences(parseCompressionResponse(response, {
                 segmented: record?.compression?.mode === 'segmented',
-                sourceRecords,
-            }),
+                sourceRecords: getCompressionInputSources(sourceRecords, record.compression.data),
+            }), sourceRecords, record.compression.data.excludedSourceIds, record.compression.mode === 'segmented'),
         };
     }
 

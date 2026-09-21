@@ -1,8 +1,10 @@
+import { hasMessageRange } from '../summary/record-placement.js';
+
 export function createRangeShiftProposal(records, { threshold, delta, chatLength }) {
     if (!Number.isInteger(threshold) || threshold < 0) throw new Error('기준 ID를 올바르게 입력해주세요.');
     if (!Number.isInteger(delta) || delta === 0) throw new Error('변경 메시지 개수는 1 이상의 정수여야 합니다.');
 
-    const sourceRecords = Array.isArray(records) ? records : [];
+    const sourceRecords = (Array.isArray(records) ? records : []).filter(hasMessageRange);
     const proposal = delta < 0
         ? createDeletionProposal(sourceRecords, threshold, Math.abs(delta))
         : createInsertionProposal(sourceRecords, threshold, delta);
@@ -20,6 +22,7 @@ export function createRangeShiftProposal(records, { threshold, delta, chatLength
 
     const changeMap = new Map(changes.map(change => [change.id, change]));
     const finalRanges = sourceRecords
+        .filter(record => !record.manual || record.manual.countsAsSummary)
         .map(record => {
             const change = changeMap.get(record.id);
             return {

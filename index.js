@@ -39,6 +39,8 @@ import { bindPromptInspector } from './prompts/prompt-inspector.js';
 import { bindRangeAdjustment } from './records/range-adjustment-view.js';
 import { bindRangeDeletion } from './records/range-deletion-view.js';
 import { openStructuredSummaryEditor } from './records/structured-summary-editor.js';
+import { bindManualRecordView } from './records/manual-record-view.js';
+import { getCoveredRanges } from './summary/range-utils.js';
 import { openStructuredCompressionEditor } from './records/structured-compression-editor.js';
 import { showSummaryRegenerationPreview } from './records/summary-regeneration-preview.js';
 import {
@@ -231,6 +233,7 @@ function bindEvents(root) {
     bindPromptSettings(root);
     bindPromptInspector(root);
     const unbindRecordsView = bindRecordsView(root, bindRecordEvents, initialContextDetails);
+    bindManualRecordView(root, () => renderSummaryRecords(root, bindRecordEvents));
     bindCompressionView(root, {
         onCreated: () => {
             renderSummaryRecords(root, bindRecordEvents, { renderContextUsage: false });
@@ -662,7 +665,7 @@ function bindRangeActions(root) {
     const plus = root.querySelector('#stsm-range-chunk-plus');
 
     afterLast.addEventListener('click', () => {
-        const records = getSummaryRecordIndex();
+        const records = getCoveredRanges(getSummaryRecordIndex());
         if (!records.length) return;
         const nextId = Math.max(...records.map(record => record.endId)) + 1;
         if (nextId > getLastChatId()) return;
@@ -701,7 +704,7 @@ function renderRangeActions(root) {
 
 function renderNextSummaryAction(root) {
     const lastChatId = getLastChatId();
-    const records = getSummaryRecordIndex();
+    const records = getCoveredRanges(getSummaryRecordIndex());
     const nextSummaryId = records.length ? Math.max(...records.map(record => record.endId)) + 1 : null;
     setButtonDisabled(root.querySelector('#stsm-range-after-last'), nextSummaryId === null || nextSummaryId > lastChatId);
 }

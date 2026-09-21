@@ -7,6 +7,7 @@ import { parseAtlasReviewResponse } from '../summary/summary-format.js';
 import { filterLlmVisibleSummaryRecords, getSummaryRecords, saveAtlasRecordReviewOverrides } from '../summary/summary-store.js';
 import { validateSummaryRange } from '../summary/summary-service.js';
 import { getCoveredRanges } from '../summary/range-utils.js';
+import { hasMessageRange } from '../summary/record-placement.js';
 import { createStableAtlasEntityId } from './atlas-entity-id.js';
 import {
     getAtlasCorrections,
@@ -32,7 +33,7 @@ export const ATLAS_REVIEW_MODES = Object.freeze({
 
 export function getAtlasReviewRecordCandidates() {
     return filterLlmVisibleSummaryRecords(getSummaryRecords())
-        .filter(record => record.type === 'summary' && record.structuredSummary)
+        .filter(record => record.type === 'summary' && record.structuredSummary && hasMessageRange(record))
         .sort((left, right) => left.startId - right.startId || left.endId - right.endId);
 }
 

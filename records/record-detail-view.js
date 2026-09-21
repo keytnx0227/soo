@@ -5,6 +5,7 @@ import { getSummaryRecord, updateSummaryRecordContent } from '../summary/summary
 import { openStructuredSummaryEditor } from './structured-summary-editor.js';
 import { openStructuredCompressionEditor } from './structured-compression-editor.js';
 import { escapeHtml } from '../core/utils.js';
+import { hasMessageRange, recordRangeLabel } from '../summary/record-placement.js';
 import { renderRecordTagDetails } from './record-tags-view.js';
 import { renderRecordMemoryUpdateDetails } from './record-memory-updates-view.js';
 
@@ -23,16 +24,16 @@ export async function openSummaryRecordDetail(recordId) {
     const chat = SillyTavern.getContext().chat;
     const sourceStatus = getSummaryRecordSourceStatus(record, chat);
     const displayRange = getDisplayRange(record, sourceStatus);
-    const messages = collectChatRangeMessages(chat, displayRange.startId, displayRange.endId);
+    const messages = hasMessageRange(record) ? collectChatRangeMessages(chat, displayRange.startId, displayRange.endId) : [];
     const content = document.createElement('div');
     content.className = 'stsm-record-detail-popup';
     content.innerHTML = `
         <header class="stsm-record-detail-header">
             <div>
                 <strong>요약 레코드 자세히 보기</strong>
-                <span>#${record.startId} ~ #${record.endId}</span>
+                <span>${recordRangeLabel(record)}${record.manual ? ' · 직접 추가' : ''}</span>
             </div>
-            ${renderSourceNotice(record, sourceStatus, displayRange)}
+            ${record.manual ? '' : renderSourceNotice(record, sourceStatus, displayRange)}
         </header>
         <section class="stsm-record-detail-section">
             ${renderEditableHeading('요약 내용')}
@@ -43,12 +44,12 @@ export async function openSummaryRecordDetail(recordId) {
         <section class="stsm-record-detail-section stsm-record-detail-source-section">
             <div class="stsm-record-detail-section-title">
                 <span>원본 메시지</span>
-                <span>${messages.length.toLocaleString()}개 · #${displayRange.startId} ~ #${displayRange.endId}</span>
+                <span>${hasMessageRange(record) ? `${messages.length.toLocaleString()}개 · #${displayRange.startId} ~ #${displayRange.endId}` : '메시지 범위 없음'}</span>
             </div>
             <div class="stsm-record-detail-messages">
                 ${messages.length
                     ? messages.map(renderChatMessage).join('')
-                    : '<div class="stsm-empty">현재 채팅에서 이 범위의 메시지를 찾지 못했습니다.</div>'}
+                    : `<div class="stsm-empty">${hasMessageRange(record) ? '현재 채팅에서 이 범위의 메시지를 찾지 못했습니다.' : '지정된 원본 메시지가 없습니다.'}</div>`}
             </div>
         </section>
     `;
@@ -70,7 +71,7 @@ async function openCompressedRecordDetail(record) {
         <header class="stsm-record-detail-header">
             <div>
                 <strong>압축 요약 레코드 자세히 보기</strong>
-                <span>#${record.startId} ~ #${record.endId} · Lv.${record.compression.level}</span>
+                <span>${recordRangeLabel(record)} · Lv.${record.compression.level}</span>
             </div>
         </header>
         <section class="stsm-record-detail-section">
@@ -85,7 +86,7 @@ async function openCompressedRecordDetail(record) {
             <div class="stsm-compression-source-list">
                 ${sources.map(source => `
                     <article class="stsm-compression-source-item">
-                        <strong>#${source.startId} ~ #${source.endId}${source.compression ? ` · Lv.${source.compression.level}` : ''}</strong>
+                        <strong>${recordRangeLabel(source)}${source.compression ? ` · Lv.${source.compression.level}` : ''}</strong>
                         <div>${escapeHtml(source.content)}</div>
                     </article>
                 `).join('') || '<div class="stsm-empty">원본 요약 레코드를 찾지 못했습니다.</div>'}

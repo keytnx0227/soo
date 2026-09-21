@@ -1,4 +1,6 @@
 import { renderCompressionSummary } from '../summary/compression-format.js';
+import { REFERENCE_SEGMENT } from '../summary/compression-references.js';
+import { compareRecordPosition } from '../summary/record-placement.js';
 
 export function resolveSegmentedRecall(records, selectedResults, {
     compressionTemplate,
@@ -63,6 +65,7 @@ function resolveCompression(record, state) {
             return resolveCompression(child, state);
         }
         if (directHit) return [child];
+        if (segment.kind === REFERENCE_SEGMENT) return [];
         return [createCompactRecord(record, child, segment, state)];
     });
 }
@@ -75,6 +78,7 @@ function createCompactRecord(parent, source, segment, state) {
         pinned: false,
         startId: source.startId,
         endId: source.endId,
+        position: source.position,
         content: renderCompressionSummary(segment.compactData, {
             startId: source.startId,
             endId: source.endId,
@@ -101,7 +105,7 @@ function hasSelectedDescendant(recordId, hitIds, ancestorIds) {
 }
 
 function compareRecords(left, right) {
-    return left.startId - right.startId || left.endId - right.endId || String(left.id).localeCompare(String(right.id));
+    return compareRecordPosition(left, right);
 }
 
 function countRecallTokens(records, countTokens) {

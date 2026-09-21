@@ -1,5 +1,10 @@
+import { hasMessageRange } from './record-placement.js';
+
 export function getCoveredRanges(records) {
     const ranges = (Array.isArray(records) ? records : [])
+        .flatMap(record => Array.isArray(record?.coverageRanges) ? record.coverageRanges
+            : record?.manual && !record.manual.countsAsSummary ? [] : [record])
+        .filter(hasMessageRange)
         .map(record => ({
             startId: Number(record?.startId),
             endId: Number(record?.endId),

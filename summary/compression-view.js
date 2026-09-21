@@ -10,6 +10,7 @@ import {
     getCompressionCandidates,
 } from './compression-service.js';
 import { publishSummaryRecordsChanged } from './summary-store.js';
+import { hasMessageRange, isCompressionIncluded, recordRangeLabel, recordSelectionLabel } from './record-placement.js';
 
 export function bindCompressionView(root, { onCreated } = {}) {
     const button = root.querySelector('#stsm-open-compression');
@@ -31,7 +32,7 @@ async function openCompressionPopup(button, onCreated) {
         <label class="stsm-field">
             <span>시작 레코드</span>
             <select class="text_pole" data-compression-start>
-                ${candidates.map(record => `<option value="${escapeHtml(record.id)}">#${record.startId} ~ #${record.endId}${record.compression ? ` · 압축 Lv.${record.compression.level}` : ''}</option>`).join('')}
+                ${candidates.map(record => `<option value="${escapeHtml(record.id)}">${escapeHtml(recordSelectionLabel(record))}${record.compression ? ` · 압축 Lv.${record.compression.level}` : ''}</option>`).join('')}
             </select>
         </label>
         <label class="stsm-field">
@@ -43,11 +44,14 @@ async function openCompressionPopup(button, onCreated) {
             <input class="text_pole" data-compression-repeat type="number" min="1" max="100" step="1" value="1" />
         </label>
         <div class="stsm-compression-selection" data-compression-selection></div>
+        <div class="stsm-compression-exclusions" data-compression-exclusions></div>
     `;
     const start = form.querySelector('[data-compression-start]');
     const count = form.querySelector('[data-compression-count]');
     const repeat = form.querySelector('[data-compression-repeat]');
     const selection = form.querySelector('[data-compression-selection]');
+    const exclusions = form.querySelector('[data-compression-exclusions]');
+    const excludedActions = {};
     count.value = getSettings().summarization.compressionGroupSize;
 
     const renderSelection = () => {
@@ -60,13 +64,39 @@ async function openCompressionPopup(button, onCreated) {
                 : '<span>선택 범위 뒤에 남는 활성 레코드가 없습니다.</span>';
             selection.classList.remove('stsm-compression-selection-error');
             selection.innerHTML = `
-                <strong>압축 예정: #${first.startId} ~ #${last.endId}</strong>
+                <strong>압축 예정: ${recordRangeLabel(first)} → ${recordRangeLabel(last)}</strong>
                 <span>${count.value}개씩 ${repeat.value}회 · 총 ${plan.sources.length}개 레코드</span>
                 ${next}
             `;
+            const remaining = candidates.filter(record => !plan.sources.some(source => source.id === record.id));
+            exclusions.innerHTML = plan.sources.filter(record => !isCompressionIncluded(record)).map(record => `
+                <div class="stsm-compression-exclusion" data-excluded-id="${escapeHtml(record.id)}">
+                    <strong>${escapeHtml(recordSelectionLabel(record))} · 압축 제외</strong>
+                    <label class="stsm-field"><span>배치</span><select class="text_pole" data-excluded-action>
+                        <option value="archive">내용 그대로 장기기억으로 이동</option>
+                        <option value="keep" ${excludedActions[record.id]?.action === 'keep' ? 'selected' : ''}>상시기억에 유지</option>
+                    </select></label>
+                    ${!hasMessageRange(record) ? `<label class="stsm-field" data-excluded-placement><span>유지할 위치</span><select class="text_pole" data-excluded-after>
+                        <option value="">새 압축본 뒤</option>
+                        ${remaining.map(item => `<option value="${escapeHtml(item.id)}" ${excludedActions[record.id]?.afterRecordId === item.id ? 'selected' : ''}>${escapeHtml(recordSelectionLabel(item))} 뒤</option>`).join('')}
+                    </select></label>` : ''}
+                </div>`).join('');
+            exclusions.querySelectorAll('[data-excluded-id]').forEach(row => {
+                const update = () => {
+                    excludedActions[row.dataset.excludedId] = {
+                        action: row.querySelector('[data-excluded-action]').value,
+                        afterRecordId: row.querySelector('[data-excluded-after]')?.value || null,
+                    };
+                    const placement = row.querySelector('[data-excluded-placement]');
+                    if (placement) placement.hidden = excludedActions[row.dataset.excludedId].action !== 'keep';
+                };
+                row.addEventListener('change', update);
+                update();
+            });
         } catch (error) {
             selection.classList.add('stsm-compression-selection-error');
             selection.textContent = error.message;
+            exclusions.replaceChildren();
         }
     };
     start.addEventListener('change', renderSelection);
@@ -77,6 +107,20 @@ async function openCompressionPopup(button, onCreated) {
     const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
         okButton: '압축하기',
         cancelButton: '취소',
+        onClosing: popup => {
+            if (popup.result !== 1) return true;
+            try {
+                const plan = createCompressionBatchPlan(start.value, count.value, repeat.value);
+                if (plan.batches.some(batch => !batch.some(isCompressionIncluded))) {
+                    throw new Error('압축에 포함할 레코드가 없는 배치가 있습니다. 압축 포함 설정이나 범위를 확인해주세요.');
+                }
+                return true;
+            } catch (error) {
+                selection.classList.add('stsm-compression-selection-error');
+                selection.textContent = error.message;
+                return false;
+            }
+        },
     });
     if (await popup.show() !== 1) return;
 
@@ -110,6 +154,8 @@ async function openCompressionPopup(button, onCreated) {
             const record = await compressSummaryRecords({
                 startRecordId: batchStart.id,
                 count: batch.length,
+                sourceRecordIds: batch.map(source => source.id),
+                excludedActions,
                 notifyChanges: false,
             });
             completedRecords.push({

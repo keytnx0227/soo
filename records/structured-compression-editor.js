@@ -5,6 +5,7 @@ import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { parseCompressionResponse, renderCompressionSummary } from '../summary/compression-format.js';
 import { getSummaryRecord, updateSummaryRecordContent } from '../summary/summary-store.js';
 import { moveEditorItem, refreshEditorOrderControls } from './structured-editor-order.js';
+import { attachCompressionReferences, getCompressionInputSources, compressionDataForModel } from '../summary/compression-references.js';
 
 export async function openStructuredCompressionEditor(recordId) {
     const record = getSummaryRecord(recordId);
@@ -14,9 +15,11 @@ export async function openStructuredCompressionEditor(recordId) {
 
     const form = document.createElement('div');
     form.className = 'stsm-structured-summary-editor stsm-structured-compression-editor';
-    const sourceRecords = record.compression.sourceRecordIds.map(getSummaryRecord).filter(Boolean);
+    const allSources = record.compression.sourceRecordIds.map(getSummaryRecord).filter(Boolean);
+    const sourceRecords = getCompressionInputSources(allSources, record.compression.data);
     const segmented = record.compression.mode === 'segmented';
-    form.innerHTML = segmented ? renderSegmentedEditor(record, sourceRecords) : renderEditor(record);
+    const editableRecord = { ...record, compression: { ...record.compression, data: compressionDataForModel(record.compression.data) } };
+    form.innerHTML = segmented ? renderSegmentedEditor(editableRecord, sourceRecords) : renderEditor(record);
     bindEditorActions(form);
 
     let updatedRecord = null;
@@ -35,7 +38,9 @@ export async function openStructuredCompressionEditor(recordId) {
                         sourceRecords,
                     })
                     : parseCompressionResponse(JSON.stringify(collectEditorData(form)));
-                const data = { ...record.compression.data, ...parsed };
+                const data = attachCompressionReferences(
+                    { ...record.compression.data, ...parsed }, allSources, record.compression.data.excludedSourceIds, segmented,
+                );
                 const settings = getSettings().summarization;
                 const content = renderCompressionSummary(data, {
                     startId: record.startId,

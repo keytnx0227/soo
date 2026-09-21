@@ -1,3 +1,4 @@
+import { compareRecordPosition } from './record-placement.js';
 import {
     eventSource,
     event_types,
@@ -215,7 +216,7 @@ export function buildSummaryRecordsContext(sourceRecords, template, budget = Inf
 export function buildSummaryRecordsContextDetails(sourceRecords, template, budget = Infinity) {
     const records = [...sourceRecords]
         .filter(record => !record.llmHidden)
-        .sort((a, b) => a.startId - b.startId || a.endId - b.endId);
+        .sort(compareRecordPosition);
     if (!records.length) return createContextDetails({ budget });
 
     const full = renderRecords(records, template);
@@ -275,8 +276,8 @@ function renderRecords(records, template) {
 
 function renderRecord(record, template, content = record.content) {
     return String(template || '')
-        .replaceAll('{{sumiRecordStartId}}', String(record.startId))
-        .replaceAll('{{sumiRecordEndId}}', String(record.endId))
+        .replaceAll('{{sumiRecordStartId}}', String(record.startId ?? 'supplement'))
+        .replaceAll('{{sumiRecordEndId}}', String(record.endId ?? 'supplement'))
         .replaceAll('{{sumiRecordContent}}', String(content || ''))
         .trim();
 }

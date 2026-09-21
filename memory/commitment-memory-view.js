@@ -1,4 +1,5 @@
 import { Popup } from '../../../../../scripts/popup.js';
+import { formatAtlasSourceRange } from './atlas-source-record.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
@@ -81,7 +82,7 @@ function renderCommitment(commitment, cachedTranslation) {
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(commitment.id)}</code>
-                        <span>${commitment.manual ? '직접 추가' : `#${commitment.firstSeenRange.startId} ~ #${commitment.lastUpdatedRange.endId}`}</span>
+                        <span>${commitment.manual ? '직접 추가' : formatAtlasSourceRange(commitment.firstSeenRange, commitment.lastUpdatedRange)}</span>
                     </div>
                 </div>
             </header>
@@ -256,7 +257,7 @@ function renderWarnings(updates, orphanCorrections) {
             <strong>확인이 필요한 장부 데이터</strong>
         </div>
         ${updates.length ? `<div>미적용 변경안 ${updates.length.toLocaleString()}개</div>` : ''}
-        ${updates.map(update => `<div>#${update.range.startId} ~ #${update.range.endId} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>`).join('')}
+        ${updates.map(update => `<div>${formatAtlasSourceRange(update.range)} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>`).join('')}
         ${orphanCorrections.length ? `<div>대상을 찾지 못한 사용자 수정: ${orphanCorrections.map(escapeHtml).join(', ')}</div>` : ''}
     `;
 }

@@ -1,3 +1,5 @@
+import { compareRecordPosition } from './record-placement.js';
+
 export function createRecordDeletionPlan(records, selectedRecordIds) {
     const source = Array.isArray(records) ? records : [];
     const byId = new Map(source.map(record => [String(record.id), record]));
@@ -44,8 +46,9 @@ function toPlanRecord(record, direct) {
     return {
         id: String(record.id),
         type: record.type === 'compressed' || record.compression ? 'compressed' : 'summary',
-        startId: Number(record.startId),
-        endId: Number(record.endId),
+        startId: record.startId == null ? null : Number(record.startId),
+        endId: record.endId == null ? null : Number(record.endId),
+        position: record.position,
         level: Number(record.compression?.level) || 0,
         mode: record.compression?.mode === 'segmented' ? 'segmented' : record.compression ? 'integrated' : null,
         direct,
@@ -58,5 +61,5 @@ function normalizeId(value) {
 }
 
 function compareRecords(left, right) {
-    return left.startId - right.startId || left.endId - right.endId || left.id.localeCompare(right.id);
+    return compareRecordPosition(left, right);
 }

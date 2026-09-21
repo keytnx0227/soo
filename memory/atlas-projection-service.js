@@ -32,7 +32,7 @@ export function getAtlasProjection({
     const hasDraft = draftReviewRecords.length || draftRecordOverrides.length || excludeRecordCategory || hasCutoff;
     if (excluded.size || hasDraft) {
         const sourceRecords = hasCutoff
-            ? getSummaryRecords().filter(record => Number(record.endId) < cutoff)
+            ? getSummaryRecords().filter(record => Number(record.endId ?? record.position) < cutoff)
             : getSummaryRecords();
         const summaryRecords = prepareSummarySourceRecords(
             sourceRecords,
@@ -189,7 +189,7 @@ function filterUpdatesBeforeManualBaseline(records, manualEntries) {
     return records.map(record => {
         const memoryUpdates = record.structuredSummary?.data?.memoryUpdates;
         if (!memoryUpdates) return record;
-        const effectiveId = Number(record.atlasReview ? record.appliedThroughId : record.endId) || 0;
+        const effectiveId = Number(record.atlasReview ? record.appliedThroughId : record.endId ?? record.position) || 0;
         let changed = false;
         const nextUpdates = { ...memoryUpdates };
         for (const [category, baselines] of Object.entries(baselineByCategory)) {

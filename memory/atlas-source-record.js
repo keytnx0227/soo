@@ -17,8 +17,8 @@ export function compareAtlasSourceRecords(left, right) {
 
 export function getAtlasSourceRange(record) {
     const range = {
-        startId: Number(record.startId),
-        endId: Number(record.endId),
+        startId: record.startId == null ? null : Number(record.startId),
+        endId: record.endId == null ? null : Number(record.endId),
     };
     if (record?.atlasReview) {
         range[REVIEW_RANGE] = true;
@@ -34,8 +34,13 @@ export function canApplyAtlasReplacement(previousRange, nextRange) {
     return nextEffectiveId >= previousEffectiveId;
 }
 
+export function formatAtlasSourceRange(first, last = first) {
+    if (first?.startId == null || last?.endId == null) return '보충 기억';
+    return `#${first.startId} ~ #${last.endId}`;
+}
+
 function getRecordEffectiveId(record) {
-    return Number(record?.atlasReview ? record.appliedThroughId : record?.endId) || 0;
+    return Number(record?.atlasReview ? record.appliedThroughId : record?.endId ?? record?.position) || 0;
 }
 
 function safeTimestamp(value) {

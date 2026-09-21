@@ -5,6 +5,8 @@ import { normalizeSourceFingerprint } from './source-tracking.js';
 import { renderStructuredSummary } from './summary-format.js';
 import { renderCompressionSummary } from './compression-format.js';
 import { createRecordDeletionPlan } from './range-deletion.js';
+import { compareRecordPosition, hasMessageRange, positionAfter, recordPosition } from './record-placement.js';
+import { getCoveredRanges } from './range-utils.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 const COMPRESSION_CONTENT_MIGRATION_VERSION = 1;
@@ -153,6 +155,7 @@ export function getCompressionRecordMode(record) {
 function toRecordIndexEntry(record, mode) {
     return {
         id: record.id,
+        title: record.structuredSummary?.data?.title || null,
         type: record.type,
         compressedBy: getCompressionParentId(record, mode),
         integratedCompressedBy: record.compressedBy,
@@ -162,6 +165,9 @@ function toRecordIndexEntry(record, mode) {
         batchId: record.batchId,
         startId: record.startId,
         endId: record.endId,
+        manual: record.manual,
+        position: record.position,
+        coverageRanges: record.coverageRanges,
         compression: record.compression ? {
             level: record.compression.level,
         } : null,
@@ -330,7 +336,7 @@ export async function setRecentRevisionConversation(conversation) {
     return structuredClone(normalized);
 }
 
-export async function addSummaryRecord({ batchId, startId, endId, content, sourceFingerprint, structuredSummary }) {
+export async function addSummaryRecord({ batchId, startId, endId, content, sourceFingerprint, structuredSummary, manual, afterRecordId }) {
     const normalizedStructuredSummary = normalizeStructuredSummary(structuredSummary);
     const legacyContent = normalizedStructuredSummary ? null : String(content || '').trim();
     if (!normalizedStructuredSummary && !legacyContent) throw new Error('요약 내용은 비워둘 수 없습니다.');
@@ -341,8 +347,9 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
         segmentedCompressedBy: null,
         pinned: false,
         batchId: normalizeOptionalId(batchId),
-        startId: Number(startId),
-        endId: Number(endId),
+        startId: manual && startId == null ? null : Number(startId),
+        endId: manual && endId == null ? null : Number(endId),
+        ...(manual ? { manual: normalizeManualRecord(manual) } : {}),
         ...(legacyContent ? { legacyContent } : {}),
         sourceFingerprint: normalizeSourceFingerprint(sourceFingerprint),
         structuredSummary: normalizedStructuredSummary,
@@ -350,6 +357,11 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
         createdAt: new Date().toISOString(),
     };
     const store = getStore();
+    if (manual && !hasMessageRange(record)) {
+        if (startId != null || endId != null) throw new Error('수동 레코드의 메시지 범위가 올바르지 않습니다.');
+        record.manual.countsAsSummary = false;
+        record.position = positionAfter(getSummaryRecordIndex().filter(item => !item.compressedBy), afterRecordId);
+    }
     const previousRecords = store.records;
     store.records = [...store.records, record];
     try {
@@ -369,20 +381,22 @@ export async function addCompressedSummaryRecord({
     languageMode,
     mode = getCompressionMode(),
     notifyChanges = true,
+    retainedPlacements = [],
 }) {
     const store = getStore();
     const normalizedMode = normalizeCompressionMode(mode);
     const normalizedSourceIds = [...new Set((Array.isArray(sourceRecordIds) ? sourceRecordIds : []).map(String))];
     const modeRecords = getModeRecords(store.records, normalizedMode);
     const sources = normalizedSourceIds.map(id => modeRecords.find(record => record.id === id));
-    if (sources.length < 2 || sources.some(record => !record)) {
-        throw new Error('압축할 원본 요약 레코드를 두 개 이상 찾지 못했습니다.');
+    if (!sources.length || sources.some(record => !record)) {
+        throw new Error('압축할 원본 요약 레코드를 찾지 못했습니다.');
     }
     if (sources.some(record => getCompressionParentId(record, normalizedMode))) {
         throw new Error('이미 다른 압축본에 포함된 요약 레코드는 다시 직접 압축할 수 없습니다.');
     }
 
-    const sortedSources = [...sources].sort((left, right) => left.startId - right.startId || left.endId - right.endId);
+    const sortedSources = [...sources].sort(compareRecordPosition);
+    const rangedSources = sortedSources.filter(hasMessageRange);
     const normalizedCompressionData = compressionData && typeof compressionData === 'object'
         ? structuredClone(compressionData)
         : null;
@@ -395,8 +409,10 @@ export async function addCompressedSummaryRecord({
         segmentedCompressedBy: null,
         pinned: false,
         batchId: null,
-        startId: sortedSources[0].startId,
-        endId: sortedSources.at(-1).endId,
+        startId: rangedSources.length ? Math.min(...rangedSources.map(source => source.startId)) : null,
+        endId: rangedSources.length ? Math.max(...rangedSources.map(source => source.endId)) : null,
+        position: recordPosition(sortedSources[0]),
+        coverageRanges: getCoveredRanges(sortedSources),
         ...(legacyContent ? { legacyContent } : {}),
         sourceFingerprint: null,
         structuredSummary: null,
@@ -413,8 +429,17 @@ export async function addCompressedSummaryRecord({
     };
 
     const previousRecords = store.records;
+    const retained = new Map(retainedPlacements.map(item => [item.id, item]));
+    const placementCandidates = [...modeRecords.filter(source => !normalizedSourceIds.includes(source.id)
+        && !retained.has(source.id) && !getCompressionParentId(source, normalizedMode)), record];
     store.records = [
         ...store.records.map(source => {
+            if (retained.has(source.id) && !hasMessageRange(source)) {
+                const afterId = retained.get(source.id).afterRecordId || record.id;
+                const placed = { ...source, position: positionAfter(placementCandidates, afterId) };
+                placementCandidates.push(placed);
+                return placed;
+            }
             if (!normalizedSourceIds.includes(source.id)) return source;
             return normalizedMode === COMPRESSION_MODES.SEGMENTED
                 ? { ...source, segmentedCompressedBy: record.id }
@@ -498,6 +523,7 @@ export async function updateSummaryRecordContent(recordId, content, {
     structuredSummary,
     compressionData,
     contentEdited,
+    manual,
 } = {}) {
     const normalizedId = String(recordId);
     const normalizedContent = String(content || '').trim();
@@ -513,6 +539,7 @@ export async function updateSummaryRecordContent(recordId, content, {
         const previousRuntimeRecord = hydrateRecord(record);
         const nextRecord = {
             ...record,
+            ...(manual && record.manual ? { manual: normalizeManualRecord(manual) } : {}),
             sourceFingerprint: sourceFingerprint === undefined
                 ? record.sourceFingerprint
                 : normalizeSourceFingerprint(sourceFingerprint),
@@ -686,7 +713,7 @@ export async function updateSummaryRecordLlmHidden(recordId, llmHidden) {
     return hydrateRecord(updatedRecord);
 }
 
-export async function updateSummaryRecordRanges(updates) {
+export async function updateSummaryRecordRanges(updates, placementShift = null) {
     const normalizedUpdates = new Map((Array.isArray(updates) ? updates : []).map(update => [
         String(update.id),
         {
@@ -713,11 +740,23 @@ export async function updateSummaryRecordRanges(updates) {
     const updatedRecords = [];
     store.records = store.records.map(record => {
         const range = normalizedUpdates.get(record.id);
-        if (!range) return record;
-        const updatedRecord = { ...record, ...range };
+        const position = shiftPlacement(record.position, placementShift);
+        if (!range) return position === record.position ? record : { ...record, position };
+        if (!hasMessageRange(record)) throw new Error('범위 없는 보충 기억에 메시지 범위를 교정할 수 없습니다.');
+        const updatedRecord = { ...record, ...range,
+            ...(Number.isFinite(record.position) ? { position: placementShift ? position : record.position + range.startId - record.startId } : {}),
+        };
         updatedRecords.push(updatedRecord);
         return updatedRecord;
     });
+    const byId = new Map(store.records.map(record => [record.id, record]));
+    // Child coverage is authoritative, including supplemental ranges that do not count as summarized.
+    for (const record of [...store.records].filter(record => Array.isArray(record.coverageRanges))
+        .sort((left, right) => (left.compression?.level || 0) - (right.compression?.level || 0))) {
+        const next = { ...record, coverageRanges: getCoveredRanges((record.compression?.sourceRecordIds || []).map(id => byId.get(id)).filter(Boolean)) };
+        byId.set(record.id, next);
+    }
+    store.records = store.records.map(record => byId.get(record.id));
 
     const recentRange = normalizedUpdates.get(store.recentRevisionConversation?.recordId);
     if (recentRange) {
@@ -735,7 +774,12 @@ export async function updateSummaryRecordRanges(updates) {
         throw error;
     }
     notifyRecordsChanged();
-    return updatedRecords.map(hydrateRecord);
+    return updatedRecords.map(record => hydrateRecord(byId.get(record.id)));
+}
+
+function shiftPlacement(position, shift) {
+    if (!Number.isFinite(position) || !shift || position < shift.threshold) return position;
+    return Math.max(shift.threshold - 0.5, position + shift.delta);
 }
 
 export async function setSummaryRecordTranslation(recordId, translation) {
@@ -825,8 +869,11 @@ function normalizeRecords(records) {
                 pinned: Boolean(record.pinned),
                 llmHidden: Boolean(record.llmHidden),
                 batchId: normalizeOptionalId(record.batchId),
-                startId: Math.max(0, Number(record.startId) || 0),
-                endId: Math.max(0, Number(record.endId) || 0),
+                startId: record.startId === null ? null : Math.max(0, Number(record.startId) || 0),
+                endId: record.endId === null ? null : Math.max(0, Number(record.endId) || 0),
+                ...(record.manual ? { manual: normalizeManualRecord(record.manual) } : {}),
+                ...(Number.isFinite(record.position) ? { position: record.position } : {}),
+                ...(Array.isArray(record.coverageRanges) ? { coverageRanges: getCoveredRanges(record.coverageRanges) } : {}),
                 ...(preserveLegacyContent && legacyContent ? { legacyContent } : {}),
                 sourceFingerprint: normalizeSourceFingerprint(record.sourceFingerprint),
                 structuredSummary,
@@ -881,6 +928,13 @@ function hydrateRecord(record, renderSettings = getRecordRenderSettings(), mode 
         contentHash: rendered.contentHash,
         contentEdited: Boolean(record.legacyContent),
         translation: normalizeTranslation(record.translation, rendered.contentHash, record.translation?.sourceHash),
+    };
+}
+
+function normalizeManualRecord(value) {
+    return {
+        countsAsSummary: Boolean(value.countsAsSummary),
+        includeInCompression: value.includeInCompression !== false,
     };
 }
 
@@ -1080,8 +1134,8 @@ function normalizeRevisionConversation(conversation) {
     return {
         savedAt: Number(conversation.savedAt) || Date.now(),
         recordId: String(conversation.recordId || ''),
-        startId: Math.max(0, Number(conversation.startId) || 0),
-        endId: Math.max(0, Number(conversation.endId) || 0),
+        startId: conversation.startId === null ? null : Math.max(0, Number(conversation.startId) || 0),
+        endId: conversation.endId === null ? null : Math.max(0, Number(conversation.endId) || 0),
         baseContent: String(conversation.baseContent || ''),
         baseHash: String(conversation.baseHash || ''),
         messages,

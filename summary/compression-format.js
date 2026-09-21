@@ -1,4 +1,5 @@
 import { renderTemplateData } from './summary-record-template.js';
+import { rangeAwareTemplate } from './record-placement.js';
 
 export const INTEGRATED_COMPRESSION_FORMAT_VERSION = 2;
 export const SEGMENTED_COMPRESSION_FORMAT_VERSION = 3;
@@ -156,9 +157,10 @@ export function renderCompressionSummary(summary, {
         return renderSegmentedCompressionSummary(summary, { startId, endId, template, outputSections });
     }
     const visible = applyOutputSections(summary, outputSections);
+    template = rangeAwareTemplate(template, 'sumiCompression', startId, endId);
     return renderTemplateData(template, {
-        sumiCompressionStartId: startId,
-        sumiCompressionEndId: endId,
+        sumiCompressionStartId: startId ?? 'supplement',
+        sumiCompressionEndId: endId ?? 'supplement',
         sumiCompressionContext: renderContextFlow(visible.contextFlow),
         sumiCompressionContextFlow: visible.contextFlow,
         sumiCompressionPlot: visible.plot,
@@ -174,7 +176,7 @@ function renderSegmentedCompressionSummary(summary, options) {
 }
 
 function mergeSegmentCompactData(segments, includeAdditionalPlot = true) {
-    const ordered = Array.isArray(segments) ? segments : [];
+    const ordered = Array.isArray(segments) ? segments.filter(segment => segment.kind !== 'reference') : [];
     const contextFlow = ordered.flatMap(segment => segment.compactData?.contextFlow || []);
     const plot = ordered.flatMap(segment => [
         ...(segment.compactData?.plot || []),

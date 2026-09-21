@@ -1,4 +1,5 @@
 import { Popup } from '../../../../../scripts/popup.js';
+import { formatAtlasSourceRange } from './atlas-source-record.js';
 import { beginOperation, endOperation } from '../core/extension-state.js';
 import { getSettings, SUMMARY_CONTEXT_BLOCK_KINDS } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
@@ -94,7 +95,7 @@ function renderEvent(event, cachedTranslation, omitted) {
                     </div>
                     <div class="stsm-atlas-card-meta">
                         <code>${escapeHtml(event.id)}</code>
-                        <span>${event.manual ? '직접 추가' : `#${event.firstSeenRange.startId} ~ #${event.lastUpdatedRange.endId}`}</span>
+                        <span>${event.manual ? '직접 추가' : formatAtlasSourceRange(event.firstSeenRange, event.lastUpdatedRange)}</span>
                     </div>
                 </div>
             </header>
@@ -231,7 +232,7 @@ function renderWarnings(updates, orphanCorrections) {
             <strong>확인이 필요한 사건 데이터</strong>
         </div>
         ${updates.length ? `<div>미적용 변경안 ${updates.length.toLocaleString()}개</div>` : ''}
-        ${updates.map(update => `<div>#${update.range.startId} ~ #${update.range.endId} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>`).join('')}
+        ${updates.map(update => `<div>${formatAtlasSourceRange(update.range)} · ${escapeHtml(update.targetId || 'ID 없음')} · ${escapeHtml(update.reason)}</div>`).join('')}
         ${orphanCorrections.length ? `<div>원본을 찾지 못한 사용자 수정 ${orphanCorrections.length.toLocaleString()}개</div>` : ''}
         ${orphanCorrections.map(id => `<div>${escapeHtml(id)} · 생성 근거 레코드가 현재 존재하지 않습니다.</div>`).join('')}
     `;

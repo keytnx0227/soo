@@ -20,6 +20,7 @@ const TRANSLATION_CONTROL_SELECTOR = [
 ].join(', ');
 
 const IDLE_CONTROL_SELECTOR = [
+    '#stsm-add-record',
     ENABLED_EXECUTION_CONTROL_SELECTOR,
     TRANSLATION_CONTROL_SELECTOR,
     '#stsm-unhide-all-summarized',
@@ -108,6 +109,7 @@ export function renderExtensionControls(root, state = getExtensionState()) {
             return;
         }
         const requiresEnabled = control.matches(ENABLED_EXECUTION_CONTROL_SELECTOR);
-        control.disabled = isWorking || (requiresEnabled && !state.enabled);
+        control.disabled = isWorking || (requiresEnabled && !state.enabled)
+            || (control.matches('.stsm-record-reroll') && Boolean(control.closest('.stsm-record')?.querySelector('[data-manual-marker]')));
     });
 }
