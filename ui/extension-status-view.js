@@ -20,7 +20,7 @@ const TRANSLATION_CONTROL_SELECTOR = [
 ].join(', ');
 
 const IDLE_CONTROL_SELECTOR = [
-    '#stsm-add-record',
+    '.stsm-add-record',
     ENABLED_EXECUTION_CONTROL_SELECTOR,
     TRANSLATION_CONTROL_SELECTOR,
     '#stsm-unhide-all-summarized',

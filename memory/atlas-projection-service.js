@@ -20,6 +20,7 @@ export function getAtlasProjection({
     excludeReviewIds = [],
     draftReviewRecords = [],
     draftRecordOverrides = [],
+    draftRecords = [],
     excludeRecordCategory = null,
     beforeStartId = null,
 } = {}) {
@@ -29,11 +30,12 @@ export function getAtlasProjection({
         ? null
         : Number(beforeStartId);
     const hasCutoff = Number.isFinite(cutoff);
-    const hasDraft = draftReviewRecords.length || draftRecordOverrides.length || excludeRecordCategory || hasCutoff;
+    const hasDraft = draftReviewRecords.length || draftRecordOverrides.length || draftRecords.length || excludeRecordCategory || hasCutoff;
     if (excluded.size || hasDraft) {
+        const records = [...getSummaryRecords(), ...draftRecords];
         const sourceRecords = hasCutoff
-            ? getSummaryRecords().filter(record => Number(record.endId ?? record.position) < cutoff)
-            : getSummaryRecords();
+            ? records.filter(record => Number(record.endId ?? record.position) < cutoff)
+            : records;
         const summaryRecords = prepareSummarySourceRecords(
             sourceRecords,
             draftRecordOverrides,

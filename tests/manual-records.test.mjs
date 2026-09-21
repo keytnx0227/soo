@@ -46,6 +46,44 @@ function compact(sources) {
     })) }), { segmented: true, sourceRecords: sources });
 }
 
+test('manual edits change range, coverage and placement atomically without replacing identity', async () => {
+    const { scope, context, add } = await setup();
+    context.chat = Array.from({ length: 100 }, () => ({}));
+    const a = await add('A', 0, 19);
+    const x = await add('X', null, null, { manual: { countsAsSummary: false }, afterRecordId: a.id });
+    const update = async (placement, countsAsSummary = true) => scope.updateSummaryRecordContent(x.id, x.content, {
+        placement, manual: { ...x.manual, countsAsSummary }, structuredSummary: x.structuredSummary, contentEdited: false,
+    });
+    const ranged = await update({ startId: '20', endId: '39', afterRecordId: '__current__' });
+    assert.equal(ranged.id, x.id);
+    assert.equal(ranged.startId, 20);
+    assert.deepEqual(ranges.getCoveredRanges(scope.getSummaryRecords()), [{ startId: 0, endId: 39 }]);
+    const supplement = await update({ startId: null, endId: null, afterRecordId: a.id });
+    assert.equal(supplement.position, 19.5);
+    assert.equal(supplement.manual.countsAsSummary, false);
+    assert.deepEqual(ranges.getCoveredRanges(scope.getSummaryRecords()), [{ startId: 0, endId: 19 }]);
+    const before = JSON.stringify(context.chatMetadata);
+    await assert.rejects(update({ startId: '', endId: '39' }));
+    await assert.rejects(update({ startId: '20', endId: '100' }));
+    await assert.rejects(update({ startId: null, endId: null, afterRecordId: x.id }));
+    assert.equal(JSON.stringify(context.chatMetadata), before);
+    context.saveMetadata = async () => { throw new Error('save failed'); };
+    await assert.rejects(update({ startId: 40, endId: 59 }), /save failed/);
+    assert.equal(JSON.stringify(context.chatMetadata), before);
+});
+
+test('manual placement edits reject parents in either compression mode', async () => {
+    const { scope, context, settings, add } = await setup();
+    context.chat = Array.from({ length: 100 }, () => ({}));
+    const x = await add('X', 0, 19, { manual: { countsAsSummary: true } });
+    const y = await add('Y', 20, 39);
+    await scope.addCompressedSummaryRecord({ sourceRecordIds: [x.id, y.id], compressionData: compact([x, y]) });
+    settings.summarization.compressionMode = 'integrated';
+    const before = JSON.stringify(context.chatMetadata);
+    await assert.rejects(scope.updateSummaryRecordContent(x.id, x.content, { placement: { startId: 1, endId: 19 } }));
+    assert.equal(JSON.stringify(context.chatMetadata), before);
+});
+
 test('optional ranges never cover message zero; supplements do not expand completion', () => {
     const records = [
         { startId: 0, endId: 99 },

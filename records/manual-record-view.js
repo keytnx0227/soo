@@ -1,19 +1,23 @@
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../../../scripts/popup.js';
-import { escapeHtml } from '../core/utils.js';
+import { createId } from '../core/utils.js';
 import { getSettings } from '../core/settings.js';
 import { getExtensionState } from '../core/extension-state.js';
-import { showManualAtlasEntryEditor } from '../memory/atlas-manual-editor.js';
-import { addSummaryRecord, getSummaryRecordIndex } from '../summary/summary-store.js';
+import { addSummaryRecord, getSummaryRecord, getSummaryRecordIndex } from '../summary/summary-store.js';
 import { DEFAULT_SUMMARY_SECTIONS, DEFAULT_MEMORY_SECTIONS, SUMMARY_FORMAT_VERSION, normalizeStructuredSummaryData } from '../summary/summary-format.js';
 import { validateSummaryRange } from '../summary/summary-service.js';
-import { compareRecordPosition, recordSelectionLabel } from '../summary/record-placement.js';
+import { compareRecordPosition, positionAfter } from '../summary/record-placement.js';
 import { renderEditor, bindEditorActions, collectEditorData } from './structured-summary-editor.js';
-
-const CATEGORIES = { people: '인물', items: '아이템', commitments: '서약', events: '사건', world: '세계 설정' };
+import { renderManualRecordSettings, bindManualRecordSettings, renderManualInfo } from './manual-record-settings.js';
+import { openManualAtlasManager } from './manual-atlas-view.js';
+import { collectManualAtlasUpdates } from './manual-atlas-draft.js';
 
 export function bindManualRecordView(root, onCreated) {
-    root.querySelector('#stsm-add-record')?.addEventListener('click', async () => {
+    root.querySelector('.stsm-add-record')?.addEventListener('click', async () => {
         try {
+            if (root.dataset.recordMemoryView === 'long-term') {
+                toastr.info('장기기억 직접 추가는 아직 지원하지 않습니다. 상시기억에서 추가해주세요.');
+                return;
+            }
             if (await openManualRecordEditor()) await onCreated?.();
         } catch (error) {
             console.error('[Chat Summarizer] Manual record failed:', error);
@@ -22,49 +26,25 @@ export function bindManualRecordView(root, onCreated) {
     });
 }
 
-export function createManualRecordForm(records) {
+export function createManualRecordForm(records, { allRecords = records, messageCount = 0, resolveRecord } = {}) {
     const form = document.createElement('div');
     form.className = 'stsm-structured-summary-editor stsm-manual-record-editor';
     const empty = { plot: [''], contextFlow: [], emotions: [], quotes: [], continuityChanges: [] };
     form.innerHTML = `
-        <header class="stsm-structured-editor-header"><strong>요약 레코드 직접 추가</strong></header>
-        <section class="stsm-manual-record-options">
-            <label><input type="checkbox" data-manual-range /> 메시지 범위 지정</label>
-            <div class="stsm-manual-record-range" data-manual-range-fields hidden>
-                <label class="stsm-field"><span>시작 ID</span><input class="text_pole" data-manual-start type="number" min="0" step="1" /></label>
-                <label class="stsm-field"><span>종료 ID</span><input class="text_pole" data-manual-end type="number" min="0" step="1" /></label>
-            </div>
-            <label><input type="checkbox" data-manual-coverage disabled /> 해당 범위를 요약 완료로 처리</label>
-            <label><input type="checkbox" data-manual-compression /> 압축 대상에 포함</label>
-            <label class="stsm-field" data-manual-position><span>배치 위치</span><select class="text_pole" data-manual-after>
-                <option value="">마지막 레코드 뒤</option>
-                ${records.map(record => `<option value="${escapeHtml(record.id)}">${escapeHtml(recordSelectionLabel(record))} 뒤</option>`).join('')}
-            </select></label>
-        </section>
+        <header class="stsm-manual-heading"><h3>레코드 채우기</h3><button class="menu_button" type="button" data-manual-atlas-manage><i class="fa-solid fa-book" aria-hidden="true"></i><span>도감</span><span data-manual-atlas-count>0</span></button></header>
         <div data-manual-body>${renderEditor({ startId: '', endId: '', structuredSummary: { data: empty } })}</div>
-        <section class="stsm-structured-editor-section">
+        <section class="stsm-structured-editor-section stsm-manual-tags">
             <label class="stsm-field"><span>검색 태그</span><input class="text_pole" data-manual-tags placeholder="쉼표로 구분" /></label>
+            ${renderManualInfo('검색 태그', '장기기억을 찾을 때 사용하는 단어입니다. 쉼표로 구분하며, 요약 본문에는 출력하지 않습니다.')}
         </section>
-        <section class="stsm-structured-editor-section">
-            <div class="stsm-structured-editor-title">도감 추가</div>
-            <div class="stsm-manual-atlas-actions">
-                <select class="text_pole" data-manual-category>${Object.entries(CATEGORIES).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select>
-                <button type="button" class="menu_button" data-manual-atlas-add title="도감 항목 추가" aria-label="도감 항목 추가"><i class="fa-solid fa-plus"></i></button>
-            </div>
-            <div data-manual-atlas-list></div>
-        </section>
+        ${renderManualRecordSettings(records, allRecords, messageCount)}
         <div class="stsm-compression-selection-error" data-manual-error role="alert"></div>`;
     form.querySelector('[data-manual-body] .stsm-structured-editor-header').remove();
     bindEditorActions(form.querySelector('[data-manual-body]'));
-    const range = form.querySelector('[data-manual-range]');
-    range.addEventListener('change', () => {
-        form.querySelector('[data-manual-range-fields]').hidden = !range.checked;
-        form.querySelector('[data-manual-position]').hidden = range.checked;
-        const coverage = form.querySelector('[data-manual-coverage]');
-        coverage.disabled = !range.checked;
-        if (!range.checked) coverage.checked = false;
-        form.querySelector('[data-manual-compression]').checked = range.checked;
+    form.querySelectorAll('[data-editor-add]').forEach(button => {
+        button.title = button.textContent.trim(); button.setAttribute('aria-label', button.title);
     });
+    bindManualRecordSettings(form, records, allRecords, messageCount, resolveRecord);
     return form;
 }
 
@@ -72,33 +52,29 @@ export async function openManualRecordEditor() {
     const context = SillyTavern.getContext();
     const chatRef = context.chat;
     const metadataRef = context.chatMetadata;
-    const records = getSummaryRecordIndex().filter(record => !record.compressedBy).sort(compareRecordPosition);
-    const form = createManualRecordForm(records);
-    const entries = [];
-    const renderEntries = () => {
-        form.querySelector('[data-manual-atlas-list]').innerHTML = entries.map((entry, index) => `
-            <div class="stsm-manual-atlas-draft">
-                <span>${CATEGORIES[entry.category]} · ${escapeHtml(entry.value.name || entry.value.title || entry.value.content)}</span>
-                <button type="button" class="menu_button" data-draft-edit="${index}" title="수정" aria-label="수정"><i class="fa-solid fa-pen"></i></button>
-                <button type="button" class="menu_button" data-draft-delete="${index}" title="삭제" aria-label="삭제"><i class="fa-solid fa-trash"></i></button>
-            </div>`).join('');
+    const allRecords = getSummaryRecordIndex();
+    const records = allRecords.filter(record => !record.compressedBy).sort(compareRecordPosition);
+    const form = createManualRecordForm(records, { allRecords, messageCount: chatRef.length, resolveRecord: record => getSummaryRecord(record.id) });
+    let entries = [];
+    const previewId = createId('manual-preview');
+    const getRange = () => {
+        if (!form.querySelector('[data-manual-range]').checked) return { startId: null, endId: null };
+        const range = validateSummaryRange(form.querySelector('[data-manual-start]').value, form.querySelector('[data-manual-end]').value);
+        return { startId: range.start, endId: range.end };
     };
-    form.addEventListener('click', async event => {
-        const button = event.target.closest('button');
-        if (!button) return;
-        const category = button.hasAttribute('data-manual-atlas-add') ? form.querySelector('[data-manual-category]').value : null;
-        const edit = button.dataset.draftEdit;
-        const remove = button.dataset.draftDelete;
-        if (remove !== undefined) { entries.splice(Number(remove), 1); renderEntries(); return; }
-        if (!category && edit === undefined) return;
+    form.querySelector('[data-manual-atlas-manage]').addEventListener('click', async event => {
+        const button = event.currentTarget;
         button.disabled = true;
         try {
-            const entry = edit !== undefined ? entries[Number(edit)] : { category, value: null };
-            const value = await showManualAtlasEntryEditor(entry.category, null, { draft: true, initial: entry.value });
-            if (value) {
-                if (edit !== undefined) entry.value = value;
-                else entries.push({ category, value });
-                renderEntries();
+            const result = await openManualAtlasManager(entries, memoryUpdates => ({
+                id: previewId, type: 'summary', ...getRange(),
+                position: form.querySelector('[data-manual-range]').checked ? undefined
+                    : positionAfter(records, form.querySelector('[data-manual-after]').value || null),
+                structuredSummary: { data: { memoryUpdates } },
+            }));
+            if (result) {
+                entries = result;
+                form.querySelector('[data-manual-atlas-count]').textContent = entries.length;
             }
         } catch (error) { toastr.error(error.message); }
         finally { button.disabled = false; }
@@ -112,18 +88,8 @@ export async function openManualRecordEditor() {
                 const current = SillyTavern.getContext();
                 if (current.chat !== chatRef || current.chatMetadata !== metadataRef) throw new Error('채팅이 변경되었습니다. 현재 창을 닫고 다시 추가해주세요.');
                 if (getExtensionState().operation) throw new Error('진행 중인 작업이 끝난 뒤 저장해주세요.');
-                let startId = null;
-                let endId = null;
-                if (form.querySelector('[data-manual-range]').checked) {
-                    const range = validateSummaryRange(form.querySelector('[data-manual-start]').value, form.querySelector('[data-manual-end]').value);
-                    startId = range.start;
-                    endId = range.end;
-                }
-                const memoryUpdates = {};
-                for (const entry of entries) {
-                    memoryUpdates[entry.category] ||= { created: [], updated: [] };
-                    memoryUpdates[entry.category].created.push(entry.value);
-                }
+                const { startId, endId } = getRange();
+                const memoryUpdates = collectManualAtlasUpdates(entries);
                 const data = normalizeStructuredSummaryData({
                     ...collectEditorData(form, {}), memoryUpdates,
                     tags: form.querySelector('[data-manual-tags]').value.split(',').map(value => value.trim()).filter(Boolean),

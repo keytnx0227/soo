@@ -12,6 +12,10 @@ for (const name of [
     'records/structured-editor-order.js', 'records/structured-summary-editor.js',
     'records/manual-record-view.js', 'memory/atlas-manual-editor.js', 'ui/popup-template.js',
     'summary/compression-view.js',
+    'summary/range-utils.js', 'records/manual-record-settings.js', 'records/manual-atlas-draft.js', 'records/manual-atlas-view.js',
+    'records/record-memory-updates-view.js', 'summary/context-block-composer.js', 'ui/section-tooltip.js',
+    'memory/atlas-source-record.js', 'memory/atlas-entity-id.js', 'memory/atlas-projection-service.js', 'memory/atlas-corrections.js',
+    'memory/people-memory.js', 'memory/item-memory.js', 'memory/commitment-memory.js', 'memory/event-memory.js', 'memory/world-memory.js',
 ]) sources[name] = await readFile(new URL(name, root), 'utf8');
 const css = await readFile(new URL('style.css', root), 'utf8');
 const output = new URL('personal-notes/manual-record-ui/', root);
@@ -28,6 +32,7 @@ try {
             :root { --SmartThemeBodyColor:#333; --SmartThemeBorderColor:#d4d4d8; --SmartThemeQuoteColor:#bf4670; }
             .text_pole { border:1px solid #ccc; border-radius:5px; background:white; color:inherit; padding:6px; font:inherit; }
             .menu_button { border:1px solid #ccc; border-radius:4px; background:white; padding:5px; color:inherit; cursor:pointer; }
+            .menu_button:where([data-atlas-add]) { width: 30px; }
             .test-popup { width: min(100%, 780px); margin: 0 auto; padding: 10px; background: #fafafa; border: 1px solid #ccc; }
             button { font:inherit; } textarea { resize:vertical; } [hidden] { display:none !important; }
         ` });
@@ -36,16 +41,19 @@ try {
             const load = (name, exports, scope = {}) => new Function(...Object.keys(scope),
                 sources[name].replace(/^import[\s\S]*?from ['"][^'"]+['"];\s*/gm, '').replaceAll('export ', '')
                 + `\nreturn {${exports.join(',')}};`)(...Object.values(scope));
-            const scope = { ...load('core/utils.js', ['escapeHtml']), ...load('summary/record-placement.js', ['hasMessageRange', 'recordRangeLabel', 'recordSelectionLabel', 'recordPosition', 'compareRecordPosition', 'rangeAwareTemplate']) };
-            Object.assign(scope, load('memory/people-feelings.js', ['normalizeFeelings']));
+            const scope = { ...load('core/utils.js', ['escapeHtml', 'createId']), ...load('summary/record-placement.js', ['hasMessageRange', 'recordRangeLabel', 'recordSelectionLabel', 'recordPosition', 'compareRecordPosition', 'rangeAwareTemplate', 'positionAfter']) };
+            Object.assign(scope, load('memory/people-feelings.js', ['normalizeFeelings', 'formatFeelings']));
             Object.assign(scope, load('summary/summary-record-template.js', ['DEFAULT_SUMMARY_CONTENT_TEMPLATE', 'renderSummaryContentTemplate'], scope));
             Object.assign(scope, load('summary/summary-format.js', ['SUMMARY_FORMAT_VERSION', 'SUMMARY_SECTION_DESCRIPTIONS', 'DEFAULT_SUMMARY_SECTIONS', 'DEFAULT_MEMORY_SECTIONS', 'normalizeStructuredSummaryData', 'renderStructuredSummary'], scope));
             Object.assign(scope, load('records/structured-editor-order.js', ['moveEditorItem', 'refreshEditorOrderControls']));
             Object.assign(scope, load('memory/people-feelings-view.js', ['handleFeelingEditorClick', 'readFeelingEditor', 'renderFeelingEditor'], scope));
             const context = { chat: Array.from({ length: 200 }, () => ({})), chatMetadata: {} };
-            const settings = { summarization: { outputLanguage: 'source', compressionGroupSize: 3 } };
+            const settings = { summarization: { outputLanguage: 'source', compressionGroupSize: 3,
+                contextBlocks: [{ kind: 'people', enabled: true, entryTemplate: '{{sumiPersonName}}: {{sumiPersonRole}}\n{{sumiPersonAppearance}}' }],
+            } };
             const records = [{ id: 'a', startId: 0, endId: 19 }, { id: 'x', startId: null, endId: null, position: 19.5, manual: { includeInCompression: false } }, { id: 'b', startId: 20, endId: 39 }];
-            window.toastr = { error: value => { window.lastError = value; }, info() {}, success() {} };
+            records[0].structuredSummary = { data: { plot: ['오래된 약속과 만남의 기록'], memoryUpdates: { people: { created: [{ sourceId: 'existing-person', name: '기존 인물', role: '여행자' }] } } } };
+            window.toastr = { error: value => { window.lastError = value; }, info: value => { window.lastInfo = value; }, success() {} };
             window.SillyTavern = { getContext: () => context };
             class Popup {
                 constructor(form, type, value, options) { this.form = form; this.options = options; }
@@ -75,21 +83,45 @@ try {
                 Popup, POPUP_TYPE: { CONFIRM: 1 }, POPUP_RESULT: { AFFIRMATIVE: 1 },
                 getSettings: () => settings, getExtensionState: () => ({}),
                 getSummaryRecordIndex: () => records,
-                getAtlasProjection: () => ({ frontierId: 39 }),
+                getSummaryRecord: id => records.find(record => record.id === id),
+                getSummaryRecords: () => records, filterLlmVisibleSummaryRecords: records => records,
+                getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}), getAtlasReviewRecords: () => [],
+                SUMMARY_CONTEXT_BLOCK_KINDS: { RECORDS: 'records', PEOPLE: 'people', ITEMS: 'items', EVENTS: 'events', COMMITMENTS: 'commitments', WORLD: 'world' },
                 addSummaryRecord: async record => { window.savedRecord = record; return record; },
+                updateSummaryRecordContent: async (id, content, options) => { window.editedRecord = { id, ...options }; return window.editedRecord; },
                 validateSummaryRange: (start, end) => {
                     if (!start.trim() || !end.trim() || +start > +end || +end >= context.chat.length) throw new Error('invalid range');
                     return { start: +start, end: +end };
                 },
             });
+            Object.assign(scope, load('summary/range-utils.js', ['getCoveredRanges', 'getCoverageSegments'], scope));
+            Object.assign(scope, load('records/manual-record-settings.js', ['renderManualRecordSettings', 'bindManualRecordSettings', 'renderManualInfo'], scope));
+            Object.assign(scope, load('memory/atlas-source-record.js', ['canApplyAtlasReplacement', 'compareAtlasSourceRecords', 'getAtlasSourceRange'], scope));
+            Object.assign(scope, load('memory/atlas-entity-id.js', ['getCreatedAtlasEntityId'], scope));
+            for (const [file, name] of [['people', 'People'], ['item', 'Item'], ['commitment', 'Commitment'], ['event', 'Event'], ['world', 'World']]) {
+                Object.assign(scope, load(`memory/${file}-memory.js`, [`derive${name}Atlas`], scope));
+            }
+            Object.assign(scope, load('memory/atlas-corrections.js', ['applyAtlasCorrections'], scope));
+            Object.assign(scope, load('memory/atlas-projection-service.js', ['getAtlasProjection'], scope));
+            Object.assign(scope, load('summary/context-block-composer.js', ['buildRenderedBlocks'], scope));
+            Object.assign(scope, load('records/record-memory-updates-view.js', ['renderRecordMemoryUpdateDetails'], scope));
+            Object.assign(scope, load('records/manual-atlas-draft.js', ['atlasUpdateEditorInitial', 'createManualAtlasUpdate', 'collectManualAtlasUpdates'], scope));
             Object.assign(scope, load('memory/atlas-manual-editor.js', ['showManualAtlasEntryEditor'], scope));
-            Object.assign(scope, load('records/structured-summary-editor.js', ['renderEditor', 'bindEditorActions', 'collectEditorData'], scope));
-            const manual = load('records/manual-record-view.js', ['openManualRecordEditor'], scope);
+            Object.assign(scope, load('records/manual-atlas-view.js', ['openManualAtlasManager'], scope));
+            Object.assign(scope, load('records/structured-summary-editor.js', ['renderEditor', 'bindEditorActions', 'collectEditorData', 'openStructuredSummaryEditor'], scope));
+            window.openEdit = () => {
+                records[1].type = 'summary';
+                records[1].structuredSummary = { data: { title: '보충 기록', plot: ['보존할 내용'] } };
+                void scope.openStructuredSummaryEditor('x');
+            };
+            window.currentAtlas = () => scope.getAtlasProjection();
+            const manual = load('records/manual-record-view.js', ['openManualRecordEditor', 'bindManualRecordView'], scope);
             window.openManual = () => { void manual.openManualRecordEditor(); };
             const popupTemplate = load('ui/popup-template.js', ['buildPopup'], scope);
             window.renderToolbar = () => {
                 const popup = popupTemplate.buildPopup();
-                document.querySelector('#test-root').replaceChildren(popup.querySelector('.stsm-records-toolbar'));
+                document.querySelector('#test-root').replaceChildren(popup.querySelector('.stsm-records-toolbar'), popup.querySelector('.stsm-record-memory-browser'));
+                manual.bindManualRecordView(document.querySelector('#test-root'));
             };
             const compression = load('summary/compression-view.js', ['bindCompressionView'], {
                 ...scope, getCompressionCandidates: () => records,
@@ -103,18 +135,41 @@ try {
                 root.querySelector('button').click();
             };
             window.openManual();
+            load('ui/section-tooltip.js', ['bindSectionTooltips']).bindSectionTooltips();
         }, { sources });
         await page.locator('[data-string-value]').first().fill('A가 B에게 꽃처럼 부드러운 말을 하겠다고 약속하고, 과거의 오해를 풀며 서로의 감정을 확인했다. '.repeat(4));
+        const beforeToggle = await page.locator('[data-manual-position]').evaluate(element => element.getBoundingClientRect().top + scrollY);
+        assert.equal(await page.locator('[data-manual-start]').isDisabled(), true);
         await page.locator('[data-manual-range]').check();
+        const afterToggle = await page.locator('[data-manual-position]').evaluate(element => element.getBoundingClientRect().top + scrollY);
+        assert.equal(beforeToggle, afterToggle, 'range toggle must not shift layout');
+        await page.locator('[data-manual-last-range]').click();
+        assert.equal(await page.locator('[data-manual-start]').inputValue(), '20');
+        assert.equal(await page.locator('[data-manual-end]').inputValue(), '39');
         assert.equal(await page.locator('[data-manual-compression]').isChecked(), true);
         await page.locator('[data-manual-start]').fill('100');
         await page.locator('[data-manual-end]').fill('119');
         await page.locator('[data-manual-coverage]').check();
-        await page.locator('[data-manual-atlas-add]').click();
+        await page.locator('[data-manual-atlas-manage]').click();
+        const addButton = await page.locator('[data-atlas-add]').boundingBox();
+        assert.ok(addButton.width >= 76 && addButton.height <= 40, 'atlas write button must stay horizontal under narrow host button styles');
+        await page.locator('[data-atlas-add]').click();
         await page.locator('.test-popup:not([hidden]) .test-submit').click();
         assert.equal(await page.locator('[data-manual-field="name"] input').isVisible(), true, 'invalid atlas draft must stay open');
         await page.locator('[data-manual-field="name"] input').fill('아주 긴 이름을 가진 여행자');
         await page.locator('[data-manual-field="appearance"] input').fill('오래전부터 함께 여행하며 서로의 마음을 이해하게 된 인물');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        await page.locator('[data-atlas-preview]').waitFor({ state: 'visible' });
+        assert.match(await page.locator('[data-atlas-preview]').innerText(), /아주 긴 이름을 가진 여행자/);
+        assert.match(await page.locator('[data-atlas-preview]').innerText(), /최종 도감/);
+        await page.locator('[data-atlas-kind]').selectOption('updated');
+        await page.locator('[data-atlas-target]').selectOption('existing-person');
+        await page.locator('[data-atlas-add]').click();
+        await page.locator('[data-manual-field="role"] input').fill('새로운 역할');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        await page.waitForFunction(() => document.querySelectorAll('[data-atlas-entry]')[1]?.textContent.includes('새로운 역할'));
+        assert.match(await page.locator('[data-atlas-entry]').nth(1).innerText(), /새로운 역할/);
+        await page.screenshot({ path: fileURLToPath(new URL(`atlas-${width}.png`, output)), fullPage: true });
         await page.locator('.test-popup:not([hidden]) .test-submit').click();
         await page.locator('[data-manual-tags]').fill('약속, 여행자, 관계 변화');
         await page.locator('[data-editor-add="emotion-group"]').click();
@@ -150,10 +205,38 @@ try {
         assert.equal(saved.structuredSummary.version, 5);
         assert.equal(saved.manual.countsAsSummary, true);
         assert.equal(saved.structuredSummary.data.memoryUpdates.people.created[0].name, '아주 긴 이름을 가진 여행자');
+        assert.equal(saved.structuredSummary.data.memoryUpdates.people.updated[0].targetId, 'existing-person');
+        assert.equal(saved.structuredSummary.data.memoryUpdates.people.updated[0].replace.role, '새로운 역할');
+        assert.equal(await page.evaluate(() => window.currentAtlas().people.length), 1, 'preview does not create saved atlas entries');
+        assert.equal(await page.evaluate(() => window.currentAtlas().people[0].role), '여행자');
         await page.evaluate(() => window.openManual());
+        await page.locator('[aria-label="메시지 범위 설명"]').click();
+        assert.equal(await page.locator('[role="tooltip"]').isVisible(), true);
+        assert.equal(await page.locator('[data-manual-range]').isChecked(), false, 'help does not toggle range');
+        await page.locator('[aria-label="메시지 범위 설명"]').click();
+        await page.locator('[data-manual-atlas-manage]').click();
+        await page.locator('[data-atlas-add]').click();
+        await page.locator('[data-manual-field="name"] input').fill('취소할 인물');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        assert.equal(await page.locator('[data-manual-atlas-count]').innerText(), '0');
         await page.locator('[data-string-value]').first().fill('범위 없는 보충 기억');
         await page.locator('.test-popup:not([hidden]) .test-submit').click();
         assert.equal(await page.evaluate(() => window.savedRecord.startId), null);
+        await page.evaluate(() => window.openEdit());
+        assert.equal(await page.locator('[data-manual-after]').inputValue(), '__current__');
+        assert.equal(await page.locator('[data-manual-range]').isChecked(), false);
+        await page.locator('[data-manual-after]').selectOption('b');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.evaluate(() => window.editedRecord.placement.afterRecordId), 'b');
+        await page.evaluate(() => window.openEdit());
+        await page.locator('[data-manual-range]').check();
+        await page.locator('[data-manual-start]').fill('40');
+        await page.locator('[data-manual-end]').fill('49');
+        await page.locator('[data-manual-coverage]').check();
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.evaluate(() => window.editedRecord.placement.startId), '40');
+        assert.equal(await page.evaluate(() => window.editedRecord.manual.countsAsSummary), true);
         await page.evaluate(() => window.openCompression());
         await page.locator('[data-excluded-action]').selectOption('keep');
         assert.equal(await page.locator('[data-excluded-after]').isVisible(), true);
@@ -163,10 +246,14 @@ try {
         const buttons = await page.locator('.stsm-records-toolbar-actions > button').evaluateAll(elements => elements.map(element => {
             const rect = element.getBoundingClientRect(); return { top: rect.top, right: rect.right, width: rect.width };
         }));
-        assert.equal(buttons.length, 6);
+        assert.equal(buttons.length, 5);
         if (width < 700) assert.equal(new Set(buttons.map(button => button.top)).size, 1, 'mobile toolbar must stay on one line');
         assert.ok(buttons.every(button => button.right <= width && button.width >= 30));
         await page.screenshot({ path: fileURLToPath(new URL(`toolbar-${width}.png`, output)), fullPage: true });
+        await page.evaluate(() => { document.querySelector('#test-root').dataset.recordMemoryView = 'long-term'; });
+        await page.locator('.stsm-add-record').click();
+        assert.equal(await page.locator('.test-popup').count(), 0, 'long-term click must not create an active-memory form');
+        assert.match(await page.evaluate(() => window.lastInfo), /아직 지원하지/);
         assert.deepEqual(errors, []);
         await page.close();
         console.log(`UI checks passed: ${width}px`);

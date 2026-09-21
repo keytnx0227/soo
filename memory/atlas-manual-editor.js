@@ -86,7 +86,7 @@ export function bindManualAtlasEntryButtons(root) {
     });
 }
 
-export async function showManualAtlasEntryEditor(category, entityId = null, { draft = false, initial = null } = {}) {
+export async function showManualAtlasEntryEditor(category, entityId = null, { draft = false, initial = null, update = false } = {}) {
     const config = getConfig(category);
     const source = entityId
         ? getManualAtlasEntries(category).find(entry => entry.id === String(entityId))
@@ -100,7 +100,7 @@ export async function showManualAtlasEntryEditor(category, entityId = null, { dr
     const form = document.createElement('div');
     form.className = 'stsm-atlas-editor stsm-manual-atlas-editor';
     form.innerHTML = `
-        <div class="stsm-section-title">${config.label} 직접 ${current ? '수정' : '추가'}</div>
+        <div class="stsm-section-title">${config.label} ${update ? '업데이트' : `직접 ${current ? '수정' : '추가'}`}</div>
         <label class="stsm-manual-auto-update">
             <span>
                 <strong>자동 갱신 허용</strong>
@@ -112,7 +112,8 @@ export async function showManualAtlasEntryEditor(category, entityId = null, { dr
             </span>
         </label>
         <div class="stsm-atlas-editor-fields">
-            ${config.fields.map(([path, label, type]) => renderField(path, label, type, getPath(current, path))).join('')}
+            ${config.fields.map(([path, label, type]) => renderField(path,
+                update && ['aliases', 'facts'].includes(path) ? `추가할 ${label}` : label, type, getPath(current, path))).join('')}
             ${category === 'people' ? renderRelationships(current?.relationships) : ''}
             ${category === 'commitments' ? renderParticipants(current?.participants) : ''}
         </div>

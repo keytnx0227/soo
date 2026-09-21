@@ -524,6 +524,7 @@ export async function updateSummaryRecordContent(recordId, content, {
     compressionData,
     contentEdited,
     manual,
+    placement,
 } = {}) {
     const normalizedId = String(recordId);
     const normalizedContent = String(content || '').trim();
@@ -531,6 +532,7 @@ export async function updateSummaryRecordContent(recordId, content, {
 
     const store = getStore();
     const previousRecords = store.records;
+    const previousConversation = store.recentRevisionConversation;
     let updatedRecord = null;
 
     store.records = store.records.map(record => {
@@ -539,6 +541,7 @@ export async function updateSummaryRecordContent(recordId, content, {
         const previousRuntimeRecord = hydrateRecord(record);
         const nextRecord = {
             ...record,
+            ...(placement ? prepareManualPlacement(record, placement, store.records) : {}),
             ...(manual && record.manual ? { manual: normalizeManualRecord(manual) } : {}),
             sourceFingerprint: sourceFingerprint === undefined
                 ? record.sourceFingerprint
@@ -554,6 +557,7 @@ export async function updateSummaryRecordContent(recordId, content, {
                 },
             updatedAt: new Date().toISOString(),
         };
+        if (nextRecord.manual && !hasMessageRange(nextRecord)) nextRecord.manual = { ...nextRecord.manual, countsAsSummary: false };
         const keepLegacyContent = contentEdited === undefined
             ? Boolean(record.legacyContent)
             : Boolean(contentEdited);
@@ -570,16 +574,38 @@ export async function updateSummaryRecordContent(recordId, content, {
     });
 
     if (!updatedRecord) return null;
+    if (placement && store.recentRevisionConversation?.recordId === normalizedId) {
+        store.recentRevisionConversation = null;
+    }
 
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.records = previousRecords;
+        store.recentRevisionConversation = previousConversation;
         recordRenderCache.delete(normalizedId);
         throw error;
     }
     notifyRecordsChanged();
     return updatedRecord;
+}
+
+function prepareManualPlacement(record, placement, records) {
+    if (!record.manual || record.type !== 'summary') throw new Error('직접 추가한 요약 기억만 범위와 위치를 변경할 수 있습니다.');
+    if (record.compressedBy || record.segmentedCompressedBy) throw new Error('압축본에 연결된 기억은 범위와 위치를 변경할 수 없습니다.');
+    const { startId, endId, afterRecordId } = placement;
+    if (startId !== null || endId !== null) {
+        const start = Number(startId);
+        const end = Number(endId);
+        if (startId == null || endId == null || String(startId).trim() === '' || String(endId).trim() === ''
+            || !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start > end
+            || end >= SillyTavern.getContext().chat.length) throw new Error('현재 메시지 내의 올바른 시작·종료 ID를 입력해주세요.');
+        return { startId: start, endId: end, position: start === record.startId && end === record.endId ? record.position : undefined };
+    }
+    const candidates = getModeRecords(records, getCompressionMode()).filter(item => item.id !== record.id && !getCompressionParentId(item, getCompressionMode()));
+    return { startId: null, endId: null,
+        position: afterRecordId === '__current__' ? recordPosition(record) : positionAfter(candidates, afterRecordId),
+    };
 }
 
 export async function saveSummaryContentMigrationResults(updates) {

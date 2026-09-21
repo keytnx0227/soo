@@ -3,11 +3,16 @@ import { getSettings } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
 import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { normalizeStructuredSummaryData, renderStructuredSummary } from '../summary/summary-format.js';
-import { getSummaryRecord, updateSummaryRecordContent } from '../summary/summary-store.js';
+import { getSummaryRecord, getSummaryRecordIndex, updateSummaryRecordContent } from '../summary/summary-store.js';
+import { getExtensionState } from '../core/extension-state.js';
+import { renderManualRecordSettings, bindManualRecordSettings } from './manual-record-settings.js';
 import { moveEditorItem, refreshEditorOrderControls } from './structured-editor-order.js';
 import { recordRangeLabel } from '../summary/record-placement.js';
 
 export async function openStructuredSummaryEditor(recordId) {
+    const context = SillyTavern.getContext();
+    const chatRef = context.chat;
+    const metadataRef = context.chatMetadata;
     const record = getSummaryRecord(recordId);
     if (!record?.structuredSummary?.data || record.type !== 'summary') {
         throw new Error('구조화 편집이 가능한 일반 요약 레코드를 찾지 못했습니다.');
@@ -17,6 +22,16 @@ export async function openStructuredSummaryEditor(recordId) {
     form.className = 'stsm-structured-summary-editor';
     form.innerHTML = renderEditor(record);
     bindEditorActions(form);
+    const canMove = record.manual && !record.compressedBy && !record.integratedCompressedBy && !record.segmentedCompressedBy;
+    if (canMove) {
+        form.querySelector('.stsm-manual-record-compression')?.remove();
+        const allRecords = getSummaryRecordIndex();
+        const candidates = allRecords.filter(item => item.id !== record.id && !item.compressedBy);
+        form.insertAdjacentHTML('beforeend', renderManualRecordSettings(candidates, allRecords, chatRef.length));
+        bindManualRecordSettings(form, candidates, allRecords, chatRef.length, item => getSummaryRecord(item.id), record);
+    } else if (record.manual) {
+        form.insertAdjacentHTML('beforeend', '<p class="stsm-manual-placement-note">압축본에 연결된 기억은 범위와 위치를 변경할 수 없습니다.</p>');
+    }
 
     let updatedRecord = null;
     const popup = new Popup(form, POPUP_TYPE.CONFIRM, '', {
@@ -28,6 +43,15 @@ export async function openStructuredSummaryEditor(recordId) {
         onClosing: async currentPopup => {
             if (currentPopup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
             try {
+                const current = SillyTavern.getContext();
+                if (current.chat !== chatRef || current.chatMetadata !== metadataRef) throw new Error('채팅이 변경되었습니다. 수정창을 다시 열어주세요.');
+                if (getExtensionState().operation) throw new Error('진행 중인 작업이 끝난 뒤 저장해주세요.');
+                const rangeEnabled = canMove && form.querySelector('[data-manual-range]').checked;
+                const placement = canMove ? {
+                    startId: rangeEnabled ? form.querySelector('[data-manual-start]').value : null,
+                    endId: rangeEnabled ? form.querySelector('[data-manual-end]').value : null,
+                    afterRecordId: form.querySelector('[data-manual-after]').value || null,
+                } : undefined;
                 const data = normalizeStructuredSummaryData(collectEditorData(form, record.structuredSummary.data));
                 const settings = getSettings().summarization;
                 const content = renderStructuredSummary(data, {
@@ -37,7 +61,11 @@ export async function openStructuredSummaryEditor(recordId) {
                     outputSections: settings.summaryOutputSections,
                 });
                 updatedRecord = await updateSummaryRecordContent(record.id, content, {
-                    ...(record.manual ? { manual: { ...record.manual, includeInCompression: form.querySelector('[data-summary-compression]').checked } } : {}),
+                    placement,
+                    ...(record.manual ? { manual: { ...record.manual,
+                        countsAsSummary: canMove ? Boolean(rangeEnabled && form.querySelector('[data-manual-coverage]').checked) : record.manual.countsAsSummary,
+                        includeInCompression: form.querySelector(canMove ? '[data-manual-compression]' : '[data-summary-compression]').checked,
+                    } } : {}),
                     contentEdited: false,
                     structuredSummary: {
                         ...record.structuredSummary,

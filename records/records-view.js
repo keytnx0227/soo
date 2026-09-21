@@ -1,4 +1,5 @@
 import { Popup, POPUP_TYPE } from '../../../../../scripts/popup.js';
+import { bindManualRecordView } from './manual-record-view.js';
 import { compareRecordPosition, hasMessageRange, recordRangeLabel } from '../summary/record-placement.js';
 import { getTokenCount } from '../../../../../scripts/tokenizers.js';
 import { openSummaryRecordDetail } from './record-detail-view.js';
@@ -248,6 +249,7 @@ async function showRecordsFullscreen(
         renderExtensionControls(content, getExtensionState());
     };
     const handleRecordsChanged = () => render();
+    bindManualRecordView(content, render);
     const unsubscribeExtensionState = subscribeExtensionState(state => renderExtensionControls(content, state));
     sort.addEventListener('change', render);
     bindRecordSearch(content, () => {

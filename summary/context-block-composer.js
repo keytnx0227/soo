@@ -6,6 +6,7 @@ import { formatFeelings } from '../memory/people-feelings.js';
 import { evaluatePeopleRetrieval } from '../memory/people-retrieval.js';
 import { evaluateWorldRetrieval } from '../memory/world-retrieval.js';
 import { getActiveSummaryRecords } from './summary-store.js';
+import { compareRecordPosition, recordRangeLabel } from './record-placement.js';
 import { composeAtomicContext } from './context-block-trimmer.js';
 
 export function buildContextBlockComposition(budget = Infinity, {
@@ -64,15 +65,15 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
     const eligibleWorld = worldRetrieval.filter(result => result.eligible);
     const sources = {
         [SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS]: [...(records || [])]
-            .sort((left, right) => left.startId - right.startId || left.endId - right.endId)
+            .sort(compareRecordPosition)
             .map(record => ({
                 id: String(record.id),
-                label: `#${record.startId} ~ #${record.endId}`,
+                label: recordRangeLabel(record),
                 retrieved: retrievedIds.has(String(record.id)),
                 pinned: pinnedIds.has(String(record.id)),
                 values: {
-                    sumiRecordStartId: record.startId,
-                    sumiRecordEndId: record.endId,
+                    sumiRecordStartId: record.startId ?? 'supplement',
+                    sumiRecordEndId: record.endId ?? 'supplement',
                     sumiRecordContent: record.content,
                 },
             })),

@@ -214,7 +214,6 @@ export function buildPopup() {
         <section id="stsm-panel-records" class="stsm-panel" role="tabpanel" hidden>
             <div class="stsm-records-toolbar">
                 <div class="stsm-records-toolbar-actions">
-                    <button id="stsm-add-record" class="menu_button interactable" type="button" title="레코드 직접 추가" aria-label="레코드 직접 추가"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
                     <button id="stsm-open-compression" class="menu_button interactable" type="button" title="압축하기" aria-label="압축하기">
                         <i class="fa-solid fa-compress" aria-hidden="true"></i>
                         <span>압축하기</span>
@@ -649,6 +648,7 @@ export function renderRecordSearchControls() {
                 </button>
             </div>
             <span class="stsm-record-search-count" aria-live="polite"></span>
+            <button class="stsm-add-record menu_button interactable" type="button" title="현재 탭에 레코드 추가" aria-label="현재 탭에 레코드 추가"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
         </div>
     `;
 }
