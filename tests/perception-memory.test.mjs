@@ -183,6 +183,75 @@ test('final rendering contains only names, knowledge and impression, and remains
     assert.equal(trimmed.omittedUnits[0].kind, 'perceptions');
 });
 
+test('v30 replaces only the exact old perception default and preserves all other prompt data', async () => {
+    let count = 0;
+    const scope = await load('../core/settings.js', { ...format, ...templates, ...compression, structuredClone,
+        createId: () => `id-${++count}`, normalizePromptScope: scope => scope || { type: 'global' },
+    });
+    const oldRule = vm.runInContext('V29_PERCEPTION_EXTRACTION_RULE', scope);
+    const newRule = vm.runInContext('DEFAULT_SUMMARY_EXTRACTION_RULES.perceptions', scope);
+    const editor = scope.normalizePromptEditor({}, 'summary');
+    editor.schemaVersion = 29;
+    editor.hideSeparators = true;
+    const preset = editor.presets[0];
+    preset.blocks.reverse();
+    preset.blocks.find(block => block.id === 'summary-main').content = 'CUSTOM MAIN: preserve exactly\n  ';
+    const rules = preset.blocks.find(block => block.kind === 'summaryExtractionRules').config.rules;
+    for (const key of Object.keys(rules)) rules[key] = key === 'perceptions' ? oldRule : `CUSTOM ${key}\n  `;
+    const custom = structuredClone(preset);
+    custom.id = 'custom-perceptions';
+    custom.blocks.find(block => block.kind === 'summaryExtractionRules').config.rules.perceptions = `${oldRule}\nMy own addition.`;
+    editor.presets.push(custom);
+    editor.activePresetId = custom.id;
+    const expected = JSON.parse(JSON.stringify(editor));
+    expected.schemaVersion = 30;
+    expected.presets[0].blocks.find(block => block.kind === 'summaryExtractionRules').config.rules.perceptions = newRule;
+    const migrated = scope.normalizePromptEditor(editor, 'summary');
+    assert.deepEqual(JSON.parse(JSON.stringify(migrated)), expected);
+    assert.deepEqual(JSON.parse(JSON.stringify(scope.normalizePromptEditor(migrated, 'summary'))), expected);
+    assert.equal(rules.perceptions, oldRule, 'migration must not mutate its input');
+    for (const type of ['revision', 'compression']) {
+        const other = scope.normalizePromptEditor({}, type);
+        other.schemaVersion = 29;
+        const expectedOther = JSON.parse(JSON.stringify(other));
+        expectedOther.schemaVersion = 30;
+        assert.deepEqual(JSON.parse(JSON.stringify(scope.normalizePromptEditor(other, type))), expectedOther);
+    }
+});
+
+test('all perception review modes use the person-focused rule without affecting other categories', async () => {
+    const settings = await load('../core/settings.js', { ...format, ...templates, ...compression, structuredClone,
+        createId: () => 'test-id', normalizePromptScope: scope => scope || { type: 'global' },
+    });
+    const rule = vm.runInContext('DEFAULT_SUMMARY_EXTRACTION_RULES.perceptions', settings);
+    const kinds = vm.runInContext('BLOCK_KINDS', settings);
+    const preset = { blocks: [
+        { kind: kinds.SUMMARY_MESSAGES, content: '{{sumiMessageContent}}' },
+        { kind: kinds.SUMMARY_EXTRACTION_RULES, config: { rules: { perceptions: rule, people: 'CUSTOM PEOPLE RULE' } } },
+        { kind: kinds.PERCEPTION_MEMORY, content: '{{sumiPerceptions}}' },
+    ] };
+    const scope = await load('../prompts/prompt-builder.js', {
+        ...format, BLOCK_KINDS: kinds, PROMPT_TYPES: { SUMMARY: 'summary' },
+        getActivePreset: () => preset, getSettings: () => ({ summarization: { outputLanguage: 'source' } }),
+        SillyTavern: { getContext: () => ({}) }, substituteParams: text => text,
+        buildPerceptionMemoryPromptContext: () => 'REGISTERED SLOTS',
+        buildPeopleMemoryPromptContext: () => '', buildItemMemoryPromptContext: () => '',
+        buildCommitmentMemoryPromptContext: () => '', buildEventMemoryPromptContext: () => '', buildWorldMemoryPromptContext: () => '',
+    });
+    for (const mode of ['quick', 'record', 'chronological']) {
+        const prompt = scope.buildAtlasReviewPrompt({ messages: [], startId: 0, endId: 9 }, 'perceptions', { mode });
+        assert.ok(prompt.includes(rule));
+        assert.match(prompt, /She feels uncomfortable in crowded places/);
+        assert.match(prompt, /require evidence that the observer actually formed that impression/);
+        assert.match(prompt, /knowledge about the subject as a person/);
+        assert.ok(!prompt.includes('Record only what that observer learned or believed'));
+        const peoplePrompt = scope.buildAtlasReviewPrompt({ messages: [], startId: 0, endId: 9 }, 'people', { mode });
+        assert.match(peoplePrompt, /CUSTOM PEOPLE RULE/);
+        assert.ok(!peoplePrompt.includes('Perception review exception'));
+        assert.ok(!peoplePrompt.includes(rule));
+    }
+});
+
 test('selected-slot retrospective reviews preserve other directions and reject unselected responses', async () => {
     const reverse = { ...slot, id: 'ba', observerId: 'b', subjectId: 'a' };
     const records = [record('r1', 19, [append('A knew B'), append('B knew A', 'ba')], { type: 'summary' })];

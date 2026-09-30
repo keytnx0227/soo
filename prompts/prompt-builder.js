@@ -132,7 +132,7 @@ Review only the selected atlas category using the messages inside <Atlas Review 
                 : `<Previous Review Contribution>\n${currentRecordContribution}\n</Previous Review Contribution>`
             : '',
         rule,
-        category === 'perceptions' ? 'Perception review exception: never create slots. Only update the registered observer -> subject slots provided in the context, with created: []. Record only what that observer learned or believed in the target messages, never reader knowledge, hidden truth, or information copied from a subject profile without evidence that the observer knew it. Preserve direction. Append concise facts; use factUpdates only with supplied fact IDs when a belief actually changed. Do not describe future awareness as knowledge at an earlier time. For a replacement contribution, retain valid facts first introduced in this contribution, even if they already appear in the current snapshot.' : '',
+        category === 'perceptions' ? 'Perception review exception: never create slots. Only update the registered observer -> subject slots provided in the context, with created: []. Apply the selected perception extraction rule to knowledge about the subject as a person and the observer\'s impression of them, grounded in the target messages. Preserve direction. Append concise facts; use factUpdates only with supplied fact IDs when a belief actually changed. Do not describe future awareness as knowledge at an earlier time. For a replacement contribution, retain valid facts first introduced in this contribution, even if they already appear in the current snapshot.' : '',
         values.sumiAtlasReviewJsonContract,
     ];
     return parts.map(part => String(part || '').trim()).filter(Boolean).join('\n\n');

@@ -29,7 +29,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 29;
+const PROMPT_SCHEMA_VERSION = 30;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -520,9 +520,19 @@ function insertEmotionalWeightRule(content) {
     return `${current.trimEnd()}\n\n${EMOTIONAL_WEIGHT_RULE}`;
 }
 
+const V29_PERCEPTION_EXTRACTION_RULE = `# Directed Perceptions\nUpdate only user-registered observer -> subject slots from Current Perceptions. Never create slots or reverse a direction. Record only what that observer learned, heard, or observed in the target, not facts merely known to the reader or listed in a profile. Write short statements in the observer's knowledge state, even if objectively false; never append secret truth, evidence explanations, or reader commentary. Add genuinely new facts through append.facts. Correct a known fact through factUpdates using its exact ID, not by appending a contradictory duplicate. Replace impression only when the observer's overall subjective judgment changed. Omit unchanged slots and fields. Never infer that everyone present learned an unspoken fact.`;
+
 const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V27_DEFAULT_SUMMARY_EXTRACTION_RULES,
-    perceptions: `# Directed Perceptions\nUpdate only user-registered observer -> subject slots from Current Perceptions. Never create slots or reverse a direction. Record only what that observer learned, heard, or observed in the target, not facts merely known to the reader or listed in a profile. Write short statements in the observer's knowledge state, even if objectively false; never append secret truth, evidence explanations, or reader commentary. Add genuinely new facts through append.facts. Correct a known fact through factUpdates using its exact ID, not by appending a contradictory duplicate. Replace impression only when the observer's overall subjective judgment changed. Omit unchanged slots and fields. Never infer that everyone present learned an unspoken fact.`,
+    perceptions: `# Directed Perceptions
+This section records the subject's character profile and the observer's subjective impression of them, limited to what the observer knows.
+- Known information: Briefly record what the observer has learned about the subject's preferences, habits, characteristics, past, identity or status, values, feelings, or attitudes. Even if mistaken, write what the observer believes to be true.
+- Overall impression: Briefly describe what kind of person the observer considers the subject to be.
+- From conversations or events, record what was newly revealed about the subject as a person. When generalizing behavior into a personality trait, require evidence that the observer actually formed that impression.
+- Example: "They agreed to attend a ball together" is a plan. "She feels uncomfortable in crowded places" is information about the subject; record it when the observer has learned this.
+- If no relevant new information or change in impression is revealed, make no update.
+
+Update only user-registered observer -> subject slots from Current Perceptions. Never create slots or reverse a direction. Add genuinely new facts through append.facts. Correct a known fact through factUpdates using its exact ID, not by appending a contradictory duplicate. Replace impression only when the observer's overall subjective judgment changed. Omit unchanged slots and fields.`,
     people: insertEmotionalWeightRule(V27_DEFAULT_SUMMARY_EXTRACTION_RULES.people
         .replace(
             '- Each feeling must communicate its emotional quality, depth or intensity, and a compact accumulated cause. Keep the cause self-contained, but do not recount event chronology.',
@@ -2391,6 +2401,15 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
             content: '<Current Perceptions>\n{{sumiPerceptions}}\n</Current Perceptions>',
             locked: true, kind: BLOCK_KINDS.PERCEPTION_MEMORY,
         }));
+    }
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 30) {
+        migratedBlocks = migratedBlocks.map(block => {
+            if (block.kind !== BLOCK_KINDS.SUMMARY_EXTRACTION_RULES
+                || block.config?.rules?.perceptions !== V29_PERCEPTION_EXTRACTION_RULE) return block;
+            return { ...block, config: { ...block.config,
+                rules: { ...block.config.rules, perceptions: DEFAULT_SUMMARY_EXTRACTION_RULES.perceptions },
+            } };
+        });
     }
     return { ...preset, blocks: migratedBlocks };
 }
