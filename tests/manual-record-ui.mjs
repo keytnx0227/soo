@@ -16,6 +16,10 @@ for (const name of [
     'records/record-memory-updates-view.js', 'summary/context-block-composer.js', 'ui/section-tooltip.js',
     'memory/atlas-source-record.js', 'memory/atlas-entity-id.js', 'memory/atlas-projection-service.js', 'memory/atlas-corrections.js',
     'memory/people-memory.js', 'memory/item-memory.js', 'memory/commitment-memory.js', 'memory/event-memory.js', 'memory/world-memory.js',
+    'records/manual-author-engine.js', 'records/manual-author-view.js',
+    'memory/perception-memory.js', 'memory/perception-memory-view.js',
+    'memory/atlas-metadata.js',
+    'memory/atlas-review-service.js', 'memory/atlas-review-view.js',
 ]) sources[name] = await readFile(new URL(name, root), 'utf8');
 const css = await readFile(new URL('style.css', root), 'utf8');
 const output = new URL('personal-notes/manual-record-ui/', root);
@@ -25,7 +29,7 @@ try {
     for (const width of [360, 390, 1000]) {
         const page = await browser.newPage({ viewport: { width, height: 850 } });
         const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
+        page.on('pageerror', error => { errors.push(error.message); console.error(error.message); });
         await page.setContent('<html lang="ko"><body><main id="test-root"></main></body></html>');
         await page.addStyleTag({ content: `
             * { box-sizing: border-box; } body { margin: 0; padding: 12px; font: 14px Arial, sans-serif; color: #333; background: #f6f6f7; }
@@ -44,10 +48,10 @@ try {
             const scope = { ...load('core/utils.js', ['escapeHtml', 'createId']), ...load('summary/record-placement.js', ['hasMessageRange', 'recordRangeLabel', 'recordSelectionLabel', 'recordPosition', 'compareRecordPosition', 'rangeAwareTemplate', 'positionAfter']) };
             Object.assign(scope, load('memory/people-feelings.js', ['normalizeFeelings', 'formatFeelings']));
             Object.assign(scope, load('summary/summary-record-template.js', ['DEFAULT_SUMMARY_CONTENT_TEMPLATE', 'renderSummaryContentTemplate'], scope));
-            Object.assign(scope, load('summary/summary-format.js', ['SUMMARY_FORMAT_VERSION', 'SUMMARY_SECTION_DESCRIPTIONS', 'DEFAULT_SUMMARY_SECTIONS', 'DEFAULT_MEMORY_SECTIONS', 'normalizeStructuredSummaryData', 'renderStructuredSummary'], scope));
+            Object.assign(scope, load('summary/summary-format.js', ['SUMMARY_FORMAT_VERSION', 'SUMMARY_SECTION_DESCRIPTIONS', 'DEFAULT_SUMMARY_SECTIONS', 'DEFAULT_MEMORY_SECTIONS', 'normalizeStructuredSummaryData', 'renderStructuredSummary', 'buildSummaryJsonContract', 'parseStructuredSummaryResponse'], scope));
             Object.assign(scope, load('records/structured-editor-order.js', ['moveEditorItem', 'refreshEditorOrderControls']));
             Object.assign(scope, load('memory/people-feelings-view.js', ['handleFeelingEditorClick', 'readFeelingEditor', 'renderFeelingEditor'], scope));
-            const context = { chat: Array.from({ length: 200 }, () => ({})), chatMetadata: {} };
+            const context = { chat: Array.from({ length: 200 }, () => ({})), chatMetadata: {}, saveMetadata: async () => {}, eventSource: { emit: async () => {} }, eventTypes: { GENERATION_STOPPED: 'stopped' } };
             const settings = { summarization: { outputLanguage: 'source', compressionGroupSize: 3,
                 contextBlocks: [{ kind: 'people', enabled: true, entryTemplate: '{{sumiPersonName}}: {{sumiPersonRole}}\n{{sumiPersonAppearance}}' }],
             } };
@@ -86,7 +90,7 @@ try {
                 getSummaryRecord: id => records.find(record => record.id === id),
                 getSummaryRecords: () => records, filterLlmVisibleSummaryRecords: records => records,
                 getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}), getAtlasReviewRecords: () => [],
-                SUMMARY_CONTEXT_BLOCK_KINDS: { RECORDS: 'records', PEOPLE: 'people', ITEMS: 'items', EVENTS: 'events', COMMITMENTS: 'commitments', WORLD: 'world' },
+                SUMMARY_CONTEXT_BLOCK_KINDS: { RECORDS: 'records', PEOPLE: 'people', ITEMS: 'items', EVENTS: 'events', COMMITMENTS: 'commitments', WORLD: 'world', PERCEPTIONS: 'perceptions' },
                 addSummaryRecord: async record => { window.savedRecord = record; return record; },
                 updateSummaryRecordContent: async (id, content, options) => { window.editedRecord = { id, ...options }; return window.editedRecord; },
                 validateSummaryRange: (start, end) => {
@@ -94,21 +98,41 @@ try {
                     return { start: +start, end: +end };
                 },
             });
-            Object.assign(scope, load('summary/range-utils.js', ['getCoveredRanges', 'getCoverageSegments'], scope));
+            Object.assign(scope, load('summary/range-utils.js', ['getCoveredRanges', 'getCoverageSegments', 'formatRanges'], scope));
             Object.assign(scope, load('records/manual-record-settings.js', ['renderManualRecordSettings', 'bindManualRecordSettings', 'renderManualInfo'], scope));
             Object.assign(scope, load('memory/atlas-source-record.js', ['canApplyAtlasReplacement', 'compareAtlasSourceRecords', 'getAtlasSourceRange'], scope));
-            Object.assign(scope, load('memory/atlas-entity-id.js', ['getCreatedAtlasEntityId'], scope));
-            for (const [file, name] of [['people', 'People'], ['item', 'Item'], ['commitment', 'Commitment'], ['event', 'Event'], ['world', 'World']]) {
+            Object.assign(scope, load('memory/atlas-entity-id.js', ['getCreatedAtlasEntityId', 'createStableAtlasEntityId'], scope));
+            for (const [file, name] of [['people', 'People'], ['item', 'Item'], ['commitment', 'Commitment'], ['event', 'Event'], ['world', 'World'], ['perception', 'Perception']]) {
                 Object.assign(scope, load(`memory/${file}-memory.js`, [`derive${name}Atlas`], scope));
             }
             Object.assign(scope, load('memory/atlas-corrections.js', ['applyAtlasCorrections'], scope));
-            Object.assign(scope, load('memory/atlas-projection-service.js', ['getAtlasProjection'], scope));
+            Object.assign(scope, load('memory/atlas-metadata.js', ['getManualAtlasEntries', 'getAtlasCorrections', 'getAtlasReviewRecords', 'addManualAtlasEntry', 'updateManualAtlasEntry', 'setAtlasEntityExcluded', 'setAtlasEntityLlmHidden'], scope));
+            Object.assign(scope, load('memory/atlas-projection-service.js', ['getAtlasProjection', 'invalidateAtlasProjection'], scope));
+            window.addEventListener('stsm:atlas-changed', () => scope.invalidateAtlasProjection());
             Object.assign(scope, load('summary/context-block-composer.js', ['buildRenderedBlocks'], scope));
             Object.assign(scope, load('records/record-memory-updates-view.js', ['renderRecordMemoryUpdateDetails'], scope));
             Object.assign(scope, load('records/manual-atlas-draft.js', ['atlasUpdateEditorInitial', 'createManualAtlasUpdate', 'collectManualAtlasUpdates'], scope));
             Object.assign(scope, load('memory/atlas-manual-editor.js', ['showManualAtlasEntryEditor'], scope));
+            Object.assign(scope, load('memory/perception-memory-view.js', ['showPerceptionUpdateEditor', 'renderPerceptionMemory', 'bindPerceptionMemoryView'], scope));
             Object.assign(scope, load('records/manual-atlas-view.js', ['openManualAtlasManager'], scope));
             Object.assign(scope, load('records/structured-summary-editor.js', ['renderEditor', 'bindEditorActions', 'collectEditorData', 'openStructuredSummaryEditor'], scope));
+            Object.assign(scope, load('records/manual-author-engine.js', ['composeAuthorPrompt', 'parseAuthorDraft', 'authorEntries'], scope));
+            Object.assign(scope, {
+                beginOperation: () => Symbol(), endOperation() {},
+                getTokenCountAsync: async prompt => Math.ceil(prompt.length / 4),
+                buildSummaryPrompt: async chunk => { window.lastSourceCount = chunk.messages.length; return 'CUSTOM PRESET'; },
+                createSummaryChunks: (chat, startId, endId) => [{ startId, endId, messages: chat.slice(startId, endId + 1) }],
+                generateSummary: async (prompt, options) => {
+                    window.authorCalls = (window.authorCalls || 0) + 1;
+                    window.authorPrompt = prompt; window.authorOutput = options.maxTokens;
+                    if (window.failAuthor) throw new Error('mock request failed');
+                    if (window.deferAuthor) return await new Promise(resolve => { window.finishAuthor = resolve; });
+                    if (window.invalidAuthor) return 'invalid json';
+                    if (prompt.includes('Current response mode: DRAFT WRITING')) return JSON.stringify({ title: '함께 작성한 기억', plot: ['옛 수동 요약을 구조화한 내용'], quotes: [{ speaker: 'A', text: '꽃처럼 부드러운 말' }], memoryUpdates: { people: { created: [{ name: '새 인물' }] } } });
+                    return '대사는 보존하고 사건과 감정을 나눠보면 좋겠어요.';
+                },
+            });
+            Object.assign(scope, load('records/manual-author-view.js', ['openManualAuthor'], scope));
             window.openEdit = () => {
                 records[1].type = 'summary';
                 records[1].structuredSummary = { data: { title: '보충 기록', plot: ['보존할 내용'] } };
@@ -123,6 +147,21 @@ try {
                 document.querySelector('#test-root').replaceChildren(popup.querySelector('.stsm-records-toolbar'), popup.querySelector('.stsm-record-memory-browser'));
                 manual.bindManualRecordView(document.querySelector('#test-root'));
             };
+            window.renderPerceptions = () => {
+                records[0].type = 'summary';
+                records[0].structuredSummary.data.memoryUpdates.people.created.push({ sourceId: 'second-person', name: '아주 긴 이름을 가진 두 번째 인물', role: '친구' });
+                settings.summarization.contextBlocks.push({ kind: 'perceptions', enabled: true, entryTemplate: '{{sumiPerceptionObserver}} -> {{sumiPerceptionSubject}}\n{{sumiPerceptionFacts}}\n{{sumiPerceptionImpression}}' });
+                scope.invalidateAtlasProjection();
+                const popup = popupTemplate.buildPopup();
+                const root = document.querySelector('#test-root');
+                root.replaceChildren(popup.querySelector('.stsm-perception-section'));
+                scope.bindPerceptionMemoryView(root);
+            };
+            window.openPerceptionDraft = () => { void scope.openManualAtlasManager([], memoryUpdates => ({ id: 'perception-draft', startId: 40, endId: 49, structuredSummary: { data: { memoryUpdates } } }))
+                .then(result => { window.perceptionDraft = result; }); };
+            Object.assign(scope, load('memory/atlas-review-service.js', ['ATLAS_REVIEW_CATEGORIES', 'ATLAS_REVIEW_MODES', 'getAtlasReviewOverview', 'getAtlasReviewRecordCandidates'], scope));
+            const review = load('memory/atlas-review-view.js', ['openAtlasReviewPopup'], scope);
+            window.openPerceptionReview = () => { void review.openAtlasReviewPopup(); };
             const compression = load('summary/compression-view.js', ['bindCompressionView'], {
                 ...scope, getCompressionCandidates: () => records,
                 isCompressionIncluded: record => record.manual?.includeInCompression !== false,
@@ -137,6 +176,54 @@ try {
             window.openManual();
             load('ui/section-tooltip.js', ['bindSectionTooltips']).bindSectionTooltips();
         }, { sources });
+        await page.locator('[data-manual-author]').click();
+        await page.locator('[data-author-input]').fill('이 수동 요약을 어떻게 정리할까?');
+        assert.equal(await page.evaluate(() => window.authorCalls || 0), 0, 'typing does not trigger requests');
+        await page.locator('[data-author-send]').click();
+        await page.waitForFunction(() => document.querySelector('[data-author-history]')?.textContent.includes('대사는 보존'));
+        assert.equal(await page.evaluate(() => window.lastSourceCount), 0);
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.match(await page.locator('[data-author-status]').innerText(), /먼저 생성/);
+        await page.evaluate(() => { window.failAuthor = true; });
+        await page.locator('[data-author-input]').fill('실패할 요청');
+        await page.locator('[data-author-send]').click();
+        await page.waitForFunction(() => document.querySelector('[data-author-status]')?.textContent.includes('mock request failed'));
+        assert.equal(await page.locator('.stsm-author-turn').count(), 2);
+        assert.equal(await page.locator('[data-author-input]').inputValue(), '실패할 요청');
+        await page.evaluate(() => { window.failAuthor = false; });
+        await page.locator('input[value="write"]').check();
+        await page.locator('[data-author-input]').fill('좋아 그대로 구조화해줘');
+        await page.locator('[data-author-send]').click();
+        await page.waitForFunction(() => document.querySelector('[data-author-version]')?.textContent === 'v1');
+        assert.match(await page.locator('[data-author-render]').innerText(), /꽃처럼 부드러운 말/);
+        assert.match(await page.locator('[data-author-render]').innerText(), /새 인물/);
+        await page.evaluate(() => { window.invalidAuthor = true; });
+        await page.locator('[data-author-input]').fill('형식 오류 테스트');
+        await page.locator('[data-author-send]').click();
+        await page.waitForFunction(() => document.querySelector('[data-author-status]')?.textContent.includes('JSON'));
+        assert.equal(await page.locator('[data-author-version]').innerText(), 'v1');
+        assert.equal(await page.locator('.stsm-author-turn').count(), 4);
+        await page.evaluate(() => { window.invalidAuthor = false; window.deferAuthor = true; });
+        await page.locator('[data-author-input]').fill('중단할 요청');
+        await page.locator('[data-author-send]').click();
+        await page.waitForFunction(() => typeof window.finishAuthor === 'function');
+        await page.locator('[data-author-stop]').click();
+        await page.evaluate(() => { window.finishAuthor(JSON.stringify({ plot: ['discarded'] })); window.deferAuthor = false; });
+        await page.waitForFunction(() => !document.querySelector('[data-author-send]').disabled);
+        assert.equal(await page.locator('[data-author-version]').innerText(), 'v1');
+        assert.equal(await page.locator('.stsm-author-turn').count(), 4);
+        await page.locator('[data-author-input]').fill('');
+        await page.screenshot({ path: fileURLToPath(new URL(`author-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        assert.equal(await page.locator('[data-string-value]').first().inputValue(), '', 'closing author must not modify manual inputs');
+        await page.locator('[data-manual-author]').click();
+        assert.equal(await page.locator('[data-author-version]').innerText(), 'v1');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.locator('[data-string-value]').first().inputValue(), '옛 수동 요약을 구조화한 내용');
+        assert.equal(await page.locator('[data-manual-atlas-count]').innerText(), '1');
+        assert.equal(await page.evaluate(() => window.savedRecord), undefined, 'applying author draft does not save a record');
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        await page.evaluate(() => window.openManual());
         await page.locator('[data-string-value]').first().fill('A가 B에게 꽃처럼 부드러운 말을 하겠다고 약속하고, 과거의 오해를 풀며 서로의 감정을 확인했다. '.repeat(4));
         const beforeToggle = await page.locator('[data-manual-position]').evaluate(element => element.getBoundingClientRect().top + scrollY);
         assert.equal(await page.locator('[data-manual-start]').isDisabled(), true);
@@ -150,6 +237,16 @@ try {
         await page.locator('[data-manual-start]').fill('100');
         await page.locator('[data-manual-end]').fill('119');
         await page.locator('[data-manual-coverage]').check();
+        await page.locator('[data-manual-author]').click();
+        await page.locator('.stsm-author-options > summary').click();
+        await page.locator('[data-author-source]').check();
+        await page.locator('[data-author-output]').fill('2233');
+        await page.locator('[data-author-input]').fill('원본과 비교해줘');
+        await page.locator('[data-author-send]').click();
+        await page.waitForFunction(() => document.querySelector('[data-author-history]')?.textContent.includes('대사는 보존'));
+        assert.equal(await page.evaluate(() => window.lastSourceCount), 20);
+        assert.equal(await page.evaluate(() => window.authorOutput), 2233);
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
         await page.locator('[data-manual-atlas-manage]').click();
         const addButton = await page.locator('[data-atlas-add]').boundingBox();
         assert.ok(addButton.width >= 76 && addButton.height <= 40, 'atlas write button must stay horizontal under narrow host button styles');
@@ -254,6 +351,56 @@ try {
         await page.locator('.stsm-add-record').click();
         assert.equal(await page.locator('.test-popup').count(), 0, 'long-term click must not create an active-memory form');
         assert.match(await page.evaluate(() => window.lastInfo), /아직 지원하지/);
+        await page.evaluate(() => window.renderPerceptions());
+        await page.locator('[data-perception-add]').click();
+        await page.locator('[data-facts]').fill('상대는 웃을 때 보조개가 생긴다.\n상대는 멀리 떨어진 지역의 학교에 다녔다고 말했다.');
+        await page.locator('[data-impression]').fill('무뚝뚝해 보이지만 함께 이야기하면 의외로 재미있고 배려심 깊은 사람이라고 생각한다.');
+        await page.screenshot({ path: fileURLToPath(new URL(`perception-editor-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.locator('.stsm-perception-entry').count(), 1);
+        assert.match(await page.locator('.stsm-perception-entry').innerText(), /보조개/);
+        await page.locator('[data-perception-action="edit"]').click();
+        assert.equal(await page.locator('[data-observer]').isDisabled(), true);
+        await page.locator('[data-facts]').fill('수정된 인식 정보');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.match(await page.locator('.stsm-perception-entry').innerText(), /수정된 인식 정보/);
+        await page.locator('[data-perception-action="visibility"]').click();
+        assert.match(await page.locator('.stsm-perception-entry').innerText(), /LLM 비공개/);
+        await page.locator('[data-perception-action="exclude"]').click();
+        assert.equal(await page.locator('[data-perception-count]').innerText(), '0개');
+        await page.locator('[data-perception-action="exclude"]').click();
+        assert.equal(await page.locator('[data-perception-count]').innerText(), '1개');
+        const perceptionLayout = await page.locator('.stsm-perception-entry').evaluate(element => {
+            const heading = element.querySelector('header > strong').getBoundingClientRect();
+            const actions = element.querySelector('.stsm-perception-actions').getBoundingClientRect();
+            return { right: element.getBoundingClientRect().right, overlaps: heading.right > actions.left, overflow: element.scrollWidth > element.clientWidth + 1 };
+        });
+        assert.ok(perceptionLayout.right <= width && !perceptionLayout.overlaps && !perceptionLayout.overflow);
+        await page.screenshot({ path: fileURLToPath(new URL(`perceptions-${width}.png`, output)), fullPage: true });
+        await page.evaluate(() => window.openPerceptionDraft());
+        await page.locator('[data-atlas-category]').selectOption('perceptions');
+        assert.equal(await page.locator('[data-atlas-kind]').inputValue(), 'updated');
+        const perceptionId = await page.evaluate(() => window.currentAtlas().perceptions[0].id);
+        await page.locator('[data-atlas-target]').selectOption(perceptionId);
+        await page.locator('[data-atlas-add]').click();
+        await page.locator('[data-new-facts]').fill('이 레코드에서 새롭게 들은 정보');
+        await page.locator('[data-fact-id]').fill('기존 정보에 대한 정정');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        await page.waitForFunction(() => document.querySelector('[data-atlas-preview]')?.textContent.trim());
+        assert.match(await page.locator('[data-atlas-preview]').innerText(), /기존 정보에 대한 정정/);
+        await page.screenshot({ path: fileURLToPath(new URL(`perception-draft-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.evaluate(() => window.perceptionDraft[0].value.factUpdates.length), 1);
+        await page.evaluate(() => window.openPerceptionReview());
+        await page.locator('.stsm-atlas-review-category').selectOption('perceptions');
+        assert.equal(await page.locator('.stsm-atlas-review-perception-field').isVisible(), true);
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        await page.locator('[data-perception-action="visibility"]').click();
+        await page.evaluate(() => window.openPerceptionReview());
+        await page.locator('.stsm-atlas-review-category').selectOption('perceptions');
+        await page.locator('.stsm-atlas-review-perception').selectOption(perceptionId);
+        await page.screenshot({ path: fileURLToPath(new URL(`perception-review-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
         assert.deepEqual(errors, []);
         await page.close();
         console.log(`UI checks passed: ${width}px`);

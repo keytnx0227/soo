@@ -75,6 +75,7 @@ async function openAtlasReviewPopup() {
         renderStatus(content);
         renderMode(content, mode);
         renderRecordOptions(content);
+        renderPerceptionOptions(content);
         renderRecordReviewProgress(content, mode);
         renderOverview(content);
         renderHistory(content, { onChanged: render });
@@ -252,6 +253,10 @@ function buildReviewMarkup() {
                 ${Object.entries(ATLAS_REVIEW_CATEGORIES).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
             </select>
         </label>
+        <label class="stsm-field stsm-atlas-review-perception-field" hidden>
+            <span>인식 방향</span>
+            <select class="stsm-atlas-review-perception text_pole"></select>
+        </label>
         <div class="stsm-atlas-review-quick-fields stsm-grid-two">
             <label class="stsm-field"><span>시작 채팅 ID</span><input class="stsm-atlas-review-start text_pole" type="number" min="0" step="1" /></label>
             <label class="stsm-field"><span>종료 채팅 ID</span><input class="stsm-atlas-review-end text_pole" type="number" min="0" step="1" /></label>
@@ -271,6 +276,17 @@ function buildReviewMarkup() {
         <details class="stsm-atlas-review-overview"><summary>도감 처리 현황</summary><div class="stsm-atlas-review-overview-body"></div></details>
         <details class="stsm-atlas-review-history"><summary>적용된 재검토 기록</summary><div class="stsm-atlas-review-history-list"></div></details>
     `;
+}
+
+function renderPerceptionOptions(content) {
+    const field = content.querySelector('.stsm-atlas-review-perception-field');
+    field.hidden = content.querySelector('.stsm-atlas-review-category').value !== 'perceptions';
+    const select = field.querySelector('select');
+    const selected = select.value;
+    const slots = getAtlasProjection().perceptions.filter(slot => slot.allowAutoUpdate && !slot.llmHidden && !slot.unresolved && !slot.endpointHidden);
+    select.innerHTML = '<option value="">등록된 방향 전체</option>' + slots.map(slot =>
+        `<option value="${escapeHtml(slot.id)}">${escapeHtml(slot.observerName)} → ${escapeHtml(slot.subjectName)}</option>`).join('');
+    if (slots.some(slot => slot.id === selected)) select.value = selected;
 }
 
 function renderStatus(content) {
@@ -609,13 +625,14 @@ function toSemanticAtlasValue(value) {
 
 function changeItem(type, label, value) {
     const source = value.after || value;
-    return { type, label, value, name: source.name || source.title || source.content || source.id || '항목' };
+    return { type, label, value, name: source.observerName ? `${source.observerName} → ${source.subjectName}` : source.name || source.title || source.content || source.id || '항목' };
 }
 
 function readReviewInput(content, mode) {
     return {
         mode,
         category: content.querySelector('.stsm-atlas-review-category').value,
+        perceptionIds: [content.querySelector('.stsm-atlas-review-perception').value].filter(Boolean),
         startId: content.querySelector('.stsm-atlas-review-start').value,
         endId: content.querySelector('.stsm-atlas-review-end').value,
         startRecordId: content.querySelector('.stsm-atlas-review-record-start').value,

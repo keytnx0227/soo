@@ -4,6 +4,7 @@ const CUMULATIVE_FIELDS = Object.freeze({
     commitments: new Set(['facts']),
     events: new Set(),
     world: new Set(),
+    perceptions: new Set(),
 });
 
 const PEOPLE_FIELDS = new Set([
@@ -23,21 +24,31 @@ const PEOPLE_FIELDS = new Set([
 ]);
 
 export function applyAtlasCorrections(raw, corrections) {
-    const orphanCorrections = { people: [], items: [], commitments: [], events: [], world: [] };
+    const orphanCorrections = { people: [], items: [], commitments: [], events: [], world: [], perceptions: [] };
     const people = applyCategoryCorrections('people', raw.people, corrections.people, orphanCorrections.people);
     const items = applyCategoryCorrections('items', raw.items, corrections.items, orphanCorrections.items);
     const commitments = applyCategoryCorrections('commitments', raw.commitments, corrections.commitments, orphanCorrections.commitments);
     const events = applyCategoryCorrections('events', raw.events, corrections.events, orphanCorrections.events)
         .map(event => event.importance === 'minor' ? { ...event, shift: null } : event);
     const world = applyCategoryCorrections('world', raw.world, corrections.world, orphanCorrections.world);
+    const visiblePeople = new Map(people.filter(person => !person.excluded).map(person => [person.id, person]));
+    const perceptions = applyCategoryCorrections('perceptions', raw.perceptions || [], corrections.perceptions, orphanCorrections.perceptions)
+        .map(slot => {
+            const observer = visiblePeople.get(slot.observerId);
+            const subject = visiblePeople.get(slot.subjectId);
+            return { ...slot, observerName: observer?.name || slot.observerName, subjectName: subject?.name || slot.subjectName,
+                unresolved: !observer || !subject, endpointHidden: Boolean(observer?.llmHidden || subject?.llmHidden) };
+        });
     return {
         ...raw,
+        perceptions: perceptions.filter(entity => !entity.excluded),
         people: people.filter(entity => !entity.excluded),
         items: items.filter(entity => !entity.excluded),
         commitments: commitments.filter(entity => !entity.excluded),
         events: events.filter(entity => !entity.excluded),
         world: world.filter(entity => !entity.excluded),
         excluded: {
+            perceptions: perceptions.filter(entity => entity.excluded),
             people: people.filter(entity => entity.excluded),
             items: items.filter(entity => entity.excluded),
             commitments: commitments.filter(entity => entity.excluded),

@@ -86,6 +86,15 @@ test('failed saves restore pending drafts and chat switches reject enqueue', asy
     await assert.rejects(scope.queueRegeneration(draft));
 });
 
+test('perception observer and subject references protect their original person IDs during regeneration', async () => {
+    const { scope, draft } = await setup();
+    draft.structuredSummary.data.memoryUpdates = {};
+    scope.getManualAtlasEntries = category => category === 'perceptions' ? [{ id: 'ab', observerId: 'old', subjectId: 'b' }] : [];
+    assert.equal(scope.getRegenerationReferences(draft)[0].id, 'old');
+    scope.getManualAtlasEntries = category => category === 'perceptions' ? [{ id: 'ba', observerId: 'b', subjectId: 'old' }] : [];
+    assert.equal(scope.getRegenerationReferences(draft)[0].id, 'old');
+});
+
 test('projection validation allows explicit disconnects and pre-existing missing but blocks new unexpected ones', async () => {
     const { scope, draft } = await setup();
     scope.getAtlasProjection = options => ({ skippedUpdates: {

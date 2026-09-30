@@ -280,6 +280,10 @@ export function buildPopup() {
                 </div>
             </div>
             <div class="stsm-atlas-scroll">
+                <section class="stsm-atlas-section stsm-perception-section"><div class="stsm-atlas-section-heading"><strong>인식</strong>
+                    <span class="stsm-atlas-heading-actions"><span data-perception-count>0개</span><button type="button" class="menu_button menu_button_icon" data-perception-add title="인식 칸 추가" aria-label="인식 칸 추가"><i class="fa-solid fa-plus" aria-hidden="true"></i></button></span></div>
+                    <div class="stsm-atlas-section-scroll"><div data-perception-warning class="stsm-manual-error" hidden></div><div data-perception-list></div></div>
+                </section>
                 <section class="stsm-atlas-section">
                     <div class="stsm-atlas-section-heading">
                         <strong>인물 도감</strong>
@@ -558,6 +562,7 @@ export function buildPopup() {
                     ${renderMemorySectionToggle('commitments', '서약 장부')}
                     ${renderMemorySectionToggle('events', '주요 사건')}
                     ${renderMemorySectionToggle('world', '세계 설정')}
+                    ${renderMemorySectionToggle('perceptions', '인식')}
                 </div>
             </div>
 

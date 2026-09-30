@@ -261,7 +261,7 @@ export async function saveAtlasRecordReviewOverrides(entries) {
             throw new Error(`#${record.startId} ~ #${record.endId} 레코드는 도감 변경안을 교체할 수 없습니다.`);
         }
         const category = String(entry.category);
-        if (!['people', 'items', 'commitments', 'events', 'world'].includes(category)) {
+        if (!['people', 'items', 'commitments', 'events', 'world', 'perceptions'].includes(category)) {
             throw new Error('지원하지 않는 도감 종류입니다.');
         }
         found.add(record.id);
@@ -1056,7 +1056,7 @@ function normalizeStructuredSummary(value) {
 
 function normalizeAtlasReviewOverrides(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    const categories = ['people', 'items', 'commitments', 'events', 'world'];
+    const categories = ['people', 'items', 'commitments', 'events', 'world', 'perceptions'];
     return Object.fromEntries(categories.map(category => {
         const entry = value[category];
         if (!entry || typeof entry !== 'object' || !entry.memoryUpdates || typeof entry.memoryUpdates !== 'object') {

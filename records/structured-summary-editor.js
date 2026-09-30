@@ -264,7 +264,7 @@ function appendHtml(container, html) {
     container.lastElementChild?.querySelector('input, textarea')?.focus();
 }
 
-export function collectEditorData(form, original) {
+export function collectEditorData(form, original, { allowIncomplete = false } = {}) {
     const data = structuredClone(original);
     data.title = form.querySelector('[data-summary-title]').value.trim() || null;
     data.contextFlow = [...form.querySelectorAll('[data-editor-list="context"] [data-editor-row]')]
@@ -272,7 +272,7 @@ export function collectEditorData(form, original) {
             .map(input => [input.dataset.contextField, input.value.trim() || null])))
         .filter(item => Object.values(item).some(Boolean));
     data.plot = collectStringRows(form, 'plot');
-    if (!data.plot.length) throw new Error('플롯에는 최소 한 개의 항목이 필요합니다.');
+    if (!allowIncomplete && !data.plot.length) throw new Error('플롯에는 최소 한 개의 항목이 필요합니다.');
     data.continuityChanges = collectStringRows(form, 'continuity');
     data.emotions = [...form.querySelectorAll('[data-emotion-group]')].map(group => {
         const subject = group.querySelector('[data-emotion-subject]').value.trim();
@@ -281,15 +281,15 @@ export function collectEditorData(form, original) {
             emotion: row.querySelector('[data-emotion-name]').value.trim(),
             reason: row.querySelector('[data-emotion-reason]').value.trim() || null,
         })).filter(state => state.emotion || state.reason);
-        if (!subject) throw new Error('감정 항목의 인물 이름을 입력해주세요.');
-        if (!states.length || states.some(state => !state.emotion)) throw new Error(`${subject}의 감정 흐름을 올바르게 입력해주세요.`);
+        if (!allowIncomplete && !subject) throw new Error('감정 항목의 인물 이름을 입력해주세요.');
+        if (!allowIncomplete && (!states.length || states.some(state => !state.emotion))) throw new Error(`${subject}의 감정 흐름을 올바르게 입력해주세요.`);
         return { subject, toward, states };
     });
     data.quotes = [...form.querySelectorAll('[data-editor-list="quotes"] [data-editor-row]')].map(row => ({
         speaker: row.querySelector('[data-quote-speaker]').value.trim(),
         text: row.querySelector('[data-quote-text]').value.trim(),
     })).filter(quote => quote.speaker || quote.text);
-    if (data.quotes.some(quote => !quote.speaker || !quote.text)) {
+    if (!allowIncomplete && data.quotes.some(quote => !quote.speaker || !quote.text)) {
         throw new Error('주요 대사의 화자와 내용을 모두 입력해주세요.');
     }
     return data;

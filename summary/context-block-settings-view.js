@@ -8,6 +8,12 @@ import {
 import { escapeHtml } from '../core/utils.js';
 
 const MACROS = Object.freeze({
+    perceptions: [
+        ['sumiPerceptionObserver', '인식하는 인물'],
+        ['sumiPerceptionSubject', '대상 인물'],
+        ['sumiPerceptionFacts', '알고 있는 정보 목록'],
+        ['sumiPerceptionImpression', '종합 인식 줄'],
+    ],
     records: [
         ['sumiRecordStartId', '레코드 시작 메시지 ID'],
         ['sumiRecordEndId', '레코드 종료 메시지 ID'],

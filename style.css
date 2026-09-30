@@ -4937,6 +4937,42 @@
 .stsm-manual-atlas-controls .stsm-atlas-target { grid-column: 1 / -1; }
 .stsm-manual-atlas-controls > button { grid-column: 1 / -1; justify-self: end; display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin: 0; width: max-content; min-width: 76px; min-height: 32px; white-space: nowrap; flex-wrap: nowrap; }
 .stsm-manual-atlas-controls > button > span { flex: 0 0 auto; white-space: nowrap; word-break: keep-all; }
+.stsm-manual-heading-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.stsm-manual-heading-actions > .menu_button { display: inline-flex; width: max-content; min-height: 30px; margin: 0; align-items: center; gap: 4px; white-space: nowrap; font-size: 0.82em; }
+.stsm-manual-author { display: flex; flex-direction: column; gap: 12px; min-width: 0; text-align: left; }
+.stsm-author-modes { display: flex; padding: 0; margin: 0; border: 1px solid var(--SmartThemeBorderColor); border-radius: 4px; min-width: 0; }
+.stsm-author-modes legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.stsm-author-modes label { flex: 1; display: flex; gap: 6px; justify-content: center; align-items: center; padding: 8px; cursor: pointer; }
+.stsm-author-modes label:has(input:checked) { background: color-mix(in srgb, var(--SmartThemeQuoteColor) 12%, transparent); }
+.stsm-author-history { min-height: 110px; max-height: 34vh; overflow-y: auto; overflow-wrap: anywhere; }
+.stsm-author-turn { padding: 10px 0; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+.stsm-author-turn small { opacity: 0.65; }
+.stsm-author-turn > div, .stsm-author-prompt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.stsm-author-preview, .stsm-author-options { border-top: 1px solid var(--SmartThemeBorderColor); padding-top: 10px; }
+.stsm-author-preview summary, .stsm-author-options summary { cursor: pointer; }
+.stsm-author-preview [data-author-render] { max-height: 42vh; overflow: auto; }
+.stsm-author-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.stsm-author-options > label, .stsm-author-token-fields { margin-top: 10px; }
+.stsm-author-options > label { display: flex; align-items: center; gap: 6px; }
+.stsm-author-options > .stsm-field { display: grid; }
+.stsm-author-token-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stsm-manual-author .text_pole { width: 100%; min-width: 0; }
+.stsm-author-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.stsm-author-actions .menu_button, .stsm-author-options > .menu_button { display: inline-flex; width: max-content; min-width: 76px; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; margin: 0; }
+.stsm-author-options > .menu_button { margin-top: 10px; }
+.stsm-author-status { font-size: 0.85em; overflow-wrap: anywhere; }
+.stsm-perception-entry { border-bottom: 1px solid var(--SmartThemeBorderColor); padding: 12px 0; overflow-wrap: anywhere; }
+.stsm-perception-section .stsm-atlas-section-scroll { height: auto; max-height: 380px; min-height: 44px; }
+.stsm-perception-entry.is-excluded { opacity: 0.6; }
+.stsm-perception-entry header { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.stsm-perception-entry header > strong { min-width: 0; }
+.stsm-perception-entry h4 { margin: 10px 0 4px; font-size: 0.9em; }
+.stsm-perception-entry ul { margin: 0; padding-left: 20px; }
+.stsm-perception-entry p { margin: 4px 0; white-space: pre-wrap; }
+.stsm-perception-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.stsm-perception-actions .menu_button { width: 28px; height: 28px; min-width: 28px; padding: 0; margin: 0; display: inline-flex; align-items: center; justify-content: center; }
+.stsm-perception-editor { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.stsm-perception-editor .text_pole { width: 100%; min-width: 0; }
 .stsm-manual-atlas-entry { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding: 10px 0; }
 .stsm-manual-atlas-entry > summary { display: grid; grid-template-columns: 12px minmax(0, 1fr) 30px 30px; gap: 8px; align-items: center; list-style: none; cursor: pointer; }
 .stsm-manual-atlas-entry > summary > span { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }

@@ -29,7 +29,7 @@ export const PROMPT_TYPES = Object.freeze({
     COMPRESSION: 'compression',
 });
 
-const PROMPT_SCHEMA_VERSION = 28;
+const PROMPT_SCHEMA_VERSION = 29;
 
 export const BLOCK_KINDS = Object.freeze({
     EDITABLE: 'editable',
@@ -61,6 +61,7 @@ export const BLOCK_KINDS = Object.freeze({
     COMMITMENT_MEMORY: 'commitmentMemory',
     EVENT_MEMORY: 'eventMemory',
     WORLD_MEMORY: 'worldMemory',
+    PERCEPTION_MEMORY: 'perceptionMemory',
     SUMMARY_TITLE: SUMMARY_SECTION_KINDS.TITLE,
     SUMMARY_DATE: SUMMARY_SECTION_KINDS.DATE,
     SUMMARY_TIME: SUMMARY_SECTION_KINDS.TIME,
@@ -87,6 +88,7 @@ export const SUMMARY_EXTRACTION_RULE_DEFINITIONS = Object.freeze([
     { key: 'commitments', label: '서약 장부', kind: null, category: 'memory' },
     { key: 'events', label: '주요 사건', kind: null, category: 'memory' },
     { key: 'world', label: '세계 설정', kind: null, category: 'memory' },
+    { key: 'perceptions', label: '인식', kind: null, category: 'memory' },
 ]);
 
 const PREVIOUS_DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
@@ -520,6 +522,7 @@ function insertEmotionalWeightRule(content) {
 
 const DEFAULT_SUMMARY_EXTRACTION_RULES = Object.freeze({
     ...V27_DEFAULT_SUMMARY_EXTRACTION_RULES,
+    perceptions: `# Directed Perceptions\nUpdate only user-registered observer -> subject slots from Current Perceptions. Never create slots or reverse a direction. Record only what that observer learned, heard, or observed in the target, not facts merely known to the reader or listed in a profile. Write short statements in the observer's knowledge state, even if objectively false; never append secret truth, evidence explanations, or reader commentary. Add genuinely new facts through append.facts. Correct a known fact through factUpdates using its exact ID, not by appending a contradictory duplicate. Replace impression only when the observer's overall subjective judgment changed. Omit unchanged slots and fields. Never infer that everyone present learned an unspoken fact.`,
     people: insertEmotionalWeightRule(V27_DEFAULT_SUMMARY_EXTRACTION_RULES.people
         .replace(
             '- Each feeling must communicate its emotional quality, depth or intensity, and a compact accumulated cause. Keep the cause self-contained, but do not recount event chronology.',
@@ -711,6 +714,7 @@ const DEFAULT_COMMITMENT_CONTEXT_TEMPLATE = `## {{sumiCommitmentTitle}}
 const DEFAULT_WORLD_CONTEXT_TEMPLATE = '- {{sumiWorldContent}}';
 
 export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
+    PERCEPTIONS: 'perceptions',
     RECORDS: 'records',
     EVENTS: 'events',
     PEOPLE: 'people',
@@ -720,6 +724,8 @@ export const SUMMARY_CONTEXT_BLOCK_KINDS = Object.freeze({
 });
 
 const SUMMARY_CONTEXT_BLOCK_DEFINITIONS = Object.freeze([
+    { kind: SUMMARY_CONTEXT_BLOCK_KINDS.PERCEPTIONS, name: '인식', prefixTemplate: '# Directed Character Perceptions',
+        entryTemplate: '{{sumiPerceptionObserver}} -> {{sumiPerceptionSubject}}\n{{sumiPerceptionFacts}}\n{{sumiPerceptionImpression}}', suffixTemplate: '' },
     {
         kind: SUMMARY_CONTEXT_BLOCK_KINDS.RECORDS,
         name: '시간순 요약 레코드',
@@ -772,6 +778,7 @@ export function getDefaultSummaryContextBlocks() {
         SUMMARY_CONTEXT_BLOCK_KINDS.COMMITMENTS,
         SUMMARY_CONTEXT_BLOCK_KINDS.EVENTS,
         SUMMARY_CONTEXT_BLOCK_KINDS.WORLD,
+        SUMMARY_CONTEXT_BLOCK_KINDS.PERCEPTIONS,
     ];
     return [...SUMMARY_CONTEXT_BLOCK_DEFINITIONS]
         .sort((left, right) => order.indexOf(left.kind) - order.indexOf(right.kind))
@@ -1191,6 +1198,7 @@ export function isRequiredPromptBlock(block) {
         BLOCK_KINDS.COMMITMENT_MEMORY,
         BLOCK_KINDS.EVENT_MEMORY,
         BLOCK_KINDS.WORLD_MEMORY,
+        BLOCK_KINDS.PERCEPTION_MEMORY,
         BLOCK_KINDS.COMPRESSION_SOURCES,
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
         BLOCK_KINDS.REVISION_OUTPUT_CONTRACT,
@@ -1421,6 +1429,11 @@ function createStructuredSummaryBlocks() {
             content: '<Current World Setting Memory>\n{{sumiWorldMemory}}\n</Current World Setting Memory>',
             locked: true,
             kind: BLOCK_KINDS.WORLD_MEMORY,
+        }),
+        createPromptBlock({
+            id: 'perception-memory', name: '현재 인식',
+            content: '<Current Perceptions>\n{{sumiPerceptions}}\n</Current Perceptions>',
+            locked: true, kind: BLOCK_KINDS.PERCEPTION_MEMORY,
         }),
         createPromptBlock({
             id: 'summary-output-contract',
@@ -2370,10 +2383,16 @@ function migratePromptPreset(preset, type, sourceSchemaVersion) {
         }
     }
 
-    return {
-        ...preset,
-        blocks: migratedBlocks,
-    };
+    if (type === PROMPT_TYPES.SUMMARY && sourceSchemaVersion < 29
+        && !migratedBlocks.some(block => block.kind === BLOCK_KINDS.PERCEPTION_MEMORY)) {
+        const index = migratedBlocks.findIndex(block => block.kind === BLOCK_KINDS.SUMMARY_OUTPUT_CONTRACT);
+        migratedBlocks.splice(index < 0 ? migratedBlocks.length : index, 0, createPromptBlock({
+            id: 'perception-memory', name: '현재 인식',
+            content: '<Current Perceptions>\n{{sumiPerceptions}}\n</Current Perceptions>',
+            locked: true, kind: BLOCK_KINDS.PERCEPTION_MEMORY,
+        }));
+    }
+    return { ...preset, blocks: migratedBlocks };
 }
 
 function isKnownSeparatorBlock(block) {

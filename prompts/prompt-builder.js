@@ -19,6 +19,7 @@ import { buildItemMemoryPromptContext } from '../memory/item-memory-service.js';
 import { buildCommitmentMemoryPromptContext } from '../memory/commitment-memory-service.js';
 import { buildEventMemoryPromptContext } from '../memory/event-memory-service.js';
 import { buildWorldMemoryPromptContext } from '../memory/world-memory-service.js';
+import { buildPerceptionMemoryPromptContext } from '../memory/perception-memory-service.js';
 import {
     buildAtlasReviewJsonContract,
     buildSummaryJsonContract,
@@ -30,6 +31,7 @@ import {
 import { isPromptBlockApplicable } from './character-prompt-scope.js';
 
 const ATLAS_REVIEW_PROMPT_DEFINITIONS = Object.freeze({
+    perceptions: { kind: BLOCK_KINDS.PERCEPTION_MEMORY, macro: 'sumiPerceptions', buildContext: buildPerceptionMemoryPromptContext },
     people: { kind: BLOCK_KINDS.PEOPLE_MEMORY, macro: 'sumiPeopleMemory', buildContext: buildPeopleMemoryPromptContext },
     items: { kind: BLOCK_KINDS.ITEM_MEMORY, macro: 'sumiItemMemory', buildContext: buildItemMemoryPromptContext },
     commitments: { kind: BLOCK_KINDS.COMMITMENT_MEMORY, macro: 'sumiCommitmentMemory', buildContext: buildCommitmentMemoryPromptContext },
@@ -130,6 +132,7 @@ Review only the selected atlas category using the messages inside <Atlas Review 
                 : `<Previous Review Contribution>\n${currentRecordContribution}\n</Previous Review Contribution>`
             : '',
         rule,
+        category === 'perceptions' ? 'Perception review exception: never create slots. Only update the registered observer -> subject slots provided in the context, with created: []. Record only what that observer learned or believed in the target messages, never reader knowledge, hidden truth, or information copied from a subject profile without evidence that the observer knew it. Preserve direction. Append concise facts; use factUpdates only with supplied fact IDs when a belief actually changed. Do not describe future awareness as knowledge at an earlier time. For a replacement contribution, retain valid facts first introduced in this contribution, even if they already appear in the current snapshot.' : '',
         values.sumiAtlasReviewJsonContract,
     ];
     return parts.map(part => String(part || '').trim()).filter(Boolean).join('\n\n');
@@ -156,6 +159,7 @@ function buildAtlasReviewRecentSummaryParts(preset, startId, values) {
 }
 
 function isSummaryBlockEnabled(block, sections) {
+    if (block.kind === BLOCK_KINDS.PERCEPTION_MEMORY) return getEnabledMemorySections(getSettings().summarization.memorySections).perceptions;
     if (block.kind === BLOCK_KINDS.PEOPLE_MEMORY) {
         return getEnabledMemorySections(getSettings().summarization.memorySections).people;
     }
@@ -253,6 +257,8 @@ async function renderSummaryBlock(block, chunk, atlasProjectionOptions = {}) {
     };
 
     switch (block.kind) {
+        case BLOCK_KINDS.PERCEPTION_MEMORY:
+            return renderDataBlock(block, 'sumiPerceptions', buildPerceptionMemoryPromptContext(atlasProjectionOptions), commonValues);
         case BLOCK_KINDS.CHARACTER_DESCRIPTION:
             return renderDataBlock(block, 'sumiCharacterDescription', character.description, commonValues);
         case BLOCK_KINDS.CHARACTER_PERSONALITY:

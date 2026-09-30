@@ -2,7 +2,7 @@ import { createId } from '../core/utils.js';
 import { normalizeFeelings } from './people-feelings.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
-const CATEGORIES = Object.freeze(['people', 'items', 'commitments', 'events', 'world']);
+const CATEGORIES = Object.freeze(['people', 'items', 'commitments', 'events', 'world', 'perceptions']);
 
 export function getAtlasCorrections() {
     return structuredClone(getAtlasStore().corrections);
@@ -219,6 +219,9 @@ export async function addManualAtlasEntry(category, value) {
         updatedAt: now,
     });
     if (!entry) throw new Error('직접 추가할 도감 항목의 필수 정보를 입력해주세요.');
+    if (category === 'perceptions' && store.manual.perceptions.some(slot => slot.observerId === entry.observerId && slot.subjectId === entry.subjectId)) {
+        throw new Error('이미 등록된 인식 방향입니다. 기존 칸을 수정하거나 복원해주세요.');
+    }
     store.manual[category] = [...store.manual[category], entry];
     try {
         await SillyTavern.getContext().saveMetadata();
@@ -242,6 +245,13 @@ export async function updateManualAtlasEntry(category, entityId, value) {
     const previousTranslations = structuredClone(store.translations[category]);
     const id = String(entityId);
     let updated = null;
+    if (category === 'perceptions') {
+        const existing = store.manual.perceptions.find(slot => slot.id === id);
+        const candidate = existing && normalizeManualAtlasEntry(category, { ...existing, ...value });
+        if (!candidate || candidate.observerId !== existing.observerId || candidate.subjectId !== existing.subjectId) {
+            throw new Error('인식 방향은 변경할 수 없습니다. 새 칸을 만들어주세요.');
+        }
+    }
     store.manual[category] = store.manual[category].map(entry => {
         if (entry.id !== id) return entry;
         updated = normalizeManualAtlasEntry(category, {
@@ -373,6 +383,15 @@ function normalizeManualAtlasEntry(category, value) {
         createdAt,
         updatedAt: String(value.updatedAt || createdAt),
     };
+    if (category === 'perceptions') {
+        const observerId = normalizeNullableString(value.observerId);
+        const subjectId = normalizeNullableString(value.subjectId);
+        if (!observerId || !subjectId || observerId === subjectId) return null;
+        return { ...common, observerId, subjectId, hasBaseline: Boolean(value.hasBaseline),
+            facts: (Array.isArray(value.facts) ? value.facts : []).filter(fact => fact?.id && String(fact.text || '').trim())
+                .map(fact => ({ id: String(fact.id), text: String(fact.text).trim() })),
+            impression: normalizeNullableString(value.impression) };
+    }
     if (category === 'people') {
         const name = normalizeNullableString(value.name);
         if (!name) return null;

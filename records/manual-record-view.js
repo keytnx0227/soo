@@ -10,6 +10,9 @@ import { renderEditor, bindEditorActions, collectEditorData } from './structured
 import { renderManualRecordSettings, bindManualRecordSettings, renderManualInfo } from './manual-record-settings.js';
 import { openManualAtlasManager } from './manual-atlas-view.js';
 import { collectManualAtlasUpdates } from './manual-atlas-draft.js';
+import { openManualAuthor } from './manual-author-view.js';
+import { authorEntries } from './manual-author-engine.js';
+import { refreshEditorOrderControls } from './structured-editor-order.js';
 
 export function bindManualRecordView(root, onCreated) {
     root.querySelector('.stsm-add-record')?.addEventListener('click', async () => {
@@ -31,7 +34,7 @@ export function createManualRecordForm(records, { allRecords = records, messageC
     form.className = 'stsm-structured-summary-editor stsm-manual-record-editor';
     const empty = { plot: [''], contextFlow: [], emotions: [], quotes: [], continuityChanges: [] };
     form.innerHTML = `
-        <header class="stsm-manual-heading"><h3>레코드 채우기</h3><button class="menu_button" type="button" data-manual-atlas-manage><i class="fa-solid fa-book" aria-hidden="true"></i><span>도감</span><span data-manual-atlas-count>0</span></button></header>
+        <header class="stsm-manual-heading"><h3>레코드 채우기</h3><div class="stsm-manual-heading-actions"><button class="menu_button" type="button" data-manual-author><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span>AI와 작성</span></button><button class="menu_button" type="button" data-manual-atlas-manage><i class="fa-solid fa-book" aria-hidden="true"></i><span>도감</span><span data-manual-atlas-count>0</span></button></div></header>
         <div data-manual-body>${renderEditor({ startId: '', endId: '', structuredSummary: { data: empty } })}</div>
         <section class="stsm-structured-editor-section stsm-manual-tags">
             <label class="stsm-field"><span>검색 태그</span><input class="text_pole" data-manual-tags placeholder="쉼표로 구분" /></label>
@@ -56,6 +59,7 @@ export async function openManualRecordEditor() {
     const records = allRecords.filter(record => !record.compressedBy).sort(compareRecordPosition);
     const form = createManualRecordForm(records, { allRecords, messageCount: chatRef.length, resolveRecord: record => getSummaryRecord(record.id) });
     let entries = [];
+    const authorSession = {};
     const previewId = createId('manual-preview');
     const getRange = () => {
         if (!form.querySelector('[data-manual-range]').checked) return { startId: null, endId: null };
@@ -76,6 +80,34 @@ export async function openManualRecordEditor() {
                 entries = result;
                 form.querySelector('[data-manual-atlas-count]').textContent = entries.length;
             }
+        } catch (error) { toastr.error(error.message); }
+        finally { button.disabled = false; }
+    });
+    form.querySelector('[data-manual-author]').addEventListener('click', async event => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+            const initialDraft = { ...collectEditorData(form, {}, { allowIncomplete: true }),
+                tags: form.querySelector('[data-manual-tags]').value.split(',').map(value => value.trim()).filter(Boolean),
+                memoryUpdates: collectManualAtlasUpdates(entries) };
+            const data = await openManualAuthor({ session: authorSession, initialDraft, getRange });
+            const current = SillyTavern.getContext();
+            if (current.chat !== chatRef || current.chatMetadata !== metadataRef) throw new Error('채팅이 변경되었습니다. 작성창을 다시 열어주세요.');
+            if (!data) return;
+            const body = form.querySelector('[data-manual-body]');
+            body.innerHTML = renderEditor({ startId: null, endId: null, structuredSummary: { data } });
+            body.querySelector('.stsm-structured-editor-header').remove();
+            body.querySelectorAll('[data-editor-add]').forEach(control => {
+                control.title = control.textContent.trim(); control.setAttribute('aria-label', control.title);
+            });
+            refreshEditorOrderControls(body);
+            body.querySelector('[data-summary-title]').addEventListener('change', () => {
+                form.querySelector('[data-manual-after]').dispatchEvent(new Event('change'));
+            });
+            form.querySelector('[data-manual-tags]').value = data.tags.join(', ');
+            entries = authorEntries(data);
+            form.querySelector('[data-manual-atlas-count]').textContent = entries.length;
+            form.querySelector('[data-manual-after]').dispatchEvent(new Event('change'));
         } catch (error) { toastr.error(error.message); }
         finally { button.disabled = false; }
     });

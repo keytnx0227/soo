@@ -42,6 +42,7 @@ const NO_MEMORY_SECTIONS = Object.freeze({
     commitments: false,
     events: false,
     world: false,
+    perceptions: false,
 });
 
 export async function openRevisionChat(recordId, { onApplied } = {}) {

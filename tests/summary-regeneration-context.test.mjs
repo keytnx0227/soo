@@ -12,16 +12,16 @@ async function loadModule(path, scope) {
     return scope;
 }
 
-test('summary prompts forward the cutoff to all five atlas contexts only when supplied', async () => {
-    const categories = ['people', 'items', 'commitments', 'events', 'world'];
-    const kinds = ['PEOPLE_MEMORY', 'ITEM_MEMORY', 'COMMITMENT_MEMORY', 'EVENT_MEMORY', 'WORLD_MEMORY'];
-    const names = ['People', 'Item', 'Commitment', 'Event', 'World'];
+test('summary prompts forward the cutoff to all six atlas contexts only when supplied', async () => {
+    const categories = ['people', 'items', 'commitments', 'events', 'world', 'perceptions'];
+    const kinds = ['PEOPLE_MEMORY', 'ITEM_MEMORY', 'COMMITMENT_MEMORY', 'EVENT_MEMORY', 'WORLD_MEMORY', 'PERCEPTION_MEMORY'];
+    const names = ['People', 'Item', 'Commitment', 'Event', 'World', 'Perception'];
     const calls = [];
     const scope = {
         BLOCK_KINDS: Object.fromEntries(kinds.map(kind => [kind, kind])),
         PROMPT_TYPES: { SUMMARY: 'summary' },
         getActivePreset: () => ({ blocks: kinds.map((kind, index) => ({
-            kind, enabled: true, content: `{{sumi${names[index]}Memory}}`,
+            kind, enabled: true, content: index === 5 ? '{{sumiPerceptions}}' : `{{sumi${names[index]}Memory}}`,
         })) }),
         isPromptBlockApplicable: () => true,
         getSettings: () => ({ summarization: { memorySections: {} } }),
@@ -68,4 +68,28 @@ test('regeneration requests atlas state before the target range', async () => {
     scope.createSummaryChunks = () => [{ startId: 30, endId: 39, messages: [] }];
     await assert.rejects(scope.createSummaryRegenerationDraft('record'), error => error === stop);
     assert.equal(options.atlasProjectionOptions.beforeStartId, 30);
+});
+
+test('the actual summary builder preserves custom instructions without implicitly reading source messages', async () => {
+    const kinds = ['PEOPLE_MEMORY', 'ITEM_MEMORY', 'COMMITMENT_MEMORY', 'EVENT_MEMORY', 'WORLD_MEMORY', 'SUMMARY_MESSAGES', 'RECENT_SUMMARIES', 'CHARACTER_DESCRIPTION', 'CHARACTER_PERSONALITY', 'CHARACTER_SCENARIO', 'PERSONA', 'WORLD_INFO', 'SUMMARY_EXTRACTION_RULES'];
+    const scope = {
+        BLOCK_KINDS: Object.fromEntries(kinds.map(kind => [kind, kind])),
+        PROMPT_TYPES: { SUMMARY: 'summary' },
+        getActivePreset: () => ({ blocks: [
+            { kind: 'custom', enabled: true, content: 'MY CUSTOM INSTRUCTIONS' },
+            { kind: 'SUMMARY_MESSAGES', enabled: true, content: '#{{sumiMessageId}} {{sumiMessageContent}}' },
+        ] }),
+        isPromptBlockApplicable: () => true, getSummarySectionKeyForKind: () => null,
+        SillyTavern: { getContext: () => ({ chat: [{ mes: 'DO NOT READ IMPLICITLY' }] }) },
+        getSummaryLanguageInstruction: () => '', buildSummaryJsonContract: () => '', substituteParams: value => value,
+        isMessageAutoHiddenBySummarizer: () => false,
+        buildPeopleMemoryPromptContext: () => '', buildItemMemoryPromptContext: () => '',
+        buildCommitmentMemoryPromptContext: () => '', buildEventMemoryPromptContext: () => '', buildWorldMemoryPromptContext: () => '',
+        buildPerceptionMemoryPromptContext: () => '',
+    };
+    await loadModule('../prompts/prompt-builder.js', scope);
+    const config = { sections: {}, memorySections: {} };
+    assert.equal(await scope.buildSummaryPrompt({ messages: [], startId: null, endId: null }, config), 'MY CUSTOM INSTRUCTIONS');
+    const included = await scope.buildSummaryPrompt({ messages: [{ id: 5, message: { mes: 'SELECTED_ONCE' } }], startId: 5, endId: 5 }, config);
+    assert.equal(included, 'MY CUSTOM INSTRUCTIONS\n\n#5 SELECTED_ONCE');
 });

@@ -3,13 +3,14 @@ import { createId, escapeHtml } from '../core/utils.js';
 import { getSettings } from '../core/settings.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
 import { showManualAtlasEntryEditor } from '../memory/atlas-manual-editor.js';
+import { showPerceptionUpdateEditor } from '../memory/perception-memory-view.js';
 import { buildRenderedBlocks } from '../summary/context-block-composer.js';
 import { renderRecordMemoryUpdateDetails } from './record-memory-updates-view.js';
 import { atlasUpdateEditorInitial, createManualAtlasUpdate, collectManualAtlasUpdates } from './manual-atlas-draft.js';
 import { renderManualInfo } from './manual-record-settings.js';
 
-const CATEGORIES = { people: '인물', items: '아이템', commitments: '서약', events: '사건', world: '세계 설정' };
-const entityLabel = entity => entity.name || entity.title || entity.keys?.join(', ') || entity.content || entity.id;
+const CATEGORIES = { people: '인물', items: '아이템', commitments: '서약', events: '사건', world: '세계 설정', perceptions: '인식' };
+const entityLabel = entity => entity.observerName ? `${entity.observerName} → ${entity.subjectName}` : entity.name || entity.title || entity.keys?.join(', ') || entity.content || entity.id || entity.targetId;
 
 export async function openManualAtlasManager(entries, getDraftRecord) {
     const working = structuredClone(entries);
@@ -30,6 +31,8 @@ export async function openManualAtlasManager(entries, getDraftRecord) {
     let atlas;
     const refreshTargets = () => {
         atlas = getAtlasProjection();
+        kind.querySelector('[value="created"]').disabled = category.value === 'perceptions';
+        if (category.value === 'perceptions') kind.value = 'updated';
         target.disabled = kind.value !== 'updated';
         target.innerHTML = `<option value="">${target.disabled ? '새 항목으로 생성' : '항목 선택'}</option>`
             + (atlas[category.value] || []).map(entity => `<option value="${escapeHtml(entity.id)}">${escapeHtml(entityLabel(entity))} · ${escapeHtml(entity.id)}</option>`).join('');
@@ -81,12 +84,14 @@ export async function openManualAtlasManager(entries, getDraftRecord) {
             const currentAtlas = getAtlasProjection();
             const entity = selectedKind === 'updated' ? currentAtlas[selectedCategory].find(item => item.id === (previous?.value.targetId || target.value)) : null;
             if (selectedKind === 'updated' && !entity) throw new Error('업데이트할 도감 항목을 선택해주세요.');
-            const initial = entity ? atlasUpdateEditorInitial(selectedCategory, entity, previous?.value) : previous?.value;
-            const value = await showManualAtlasEntryEditor(selectedCategory, null, { draft: true, initial, update: Boolean(entity) });
+            const perception = selectedCategory === 'perceptions';
+            const initial = entity && !perception ? atlasUpdateEditorInitial(selectedCategory, entity, previous?.value) : previous?.value;
+            const value = perception ? await showPerceptionUpdateEditor(entity, previous?.value)
+                : await showManualAtlasEntryEditor(selectedCategory, null, { draft: true, initial, update: Boolean(entity) });
             if (!value) return;
             const entry = { category: selectedCategory, kind: selectedKind,
                 label: entity ? entityLabel(entity) : entityLabel(value),
-                value: entity ? createManualAtlasUpdate(selectedCategory, entity, value)
+                value: perception ? value : entity ? createManualAtlasUpdate(selectedCategory, entity, value)
                     : { ...value, sourceId: previous?.value.sourceId || createId('manual-atlas') } };
             if (previous) working[Number(edit)] = entry;
             else working.push(entry);

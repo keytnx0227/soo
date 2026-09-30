@@ -6,6 +6,7 @@ import { derivePeopleAtlas } from './people-memory.js';
 import { deriveCommitmentAtlas } from './commitment-memory.js';
 import { deriveEventAtlas } from './event-memory.js';
 import { deriveWorldAtlas } from './world-memory.js';
+import { derivePerceptionAtlas } from './perception-memory.js';
 
 let cache = null;
 let cachedChat = null;
@@ -71,9 +72,11 @@ export function getAtlasProjection({
 
 export function getLlmVisibleAtlasProjection(options = {}) {
     const atlas = getAtlasProjection(options);
-    for (const category of ['people', 'items', 'commitments', 'events', 'world']) {
+    for (const category of ['people', 'items', 'commitments', 'events', 'world', 'perceptions']) {
         atlas[category] = atlas[category].filter(entity => !entity.llmHidden);
     }
+    const people = new Map(atlas.people.map(person => [person.id, person]));
+    atlas.perceptions = atlas.perceptions.filter(slot => people.has(slot.observerId) && people.has(slot.subjectId));
     return atlas;
 }
 
@@ -82,7 +85,7 @@ function prepareSummarySourceRecords(records, draftOverrides = [], excludeRecord
     return filterLlmVisibleSummaryRecords(records).map(record => {
         if (!record.structuredSummary?.data?.memoryUpdates) return record;
         const memoryUpdates = { ...record.structuredSummary.data.memoryUpdates };
-        for (const category of ['people', 'items', 'commitments', 'events', 'world']) {
+        for (const category of ['people', 'items', 'commitments', 'events', 'world', 'perceptions']) {
             const draft = drafts.get(`${record.id}:${category}`);
             const persisted = record.atlasReviewOverrides?.[category]?.memoryUpdates;
             if (draft) memoryUpdates[category] = structuredClone(draft);
@@ -127,13 +130,16 @@ function buildAtlasProjection(summaryRecords, reviewRecords, { beforeStartId = n
     const commitments = deriveCommitmentAtlas(records);
     const events = deriveEventAtlas(records);
     const world = deriveWorldAtlas(records);
+    const perceptions = derivePerceptionAtlas(records, getManualAtlasEntries('perceptions'), people.people, { beforeStartId });
     return {
+        perceptions: perceptions.perceptions,
         people: applyManualAtlasPolicy(people.people, manualOnly.people, manualEntries.people),
         items: applyManualAtlasPolicy(items.items, manualOnly.items, manualEntries.items),
         commitments: applyManualAtlasPolicy(commitments.commitments, manualOnly.commitments, manualEntries.commitments),
         events: applyManualAtlasPolicy(events.events, manualOnly.events, manualEntries.events),
         world: applyManualAtlasPolicy(world.world, manualOnly.world, manualEntries.world),
         skippedUpdates: {
+            perceptions: perceptions.skippedUpdates,
             people: people.skippedUpdates,
             items: items.skippedUpdates,
             commitments: commitments.skippedUpdates,

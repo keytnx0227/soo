@@ -119,6 +119,7 @@ function renderPromptBlock(block, summarySections) {
         BLOCK_KINDS.COMMITMENT_MEMORY,
         BLOCK_KINDS.EVENT_MEMORY,
         BLOCK_KINDS.WORLD_MEMORY,
+        BLOCK_KINDS.PERCEPTION_MEMORY,
         BLOCK_KINDS.COMPRESSION_SOURCES,
         BLOCK_KINDS.COMPRESSION_OUTPUT_CONTRACT,
         BLOCK_KINDS.REVISION_SUMMARY_MESSAGES,
@@ -353,7 +354,7 @@ async function showRevisionOutputContractPopup() {
         ...getEnabledSummarySections(getSettings().summarization.summarySections),
         tags: false,
     };
-    const noMemorySections = { people: false, items: false, commitments: false, events: false, world: false };
+    const noMemorySections = { people: false, items: false, commitments: false, events: false, world: false, perceptions: false };
     const form = document.createElement('div');
     form.className = 'stsm-prompt-form';
     form.innerHTML = `

@@ -1,4 +1,5 @@
 const CATEGORY_PREFIXES = Object.freeze({
+    perceptions: 'perception:',
     people: '',
     items: 'item:',
     commitments: 'commitment:',
@@ -7,6 +8,7 @@ const CATEGORY_PREFIXES = Object.freeze({
 });
 
 const OUTPUT_PREFIXES = Object.freeze({
+    perceptions: 'perception',
     people: 'person',
     items: 'item',
     commitments: 'commitment',

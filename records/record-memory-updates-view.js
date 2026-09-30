@@ -1,5 +1,6 @@
 import { escapeHtml } from '../core/utils.js';
 import { formatFeelings } from '../memory/people-feelings.js';
+import { getAtlasProjection } from '../memory/atlas-projection-service.js';
 
 const FIELD_LABELS = Object.freeze({
     provisional: '임시 이름',
@@ -20,6 +21,7 @@ export function renderRecordMemoryUpdateBadge(record) {
         ['서약', 'commitments', getCommitmentUpdates(record)],
         ['사건', 'events', getEventUpdates(record)],
         ['세계 설정', 'world', getWorldUpdates(record)],
+        ['인식', 'perceptions', { created: [], updated: getEffectiveUpdates(record, 'perceptions')?.updated || [] }],
     ];
     return groups.map(([label, category, updates]) => {
         const parts = [];
@@ -38,13 +40,22 @@ export function renderRecordMemoryUpdateDetails(record) {
     const commitments = getCommitmentUpdates(record);
     const events = getEventUpdates(record);
     const world = getWorldUpdates(record);
+    const perceptions = getEffectiveUpdates(record, 'perceptions')?.updated || [];
+    const perceptionNames = new Map(perceptions.length ? getAtlasProjection().perceptions.map(slot => [slot.id, `${slot.observerName} → ${slot.subjectName}`]) : []);
     if (!people.created.length && !people.updated.length
         && !items.created.length && !items.updated.length
         && !commitments.created.length && !commitments.updated.length
         && !events.created.length && !events.updated.length
-        && !world.created.length && !world.updated.length) return '';
+        && !world.created.length && !world.updated.length && !perceptions.length) return '';
 
     return `
+        ${perceptions.length ? `<section class="stsm-record-detail-section"><div class="stsm-record-detail-section-title"><span>인식 변경안</span></div>
+            <div class="stsm-memory-update-list">${perceptions.map(update => `<article class="stsm-memory-update-card">
+                <header><span>인식 변경</span><strong>${escapeHtml(perceptionNames.get(update.targetId) || update.targetId)}</strong></header>
+                ${renderValueRow('추가 · 알고 있는 정보', update.append?.facts)}
+                ${(update.factUpdates || []).map(fact => renderValueRow('수정 · 알고 있는 정보', fact.text)).join('')}
+                ${Object.hasOwn(update.replace || {}, 'impression') ? renderValueRow('교체 · 종합 인식', update.replace.impression) : ''}
+            </article>`).join('')}</div></section>` : ''}
         ${people.created.length || people.updated.length ? `<section class="stsm-record-detail-section">
             <div class="stsm-record-detail-section-title">
                 <span>인물 도감 변경안</span>

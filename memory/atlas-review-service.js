@@ -23,6 +23,7 @@ export const ATLAS_REVIEW_CATEGORIES = Object.freeze({
     commitments: '서약 장부',
     events: '주요 사건',
     world: '세계 설정',
+    perceptions: '인식',
 });
 
 export const ATLAS_REVIEW_MODES = Object.freeze({
@@ -58,13 +59,15 @@ export function getAtlasReviewOverview(category) {
 export function buildAtlasReviewPromptPreviews({
     mode,
     category,
+    perceptionIds = [],
     startId,
     endId,
     startRecordId,
     endRecordId,
 }) {
     assertCategory(category);
-    const hiddenIds = getHiddenAtlasEntityIds(category);
+    const hiddenIds = getHiddenAtlasEntityIds(category, perceptionIds);
+    restrictPerceptionUpdates({ created: [], updated: [] }, { category }, hiddenIds);
     if (isRecordReviewMode(mode)) {
         return selectRecordRange(startRecordId, endRecordId).map(record => {
             const [target] = createSummaryChunks(
@@ -80,8 +83,8 @@ export function buildAtlasReviewPromptPreviews({
             return buildAtlasReviewPrompt(target, category, {
                 mode,
                 projectionOptions: mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
-                    ? { beforeStartId: record.startId, includeCorrections: false }
-                    : { excludeRecordCategory: { recordId: record.id, category } },
+                    ? { beforeStartId: record.startId, includeCorrections: false, perceptionIds }
+                    : { excludeRecordCategory: { recordId: record.id, category }, perceptionIds },
                 currentRecordContribution: JSON.stringify(
                     omitHiddenAtlasUpdates(contribution, hiddenIds),
                     null,
@@ -100,7 +103,7 @@ export function buildAtlasReviewPromptPreviews({
         : null;
     return [buildAtlasReviewPrompt(target, category, {
         mode: ATLAS_REVIEW_MODES.QUICK,
-        projectionOptions: previous ? { excludeReviewIds: [previous.id] } : {},
+        projectionOptions: { excludeReviewIds: previous ? [previous.id] : [], perceptionIds },
         currentRecordContribution: previousUpdates
             ? JSON.stringify(omitHiddenAtlasUpdates(previousUpdates, hiddenIds), null, 2)
             : null,
@@ -110,6 +113,7 @@ export function buildAtlasReviewPromptPreviews({
 export async function createAtlasReviewDraft({
     mode,
     category,
+    perceptionIds = [],
     startId,
     endId,
     startRecordId,
@@ -120,6 +124,7 @@ export async function createAtlasReviewDraft({
     assertExtensionEnabled();
     assertCategory(category);
     const sourceChat = SillyTavern.getContext().chat;
+    restrictPerceptionUpdates({ created: [], updated: [] }, { category }, getHiddenAtlasEntityIds(category, perceptionIds));
     const baselineSignature = createAtlasStateSignature();
     const beforeProjection = getAtlasProjection();
     const draft = {
@@ -127,6 +132,7 @@ export async function createAtlasReviewDraft({
         mode,
         category,
         sourceChat,
+        perceptionIds,
         baselineSignature,
         appliedThroughId: beforeProjection.frontierId,
         entries: [],
@@ -191,7 +197,7 @@ async function createQuickReviewEntry(draft, { startId, endId, onProgress, signa
     const previousUpdates = previous
         ? attachExistingSourceIds(previous.memoryUpdates, draft.category, reviewId)
         : null;
-    const hiddenIds = getHiddenAtlasEntityIds(draft.category);
+    const hiddenIds = getHiddenAtlasEntityIds(draft.category, draft.perceptionIds);
     const visiblePreviousUpdates = previousUpdates
         ? omitHiddenAtlasUpdates(previousUpdates, hiddenIds)
         : null;
@@ -199,7 +205,7 @@ async function createQuickReviewEntry(draft, { startId, endId, onProgress, signa
     onProgress?.({ current: 1, total: 1, target });
     const prompt = buildAtlasReviewPrompt(target, draft.category, {
         mode: ATLAS_REVIEW_MODES.QUICK,
-        projectionOptions: previous ? { excludeReviewIds: [previous.id] } : {},
+        projectionOptions: { excludeReviewIds: previous ? [previous.id] : [], perceptionIds: draft.perceptionIds },
         currentRecordContribution: visiblePreviousUpdates
             ? JSON.stringify(visiblePreviousUpdates, null, 2)
             : null,
@@ -208,7 +214,7 @@ async function createQuickReviewEntry(draft, { startId, endId, onProgress, signa
     throwIfCancelled(signal, draft);
     ensureChatUnchanged(draft.sourceChat);
     const parsed = stabilizeCreatedSourceIds(
-        parseAtlasReviewResponse(response, draft.category),
+        restrictPerceptionUpdates(parseAtlasReviewResponse(response, draft.category), draft, hiddenIds),
         visiblePreviousUpdates,
         draft.category,
     );
@@ -223,7 +229,7 @@ async function createQuickReviewEntry(draft, { startId, endId, onProgress, signa
 async function createRecordReviewEntries(draft, { startRecordId, endRecordId, onProgress, signal }) {
     const records = selectRecordRange(startRecordId, endRecordId);
     const pendingOverrides = [];
-    const hiddenIds = getHiddenAtlasEntityIds(draft.category);
+    const hiddenIds = getHiddenAtlasEntityIds(draft.category, draft.perceptionIds);
     for (let index = 0; index < records.length; index += 1) {
         const record = records[index];
         try {
@@ -255,14 +261,14 @@ async function createRecordReviewEntries(draft, { startRecordId, endRecordId, on
             const beforeStep = getAtlasProjection(beforeProjectionOptions)[draft.category];
             const prompt = buildAtlasReviewPrompt(target, draft.category, {
                 mode: draft.mode,
-                projectionOptions: beforeProjectionOptions,
+                projectionOptions: { ...beforeProjectionOptions, perceptionIds: draft.perceptionIds },
                 currentRecordContribution: JSON.stringify(visibleContribution, null, 2),
             });
             const response = await generateSummary(prompt);
             throwIfCancelled(signal, draft);
             ensureChatUnchanged(draft.sourceChat);
             const visibleMemoryUpdates = stabilizeCreatedSourceIds(
-                parseAtlasReviewResponse(response, draft.category),
+                restrictPerceptionUpdates(parseAtlasReviewResponse(response, draft.category), draft, hiddenIds),
                 visibleContribution,
                 draft.category,
             );
@@ -356,6 +362,7 @@ function toSemanticAtlasValue(value) {
 }
 
 function getAtlasValueName(value) {
+    if (value?.observerName) return `${value.observerName} → ${value.subjectName}`;
     return value?.name || value?.title || value?.content || value?.id || '항목';
 }
 
@@ -393,10 +400,25 @@ function stabilizeCreatedSourceIds(memoryUpdates, previousUpdates, category) {
     return { ...memoryUpdates, created };
 }
 
-function getHiddenAtlasEntityIds(category) {
-    return new Set(getAtlasProjection()[category]
-        .filter(entity => entity.llmHidden)
+function getHiddenAtlasEntityIds(category, perceptionIds = []) {
+    const atlas = getAtlasProjection();
+    if (category !== 'perceptions') return new Set(atlas[category].filter(entity => entity.llmHidden).map(entity => String(entity.id)));
+    const entities = [...atlas[category], ...(atlas.excluded?.[category] || [])];
+    return new Set(entities
+        .filter(entity => entity.llmHidden || entity.excluded || (category === 'perceptions'
+            && (!entity.allowAutoUpdate || entity.unresolved || entity.endpointHidden
+                || (perceptionIds.length && !perceptionIds.includes(entity.id)))))
         .map(entity => String(entity.id)));
+}
+
+function restrictPerceptionUpdates(updates, draft, hiddenIds) {
+    if (draft.category !== 'perceptions') return updates;
+    const allowed = new Set(getAtlasProjection().perceptions.filter(slot => !hiddenIds.has(slot.id)).map(slot => slot.id));
+    if (!allowed.size) throw new Error('재검토할 인식 칸이 없습니다. 도감에서 칸을 추가하고 자동 업데이트를 켜주세요.');
+    if (updates.updated.some(update => !allowed.has(update.targetId))) {
+        throw new Error('선택하지 않았거나 사용할 수 없는 인식 칸의 변경안이 생성되었습니다. 다시 요청해주세요.');
+    }
+    return updates;
 }
 
 function omitHiddenAtlasUpdates(memoryUpdates, hiddenIds) {

@@ -9,6 +9,7 @@ import { deriveItemAtlas } from '../memory/item-memory.js';
 import { deriveCommitmentAtlas } from '../memory/commitment-memory.js';
 import { deriveEventAtlas } from '../memory/event-memory.js';
 import { deriveWorldAtlas } from '../memory/world-memory.js';
+import { derivePerceptionAtlas } from '../memory/perception-memory.js';
 import { applyAtlasCorrections } from '../memory/atlas-corrections.js';
 
 async function load(path, scope) {
@@ -67,7 +68,7 @@ test('atlas preview applies drafts without writing source records or polluting t
     } } } };
     const snapshot = structuredClone({ records, draft });
     const scope = await load('../memory/atlas-projection-service.js', {
-        structuredClone, derivePeopleAtlas, deriveItemAtlas, deriveCommitmentAtlas, deriveEventAtlas, deriveWorldAtlas, applyAtlasCorrections,
+        structuredClone, derivePeopleAtlas, deriveItemAtlas, deriveCommitmentAtlas, deriveEventAtlas, deriveWorldAtlas, derivePerceptionAtlas, applyAtlasCorrections,
         SillyTavern: { getContext: () => ({ chat }) }, getSummaryRecords: () => records,
         filterLlmVisibleSummaryRecords: records => records,
         getAtlasReviewRecords: () => [], getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}),

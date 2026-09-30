@@ -4,7 +4,7 @@ import { getAtlasCorrections, getAtlasReviewRecords, getManualAtlasEntries } fro
 import { getSummaryRecords } from '../summary/summary-store.js';
 import { getAtlasProjection } from '../memory/atlas-projection-service.js';
 
-export const REVIEW_CATEGORIES = ['people', 'items', 'commitments', 'events', 'world'];
+export const REVIEW_CATEGORIES = ['people', 'items', 'commitments', 'events', 'world', 'perceptions'];
 const KEY = 'stsmRegenerationDrafts';
 
 export function getPendingRegenerations() {
@@ -121,7 +121,7 @@ function referencesEntity(updates, category, id) {
     const visit = value => {
         if (!value || typeof value !== 'object') return false;
         if (Array.isArray(value)) return value.some(visit);
-        if (value.personId === id) return true;
+        if (value.personId === id || value.observerId === id || value.subjectId === id) return true;
         if (['relationships', 'relationshipUpdates'].some(key => (value[key] || []).some(item => item.targetId === id))) return true;
         return Object.values(value).some(visit);
     };
@@ -160,7 +160,7 @@ export function validateResolvedRegeneration(draft, requirements, choices) {
         .map(category => ({ recordId: draft.recordId, category,
             memoryUpdates: draft.structuredSummary.data.memoryUpdates[category] || { created: [], updated: [] } })) });
     for (const category of REVIEW_CATEGORIES) {
-        const signature = item => `${item.sourceRecordId}:${item.targetId}`;
+        const signature = item => `${item.sourceRecordId}:${item.targetId}:${item.factId || ''}`;
         const existing = new Set((before.skippedUpdates[category] || []).map(signature));
         const allowed = new Set(requirements.filter(item => item.category === category
             && choices[`${category}:${item.id}`] === 'disconnect').map(item => item.id));

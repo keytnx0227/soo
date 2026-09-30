@@ -49,6 +49,7 @@ export const DEFAULT_SUMMARY_OUTPUT_SECTIONS = Object.freeze({
 });
 
 export const DEFAULT_MEMORY_SECTIONS = Object.freeze({
+    perceptions: true,
     people: true,
     items: true,
     commitments: true,
@@ -57,6 +58,7 @@ export const DEFAULT_MEMORY_SECTIONS = Object.freeze({
 });
 
 export const SUMMARY_SECTION_DESCRIPTIONS = Object.freeze({
+    perceptions: '사용자가 등록한 방향에서 그 인물이 상대에 대해 아는 정보와 종합 인식의 변화만 추출합니다. 숨겨진 진실이나 독자용 해설은 넣지 않습니다.',
     plot: '요약 대상에서 일어난 사건과 원인, 결과를 시간 순서대로 기록합니다. 항상 포함되는 필수 항목입니다.',
     title: '해당 요약 청크의 중심 장면이나 사건을 알아보기 쉬운 짧은 제목으로 만듭니다.',
     date: '명시된 날짜를 우선 사용하고, 날짜가 없다면 최근 요약과 이어지는 Day N 흐름을 추적합니다.',
@@ -103,6 +105,7 @@ export function getEnabledSummarySections(value) {
 export function getEnabledMemorySections(value) {
     const source = value && typeof value === 'object' ? value : {};
     return {
+        perceptions: source.perceptions ?? DEFAULT_MEMORY_SECTIONS.perceptions,
         people: source.people ?? DEFAULT_MEMORY_SECTIONS.people,
         items: source.items ?? DEFAULT_MEMORY_SECTIONS.items,
         commitments: source.commitments ?? DEFAULT_MEMORY_SECTIONS.commitments,
@@ -168,8 +171,16 @@ export function buildSummaryJsonContract(
             matchTerms: ['Distinctive source-language cue', 'Normalized lexical cue'],
         }];
     }
-    if (memorySections.people || memorySections.items || memorySections.commitments || memorySections.events || memorySections.world) {
+    if (memorySections.people || memorySections.items || memorySections.commitments || memorySections.events || memorySections.world || memorySections.perceptions) {
         example.memoryUpdates = {};
+    }
+    if (memorySections.perceptions) {
+        example.memoryUpdates.perceptions = { created: [], updated: [{
+            targetId: 'Exact registered perception slot ID',
+            append: { facts: ['One short statement the observer knows about the subject'] },
+            factUpdates: [{ targetId: 'Exact existing fact ID, only when its content changed', text: 'Corrected belief as known by this observer' }],
+            replace: { impression: 'Current subjective impression, only when changed' },
+        }] };
     }
     if (memorySections.people) {
         example.memoryUpdates.people = {
@@ -358,11 +369,14 @@ export function buildSummaryJsonContract(
         'Do not wrap the JSON in Markdown code fences. Do not add a preface, explanation, or commentary.',
         'Use null for an unavailable scalar value and [] when an enabled list has no supported entries.',
         'Do not add properties that are not present in this contract.',
-        ...(memorySections.people || memorySections.items || memorySections.commitments || memorySections.events || memorySections.world ? [
+        ...(memorySections.people || memorySections.items || memorySections.commitments || memorySections.events || memorySections.world || memorySections.perceptions ? [
             'For every memory category, omit unchanged optional update fields and use empty created/updated arrays when no proposal is supported.',
         ] : []),
         ...(memorySections.commitments ? [
             'Commitment status must be exactly pending, fulfilled, or obsolete.',
+        ] : []),
+        ...(memorySections.perceptions ? [
+            'Perceptions are user-registered directional slots: created must always be []. Use only supplied slot targetIds and fact IDs. Do not create or reverse slots. If no eligible slots are supplied, return empty created and updated arrays.',
         ] : []),
         ...(memorySections.events ? [
             'Most chunks should return empty event created and updated arrays. Never create an event merely to fill the example structure.',
@@ -442,12 +456,31 @@ function createSingleMemorySectionConfiguration(category) {
 function normalizeMemoryUpdates(value, memorySections) {
     const source = isPlainObject(value) ? value : {};
     return {
+        perceptions: memorySections.perceptions ? normalizePerceptionUpdates(source.perceptions) : { created: [], updated: [] },
         people: memorySections.people ? normalizePeopleUpdates(source.people) : { created: [], updated: [] },
         items: memorySections.items ? normalizeItemUpdates(source.items) : { created: [], updated: [] },
         commitments: memorySections.commitments ? normalizeCommitmentUpdates(source.commitments) : { created: [], updated: [] },
         events: memorySections.events ? normalizeEventUpdates(source.events) : { created: [], updated: [] },
         world: memorySections.world ? normalizeWorldUpdates(source.world) : { created: [], updated: [] },
     };
+}
+
+export function normalizePerceptionUpdates(value) {
+    if (Array.isArray(value?.created) && value.created.length) throw new Error('인식 칸은 사용자만 만들 수 있습니다. created는 비워주세요.');
+    return { created: [], updated: (Array.isArray(value?.updated) ? value.updated : []).map(entry => {
+        const targetId = normalizeNullableString(entry?.targetId);
+        if (!targetId) throw new Error('인식 업데이트에 대상 칸 ID가 필요합니다.');
+        return { targetId,
+            append: { facts: normalizeStringList(entry.append?.facts) },
+            factUpdates: (Array.isArray(entry.factUpdates) ? entry.factUpdates : []).map(fact => {
+                const id = normalizeNullableString(fact?.targetId);
+                const text = normalizeNullableString(fact?.text);
+                if (!id || !text) throw new Error('인식 정보 수정에는 기존 정보 ID와 내용이 필요합니다.');
+                return { targetId: id, text };
+            }),
+            replace: Object.hasOwn(entry.replace || {}, 'impression') ? { impression: normalizeNullableString(entry.replace.impression) } : {},
+        };
+    }) };
 }
 
 function normalizeWorldUpdates(value) {

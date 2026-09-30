@@ -2,7 +2,7 @@ import { escapeHtml } from '../core/utils.js';
 
 const SECTION_COLORS = {
     records: '#3685c5', events: '#d78728', people: '#329b80',
-    items: '#aa70b5', commitments: '#d36778', world: '#879842',
+    items: '#aa70b5', commitments: '#d36778', world: '#879842', perceptions: '#3b9c9b',
 };
 
 export function renderTokenUsageBar({ label, used, max, enabled = true, blocks = null }) {

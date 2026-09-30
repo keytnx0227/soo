@@ -23,6 +23,7 @@ import { bindAtlasFullscreenView } from './memory/atlas-fullscreen-view.js';
 import { bindManualAtlasEntryButtons } from './memory/atlas-manual-editor.js';
 import { bindWorldMemoryView, renderWorldMemory } from './memory/world-memory-view.js';
 import { bindAtlasReview } from './memory/atlas-review-view.js';
+import { bindPerceptionMemoryView, renderPerceptionMemory } from './memory/perception-memory-view.js';
 import {
     bindLongTermRetrievalSettings,
     renderLongTermRetrievalSettings,
@@ -266,6 +267,7 @@ function bindEvents(root) {
     bindAtlasFullscreenView(root);
     bindManualAtlasEntryButtons(root);
     bindAtlasReview(root);
+    bindPerceptionMemoryView(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {
             synchronizeRevisionSessionRanges(updatedRecords);
@@ -1424,6 +1426,7 @@ function initialize() {
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
         renderWorldMemory(currentRoot);
+        renderPerceptionMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
     });
@@ -1435,6 +1438,7 @@ function initialize() {
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
         renderWorldMemory(currentRoot);
+        renderPerceptionMemory(currentRoot);
         renderRangeActions(currentRoot);
         renderSummaryStatus(currentRoot);
     });
@@ -1450,12 +1454,14 @@ function initialize() {
         renderCommitmentMemory(currentRoot);
         renderEventMemory(currentRoot);
         renderWorldMemory(currentRoot);
+        renderPerceptionMemory(currentRoot);
     });
     window.addEventListener('stsm:injection-settings-changed', () => {
         if (!currentRoot) return;
         renderPeopleMemory(currentRoot);
         renderEventMemory(currentRoot);
         renderWorldMemory(currentRoot);
+        renderPerceptionMemory(currentRoot);
     });
     [
         context.eventTypes.MESSAGE_SENT,
@@ -1471,6 +1477,7 @@ function initialize() {
             refreshSummaryRecordSourceStates(currentRoot);
             renderPeopleMemory(currentRoot);
             renderWorldMemory(currentRoot);
+            renderPerceptionMemory(currentRoot);
         }));
     initializeSummaryContext();
     initializeMessageVisibility();
