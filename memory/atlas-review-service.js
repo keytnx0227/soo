@@ -407,7 +407,7 @@ function getHiddenAtlasEntityIds(category, perceptionIds = []) {
     const entities = [...atlas[category], ...(atlas.excluded?.[category] || [])];
     return new Set(entities
         .filter(entity => entity.llmHidden || entity.excluded || (category === 'perceptions'
-            && (!entity.allowAutoUpdate || entity.unresolved || entity.endpointHidden
+            && (entity.unresolved || entity.endpointHidden
                 || (perceptionIds.length && !perceptionIds.includes(entity.id)))))
         .map(entity => String(entity.id)));
 }
@@ -415,7 +415,7 @@ function getHiddenAtlasEntityIds(category, perceptionIds = []) {
 function restrictPerceptionUpdates(updates, draft, hiddenIds) {
     if (draft.category !== 'perceptions') return updates;
     const allowed = new Set(getAtlasProjection().perceptions.filter(slot => !hiddenIds.has(slot.id)).map(slot => slot.id));
-    if (!allowed.size) throw new Error('재검토할 인식 칸이 없습니다. 도감에서 칸을 추가하고 자동 업데이트를 켜주세요.');
+    if (!allowed.size) throw new Error('재검토할 인식 칸이 없습니다. 도감의 인식 칸과 숨김 설정을 확인해주세요.');
     if (updates.updated.some(update => !allowed.has(update.targetId))) {
         throw new Error('선택하지 않았거나 사용할 수 없는 인식 칸의 변경안이 생성되었습니다. 다시 요청해주세요.');
     }

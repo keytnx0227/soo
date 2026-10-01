@@ -190,7 +190,7 @@ try {
                 root.innerHTML = '<div class="stsm-atlas-review-result"></div>';
                 review.renderDraftResult(root, { category: 'perceptions', before, after, completed: true, entries: [{ startId: 0, endId: 19,
                     stepChanges: review.compareAtlas(before, after), memoryUpdates: { created: [], updated: [{ targetId: 'ab', append: { facts: ['새로운 정보'] } }] } }] }, '',
-                    translated ? { content: '번역된 결과' } : null, translated);
+                    translated ? { content: '번역된 결과', generated: { content: '생성된 변경안 번역' } } : null, translated);
             };
             window.openPerceptionReview = () => { void review.openAtlasReviewPopup(); };
             window.seedReviewHistory = () => {
@@ -447,6 +447,9 @@ try {
         await page.locator('.test-popup:not([hidden]) .test-cancel').click();
         await page.locator('[data-perception-action="visibility"]').click();
         await page.evaluate(() => window.seedReviewHistory());
+        await page.locator('[data-perception-action="edit"]').click();
+        await page.locator('[data-auto]').uncheck();
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
         await page.evaluate(() => window.openPerceptionReview());
         await page.locator('.stsm-atlas-review-category').selectOption('perceptions');
         await page.locator('.stsm-atlas-review-perception').selectOption(perceptionId);
@@ -494,6 +497,9 @@ try {
         await page.evaluate(() => window.renderReviewResult(true));
         assert.equal(await page.locator('.stsm-atlas-review-result-list').isVisible(), false);
         assert.equal(await page.locator('.stsm-atlas-review-result-translation').innerText(), '번역된 결과');
+        assert.equal(await page.locator('.stsm-atlas-review-generated-translation').innerText(), '생성된 변경안 번역');
+        assert.equal(await page.locator('.stsm-atlas-review-generated-translation').isVisible(), true);
+        assert.equal(await page.locator('.stsm-atlas-review-draft-entries').isVisible(), false);
         await page.close();
         console.log(`UI checks passed: ${width}px`);
     }

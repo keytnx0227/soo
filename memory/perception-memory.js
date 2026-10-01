@@ -29,7 +29,8 @@ export function derivePerceptionAtlas(records, slots, people, { beforeStartId = 
             const slot = byId.get(update.targetId);
             const skip = (reason, factId = null) => skippedUpdates.push({ sourceRecordId: record.id, targetId: update.targetId, factId, range, reason });
             if (!slot) { skip('등록되지 않은 인식 칸입니다.'); continue; }
-            if (!slot.allowAutoUpdate || (effectiveId <= slot.appliedThroughId && baselines.get(slot.id))) continue;
+            const reviewed = record.atlasReview || record.perceptionReview || record.atlasReviewOverrides?.perceptions;
+            if ((!slot.allowAutoUpdate && !reviewed) || (effectiveId <= slot.appliedThroughId && baselines.get(slot.id))) continue;
             for (const text of update.append?.facts || []) {
                 if (slot.facts.some(fact => fact.text === text)) continue;
                 slot.facts.push({ id: createStableAtlasEntityId('perceptions', record.id, `${slot.id}:${text}`), text });

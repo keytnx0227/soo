@@ -51,6 +51,24 @@ async function load(path, scope) {
     return scope;
 }
 
+test('review translation includes generated proposals even when final atlas is unchanged', async () => {
+    const calls = [];
+    const scope = await load('../memory/atlas-review-view.js', { translateAtlasReviewChanges: async changes => {
+        calls.push(changes); return { content: `translation ${calls.length}` };
+    } });
+    const draft = { before: [], after: [], entries: [{ startId: 0, endId: 19, memoryUpdates: { updated: [{ targetId: 'ab', append: { facts: ['new proposal'] } }] } }] };
+    const original = structuredClone(draft);
+    const result = await scope.translateReviewDraft(draft);
+    assert.equal(calls.length, 1);
+    assert.equal(result.generated.content, 'translation 1');
+    assert.match(calls[0].updated[0].name, /#0 ~ #19/);
+    assert.equal(calls[0].updated[0].value.updated[0].append.facts[0], 'new proposal');
+    draft.after = [{ id: 'ab', impression: 'new impression' }];
+    await scope.translateReviewDraft(draft);
+    assert.equal(calls.length, 3);
+    assert.deepEqual(draft.entries, original.entries);
+});
+
 test('atlas update preserves target ID and only appends explicitly entered cumulative fields', () => {
     const person = { id: 'p1', name: 'A', role: 'traveler', aliases: ['old alias'], relationships: [{ targetId: 'p2' }] };
     const initial = atlasUpdateEditorInitial('people', person);

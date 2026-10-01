@@ -906,6 +906,8 @@
 .stsm-atlas-review-record-fields[hidden],
 .stsm-atlas-review-record-progress[hidden],
 .stsm-atlas-review-result-list[hidden],
+.stsm-atlas-review-draft-entries[hidden],
+.stsm-atlas-review-generated-translation[hidden],
 .stsm-atlas-review-result-translation[hidden] {
     display: none !important;
 }
@@ -977,6 +979,7 @@
     overflow-wrap: anywhere;
 }
 
+.stsm-atlas-review-generated-translation,
 .stsm-atlas-review-result-translation {
     max-height: min(42vh, 420px);
     overflow: auto;

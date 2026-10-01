@@ -95,6 +95,7 @@ function prepareSummarySourceRecords(records, draftOverrides = [], excludeRecord
         }
         return {
             ...record,
+            perceptionReview: Boolean(drafts.has(`${record.id}:perceptions`) || record.atlasReviewOverrides?.perceptions),
             structuredSummary: {
                 ...record.structuredSummary,
                 data: { ...record.structuredSummary.data, memoryUpdates },

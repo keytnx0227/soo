@@ -182,11 +182,10 @@ async function openAtlasReviewPopup() {
                 '현재 번역은 덮어씌워집니다.',
             )) return;
             const draftId = draft.id;
-            const changes = compareAtlas(draft.before, draft.after);
             const translationToken = beginOperation('translating', '도감 재검토 결과 번역 중');
             setDraftResultBusy(content, true);
             try {
-                const translated = await translateAtlasReviewChanges(changes);
+                const translated = await translateReviewDraft(draft);
                 if (!draft || draft.id !== draftId) return;
                 reviewTranslation = translated;
                 showingTranslation = true;
@@ -284,7 +283,7 @@ function renderPerceptionOptions(content) {
     field.hidden = content.querySelector('.stsm-atlas-review-category').value !== 'perceptions';
     const select = field.querySelector('select');
     const selected = select.value;
-    const slots = getAtlasProjection().perceptions.filter(slot => slot.allowAutoUpdate && !slot.llmHidden && !slot.unresolved && !slot.endpointHidden);
+    const slots = getAtlasProjection().perceptions.filter(slot => !slot.llmHidden && !slot.unresolved && !slot.endpointHidden);
     select.innerHTML = '<option value="">등록된 방향 전체</option>' + slots.map(slot =>
         `<option value="${escapeHtml(slot.id)}">${escapeHtml(slot.observerName)} → ${escapeHtml(slot.subjectName)}</option>`).join('');
     if (slots.some(slot => slot.id === selected)) select.value = selected;
@@ -562,6 +561,16 @@ function historyItem({ id, type, title, detail }) {
     </div>`;
 }
 
+async function translateReviewDraft(draft) {
+    const changes = compareAtlas(draft.before, draft.after);
+    const generated = draft.entries.length ? await translateAtlasReviewChanges({ updated: draft.entries.map(entry => ({
+        name: `생성된 재검토 변경안 #${entry.startId} ~ #${entry.endId}`, value: entry.memoryUpdates,
+    })) }) : null;
+    const translated = changes.created.length + changes.updated.length + changes.removed.length
+        ? await translateAtlasReviewChanges(changes) : { content: '' };
+    return { ...translated, generated };
+}
+
 function renderDraftResult(content, draft, interruptionMessage = '', translation = null, showingTranslation = false) {
     const result = content.querySelector('.stsm-atlas-review-result');
     const changes = compareAtlas(draft.before, draft.after);
@@ -572,7 +581,7 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
             <strong>적용 전 검토 결과</strong>
             <div class="stsm-atlas-review-result-tools">
                 <span>신규 ${changes.created.length} · 변경 ${changes.updated.length} · 제외 ${changes.removed.length}</span>
-                ${changeCount ? `<button class="stsm-atlas-review-translate menu_button menu_button_icon interactable" type="button" title="${translation ? '번역 재생성' : '검토 결과 번역'}" aria-label="${translation ? '번역 재생성' : '검토 결과 번역'}"><i class="fa-solid fa-language" aria-hidden="true"></i></button>` : ''}
+                ${changeCount || draft.entries.length ? `<button class="stsm-atlas-review-translate menu_button menu_button_icon interactable" type="button" title="${translation ? '번역 재생성' : '검토 결과 번역'}" aria-label="${translation ? '번역 재생성' : '검토 결과 번역'}"><i class="fa-solid fa-language" aria-hidden="true"></i></button>` : ''}
                 ${translation ? `<button class="stsm-atlas-review-toggle-translation menu_button menu_button_icon interactable" type="button" title="원문/번역 전환" aria-label="원문/번역 전환"><i class="fa-solid fa-right-left" aria-hidden="true"></i></button>` : ''}
             </div>
         </div>
@@ -583,9 +592,10 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
         ${renderDraftStepHistory(draft)}
         ${translation ? `<pre class="stsm-atlas-review-result-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.content)}</pre>` : ''}
         ${changeCount === 0 && draft.entries.length ? '<p class="stsm-atlas-review-no-effect">재검토 변경안은 생성됐지만 현재 최종 도감에는 영향을 주지 않습니다. 같은 값이 이미 반영됐거나 이후 레코드·사용자 수정이 해당 값을 덮고 있을 수 있습니다.</p>' : ''}
-        <details class="stsm-atlas-review-stored-update">
+        <details class="stsm-atlas-review-stored-update"${showingTranslation && translation?.generated ? ' open' : ''}>
             <summary>생성된 재검토 변경안</summary>
-            <div class="stsm-atlas-review-draft-entries">
+            ${translation?.generated ? `<pre class="stsm-atlas-review-generated-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.generated.content)}</pre>` : ''}
+            <div class="stsm-atlas-review-draft-entries"${showingTranslation && translation?.generated ? ' hidden' : ''}>
                 ${draft.entries.map(entry => `
                     <section>
                         <strong>#${entry.startId} ~ #${entry.endId}</strong>

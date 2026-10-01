@@ -28,6 +28,19 @@ const record = (id, endId, updates, extra = {}) => ({ id, startId: endId - 9, en
     structuredSummary: { data: { memoryUpdates: { perceptions: { created: [], updated: updates } } } } });
 const append = (text, targetId = 'ab') => ({ targetId, append: { facts: [text] } });
 
+test('manual reviews bypass auto-update opt-out while ordinary extraction remains blocked', async () => {
+    const disabled = { ...slot, allowAutoUpdate: false };
+    const ordinary = record('ordinary', 19, [append('automatic')]);
+    const quick = record('quick', 29, [append('quick review')], { atlasReview: true, appliedThroughId: 29 });
+    const reviewed = record('reviewed', 39, [append('record review')], { perceptionReview: true });
+    assert.deepEqual(derivePerceptionAtlas([ordinary, quick, reviewed], [disabled], people).perceptions[0].facts.map(f => f.text), ['quick review', 'record review']);
+    const scope = await projectionHarness({ slots: [disabled], records: [ordinary] });
+    await load('../memory/perception-memory-service.js', scope);
+    assert.equal(scope.buildPerceptionMemoryPromptContext(), '');
+    assert.equal(JSON.parse(scope.buildPerceptionMemoryPromptContext({ manualAtlasReview: true }))[0].id, 'ab');
+    assert.equal(scope.buildPerceptionMemoryPromptContext({ manualAtlasReview: true, perceptionIds: ['other'] }), '');
+});
+
 test('registered direction only; original long-term records retain knowledge and immutable fact IDs', () => {
     const records = [record('r1', 19, [append('B said they studied abroad.')], { compressedBy: 'parent' }),
         record('r2', 39, [append('B said they studied abroad.'), append('unknown', 'ba')])];
@@ -325,7 +338,7 @@ test('all perception review modes use the person-focused rule without affecting 
 test('selected-slot retrospective reviews preserve other directions and reject unselected responses', async () => {
     const reverse = { ...slot, id: 'ba', observerId: 'b', subjectId: 'a' };
     const records = [record('r1', 19, [append('A knew B'), append('B knew A', 'ba')], { type: 'summary' })];
-    const scope = await projectionHarness({ slots: [slot, reverse], records });
+    const scope = await projectionHarness({ slots: [{ ...slot, allowAutoUpdate: false }, reverse], records });
     let calls = 0;
     let responseTarget = 'ab';
     let saved;
@@ -346,6 +359,7 @@ test('selected-slot retrospective reviews preserve other directions and reject u
     assert.equal(prompts[0].projectionOptions.beforeStartId, 10);
     assert.deepEqual(prompts[0].projectionOptions.perceptionIds, ['ab']);
     const updates = draft.entries[0].memoryUpdates.updated;
+    assert.equal(draft.after.find(item => item.id === 'ab').facts[0].text, 'Reviewed knowledge');
     assert.equal(updates.find(update => update.targetId === 'ab').append.facts[0], 'Reviewed knowledge');
     assert.equal(updates.find(update => update.targetId === 'ba').append.facts[0], 'B knew A');
     assert.equal(draft.after.find(item => item.id === 'ba').facts[0].text, 'B knew A');

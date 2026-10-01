@@ -102,7 +102,7 @@ export function buildAtlasReviewPrompt(
     const chronological = mode === 'chronological';
     const target = renderSummaryMessages(messageBlock.content, { messages, startId, endId }, SillyTavern.getContext());
     const currentMemory = memoryBlock
-        ? renderDataBlock(memoryBlock, definition.macro, definition.buildContext(projectionOptions), values)
+        ? renderDataBlock(memoryBlock, definition.macro, definition.buildContext(category === 'perceptions' ? { ...projectionOptions, manualAtlasReview: true } : projectionOptions), values)
         : '';
     const rule = String(extractionBlock?.config?.rules?.[category] || '').trim();
     const recentSummaryParts = chronological
