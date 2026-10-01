@@ -19,7 +19,7 @@ for (const name of [
     'records/manual-author-engine.js', 'records/manual-author-view.js',
     'memory/perception-memory.js', 'memory/perception-memory-view.js',
     'memory/atlas-layer-order.js', 'memory/atlas-anchor-transaction.js', 'memory/atlas-metadata.js',
-    'memory/atlas-review-service.js', 'memory/atlas-review-view.js',
+    'memory/atlas-review-service.js', 'memory/atlas-review-view.js', 'memory/atlas-review-draft-editor.js',
     'memory/atlas-fullscreen-view.js', 'translation/atlas-translation-service.js', 'ui/token-usage-view.js',
 ]) sources[name] = await readFile(new URL(name, root), 'utf8');
 const css = await readFile(new URL('style.css', root), 'utf8');
@@ -181,7 +181,14 @@ try {
             };
             window.openPerceptionDraft = () => { void scope.openManualAtlasManager([], memoryUpdates => ({ id: 'perception-draft', startId: 40, endId: 49, structuredSummary: { data: { memoryUpdates } } }))
                 .then(result => { window.perceptionDraft = result; }); };
-            Object.assign(scope, load('memory/atlas-review-service.js', ['ATLAS_REVIEW_CATEGORIES', 'ATLAS_REVIEW_MODES', 'getAtlasReviewOverview', 'getAtlasReviewRecordCandidates'], scope));
+            Object.assign(scope, load('memory/atlas-review-service.js', ['ATLAS_REVIEW_CATEGORIES', 'ATLAS_REVIEW_MODES', 'getAtlasReviewOverview', 'getAtlasReviewRecordCandidates', 'getEditableAtlasReviewUpdates', 'editAtlasReviewDraftEntry'], scope));
+            Object.assign(scope, load('memory/atlas-review-draft-editor.js', ['showAtlasReviewDraftEditor', 'mergeReviewUpdate'], scope));
+            window.openReviewEditor = () => {
+                window.reviewEditInput = { category: 'items', entries: [{ startId: 0, endId: 19, memoryUpdates: {
+                    created: [{ sourceId: 'stable-key', name: '열쇠', facts: ['은색 열쇠'], functions: ['문을 연다'] }], updated: [],
+                } }], before: [], after: [] };
+                void scope.showAtlasReviewDraftEditor(window.reviewEditInput, 0).then(value => { window.reviewEdited = value; });
+            };
             const review = load('memory/atlas-review-view.js', ['openAtlasReviewPopup', 'renderDraftResult', 'compareAtlas'], scope);
             window.renderReviewResult = (translated = false) => {
                 const before = [{ id: 'ab', observerName: '관찰자', subjectName: '상대', facts: [{ id: 'fact', text: '꽃을 좋아한다.' }], impression: '조용한 사람' }];
@@ -500,6 +507,20 @@ try {
         assert.equal(await page.locator('.stsm-atlas-review-generated-translation').innerText(), '생성된 변경안 번역');
         assert.equal(await page.locator('.stsm-atlas-review-generated-translation').isVisible(), true);
         assert.equal(await page.locator('.stsm-atlas-review-draft-entries').isVisible(), false);
+        await page.evaluate(() => window.openReviewEditor());
+        await page.locator('[data-review-edit]').click();
+        await page.locator('[data-manual-field="name"] input').fill('수정한 열쇠');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.match(await page.locator('[data-review-proposals]').innerText(), /수정한 열쇠/);
+        await page.screenshot({ path: fileURLToPath(new URL(`review-editor-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.evaluate(() => window.reviewEdited.created[0].sourceId), 'stable-key');
+        assert.equal(await page.evaluate(() => window.reviewEdited.created[0].name), '수정한 열쇠');
+        assert.equal(await page.evaluate(() => window.reviewEditInput.entries[0].memoryUpdates.created[0].name), '열쇠');
+        await page.evaluate(() => window.openReviewEditor());
+        await page.locator('[data-review-remove]').click();
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        assert.equal(await page.evaluate(() => window.reviewEdited), null);
         await page.close();
         console.log(`UI checks passed: ${width}px`);
     }

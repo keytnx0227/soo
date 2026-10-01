@@ -12,6 +12,17 @@ import { deriveWorldAtlas } from '../memory/world-memory.js';
 import { derivePerceptionAtlas } from '../memory/perception-memory.js';
 import { applyAtlasCorrections } from '../memory/atlas-corrections.js';
 
+test('proposal editing preserves explicit replacement and identities even when equal to projected values', async () => {
+    const scope = await load('../memory/atlas-review-draft-editor.js', { createManualAtlasUpdate, structuredClone });
+    const entity = { id: 'i', name: 'Key', functions: ['old'], aliases: [], facts: [] };
+    const previous = { targetId: 'i', replace: { functions: ['reviewed'] }, append: { facts: ['added'] } };
+    const edited = scope.mergeReviewUpdate('items', entity, previous, entity);
+    assert.equal(edited.targetId, 'i');
+    assert.deepEqual(edited.replace.functions, ['old']);
+    assert.deepEqual(edited.append.facts, []);
+    assert.deepEqual(previous.replace.functions, ['reviewed']);
+});
+
 test('review results render readable atlas fields and comparisons without changing source data', async () => {
     const scope = await load('../memory/atlas-review-view.js', {
         escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'),

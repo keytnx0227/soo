@@ -14,8 +14,10 @@ import { translateAtlasReviewChanges } from '../translation/atlas-review-transla
 import { getAtlasLayerSnapshot, removeAtlasLayer, removeAtlasReviewMember } from './atlas-layer-service.js';
 import { confirmRemoveAtlasLayer, showAtlasLayerDetails } from './atlas-layer-view.js';
 import { renderRecordMemoryUpdateDetails } from '../records/record-memory-updates-view.js';
+import { showAtlasReviewDraftEditor } from './atlas-review-draft-editor.js';
 import {
     applyAtlasReviewDraft,
+    editAtlasReviewDraftEntry,
     ATLAS_REVIEW_CATEGORIES,
     ATLAS_REVIEW_MODES,
     buildAtlasReviewPromptPreviews,
@@ -171,6 +173,25 @@ async function openAtlasReviewPopup() {
         }
     });
     content.querySelector('.stsm-atlas-review-result').addEventListener('click', async event => {
+        const editButton = event.target.closest('[data-review-draft-edit]');
+        if (editButton && draft && !applyingDraft) {
+            const current = draft;
+            const index = Number(editButton.dataset.reviewDraftEdit);
+            applyingDraft = true;
+            setDraftResultBusy(content, true);
+            try {
+                const updates = await showAtlasReviewDraftEditor(current, index);
+                if (updates && draft === current) {
+                    draft = editAtlasReviewDraftEntry(current, index, updates);
+                    reviewTranslation = null;
+                    showingTranslation = false;
+                    renderDraftResult(content, draft, draftInterruptionMessage);
+                    content.querySelector('.stsm-atlas-review-stored-update').open = true;
+                }
+            } catch (error) { logReviewError(error, '재검토 초안 수정 실패'); }
+            finally { applyingDraft = false; setDraftResultBusy(content, false); }
+            return;
+        }
         if (event.target.closest('.stsm-atlas-review-toggle-translation') && reviewTranslation && draft) {
             showingTranslation = !showingTranslation;
             renderDraftResult(content, draft, draftInterruptionMessage, reviewTranslation, showingTranslation);
@@ -596,9 +617,9 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
             <summary>생성된 재검토 변경안</summary>
             ${translation?.generated ? `<pre class="stsm-atlas-review-generated-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.generated.content)}</pre>` : ''}
             <div class="stsm-atlas-review-draft-entries"${showingTranslation && translation?.generated ? ' hidden' : ''}>
-                ${draft.entries.map(entry => `
+                ${draft.entries.map((entry, index) => `
                     <section>
-                        <strong>#${entry.startId} ~ #${entry.endId}</strong>
+                        <div class="stsm-review-proposal-actions"><strong>#${entry.startId} ~ #${entry.endId}</strong><button type="button" class="menu_button menu_button_icon" data-review-draft-edit="${index}" title="변경안 편집" aria-label="변경안 편집"><i class="fa-solid fa-pen"></i></button></div>
                         ${renderRecordMemoryUpdateDetails({ structuredSummary: { data: { memoryUpdates: { [draft.category]: entry.memoryUpdates } } } }) || '<p>변경 내용 없음</p>'}
                         <details><summary>JSON 원문</summary><pre>${escapeHtml(JSON.stringify(entry.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre></details>
                     </section>

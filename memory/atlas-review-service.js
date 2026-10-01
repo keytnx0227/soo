@@ -187,6 +187,44 @@ export async function applyAtlasReviewDraft(draft) {
     });
 }
 
+export function getEditableAtlasReviewUpdates(draft, index) {
+    return omitHiddenAtlasUpdates(draft.entries[index].memoryUpdates, getHiddenAtlasEntityIds(draft.category, draft.perceptionIds));
+}
+
+export function editAtlasReviewDraftEntry(draft, index, memoryUpdates) {
+    if (SillyTavern.getContext().chat !== draft.sourceChat || createAtlasStateSignature() !== draft.baselineSignature) {
+        throw new Error('검토 요청 이후 채팅 또는 도감 상태가 변경되었습니다. 다시 검토해주세요.');
+    }
+    if (!draft.entries[index]) throw new Error('수정할 재검토 변경안을 찾지 못했습니다.');
+    const hiddenIds = getHiddenAtlasEntityIds(draft.category, draft.perceptionIds);
+    const previous = draft.entries[index].memoryUpdates;
+    const visible = omitHiddenAtlasUpdates(memoryUpdates, hiddenIds);
+    const parsed = restrictPerceptionUpdates(parseAtlasReviewResponse(JSON.stringify({ memoryUpdates: { [draft.category]: visible } }), draft.category), draft, hiddenIds);
+    // Editing proposals must not silently turn a removal into a new identity.
+    for (const kind of ['created', 'updated']) {
+        const key = kind === 'created' ? 'sourceId' : 'targetId';
+        if (parsed[kind].length !== (visible[kind] || []).length) throw new Error('필수 항목이 비어 있는 변경안이 있습니다. 내용을 확인해주세요.');
+        const ids = new Set((previous[kind] || []).map(value => value[key]));
+        if (parsed[kind].some(value => !ids.has(value[key]))) throw new Error('재검토 항목의 연결 ID는 변경할 수 없습니다.');
+    }
+    const next = { ...draft, entries: structuredClone(draft.entries) };
+    next.entries[index].memoryUpdates = restoreHiddenAtlasUpdates(parsed, previous, hiddenIds);
+    const pending = [];
+    if (isRecordReviewMode(next.mode)) {
+        for (const entry of next.entries) {
+            const before = getAtlasProjection(next.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                ? { draftRecordOverrides: pending, beforeStartId: entry.startId, includeCorrections: false }
+                : { draftRecordOverrides: pending, excludeRecordCategory: { recordId: entry.recordId, category: next.category } })[next.category];
+            pending.push({ recordId: entry.recordId, category: next.category, memoryUpdates: entry.memoryUpdates });
+            const after = getAtlasProjection(next.mode === ATLAS_REVIEW_MODES.CHRONOLOGICAL
+                ? { draftRecordOverrides: pending, beforeStartId: entry.endId + 1, includeCorrections: false }
+                : { draftRecordOverrides: pending })[next.category];
+            entry.stepChanges = compareAtlasStates(before, after);
+        }
+    }
+    return finalizeDraft(next);
+}
+
 async function createQuickReviewEntry(draft, { startId, endId, onProgress, signal }) {
     const { start, end, chat } = validateSummaryRange(startId, endId);
     const [target] = createSummaryChunks(chat, start, end, end - start + 1);

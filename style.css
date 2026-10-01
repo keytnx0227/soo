@@ -5025,3 +5025,7 @@
 .stsm-review-comparison h5 { font-size: 13px; margin: 8px 0; padding-bottom: 6px; border-bottom: 1px solid var(--SmartThemeBorderColor); }
 .stsm-review-empty-value { opacity: .6; }
 @media (max-width: 600px) { .stsm-review-comparison { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.stsm-review-proposal-actions { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.stsm-review-proposal-actions strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.stsm-review-proposal-actions .menu_button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-width: 30px; height: 30px; margin: 0; padding: 0; flex-shrink: 0; }
+.stsm-review-proposal { padding: 8px 0; border-bottom: 1px solid var(--SmartThemeBorderColor); min-width: 0; }
