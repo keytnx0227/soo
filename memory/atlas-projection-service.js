@@ -1,5 +1,6 @@
 import { filterLlmVisibleSummaryRecords, getSummaryRecords } from '../summary/summary-store.js';
-import { getAtlasCorrections, getAtlasReviewRecords, getManualAtlasEntries } from './atlas-metadata.js';
+import { getAtlasCorrections, getAtlasReviewRecords, getManualAtlasEntries, getAtlasLayerOrders } from './atlas-metadata.js';
+import { projectAtlasLayerCategory, restoreAtlasLayerRanges } from './atlas-layer-projection.js';
 import { applyAtlasCorrections } from './atlas-corrections.js';
 import { deriveItemAtlas } from './item-memory.js';
 import { derivePeopleAtlas } from './people-memory.js';
@@ -51,9 +52,7 @@ export function getAtlasProjection({
             .filter(review => !hasCutoff || Number(review.appliedThroughId ?? review.endId) < cutoff)
             .map(toAtlasSourceRecord);
         const projection = buildAtlasProjection(summaryRecords, reviewRecords, { beforeStartId: cutoff });
-        return structuredClone(includeCorrections
-            ? applyAtlasCorrections(projection, getAtlasCorrections())
-            : projection);
+        return finishProjection(projection, includeCorrections);
     }
     if (!cache || cachedChat !== chat) {
         const summaryRecords = prepareSummarySourceRecords(getSummaryRecords());
@@ -65,8 +64,8 @@ export function getAtlasProjection({
         };
         cachedChat = chat;
     }
-    if (!includeCorrections) return structuredClone(cache.raw);
-    if (!cache.corrected) cache.corrected = applyAtlasCorrections(cache.raw, getAtlasCorrections());
+    if (!includeCorrections) return finishProjection(cache.raw, false);
+    if (!cache.corrected) cache.corrected = finishProjection(cache.raw, true);
     return structuredClone(cache.corrected);
 }
 
@@ -131,7 +130,7 @@ function buildAtlasProjection(summaryRecords, reviewRecords, { beforeStartId = n
     const events = deriveEventAtlas(records);
     const world = deriveWorldAtlas(records);
     const perceptions = derivePerceptionAtlas(records, getManualAtlasEntries('perceptions'), people.people, { beforeStartId });
-    return {
+    const projection = {
         perceptions: perceptions.perceptions,
         people: applyManualAtlasPolicy(people.people, manualOnly.people, manualEntries.people),
         items: applyManualAtlasPolicy(items.items, manualOnly.items, manualEntries.items),
@@ -148,6 +147,33 @@ function buildAtlasProjection(summaryRecords, reviewRecords, { beforeStartId = n
         },
         frontierId: summaryRecords.reduce((maximum, record) => Math.max(maximum, Number(record.endId) || 0), 0),
     };
+    const orders = getAtlasLayerOrders();
+    const corrections = getAtlasCorrections();
+    for (const [category, moves] of Object.entries(orders)) {
+        if (!Array.isArray(moves) || !moves.length || !Object.hasOwn(projection.skippedUpdates, category)) continue;
+        const result = projectAtlasLayerCategory(category, { records: summaryRecords, reviews: reviewRecords,
+            manual: category === 'perceptions' ? getManualAtlasEntries(category) : manualEntries[category],
+            corrections: corrections[category] || {}, moves, people: projection.people, beforeStartId });
+        projection[category] = result.entities;
+        projection.skippedUpdates[category] = result.skipped;
+        projection._layerState ||= {};
+        projection._layerState[category] = result;
+    }
+    return projection;
+}
+
+function finishProjection(raw, includeCorrections) {
+    const corrections = getAtlasCorrections();
+    for (const [category, state] of Object.entries(raw._layerState || {})) corrections[category] = state.corrections;
+    const result = includeCorrections ? applyAtlasCorrections(raw, corrections) : structuredClone(raw);
+    result.skippedUpdates = { ...result.skippedUpdates };
+    for (const [category, state] of Object.entries(raw._layerState || {})) {
+        result[category] = restoreAtlasLayerRanges(result[category], state.ranges);
+        result.skippedUpdates[category] = restoreAtlasLayerRanges(result.skippedUpdates[category], state.ranges);
+        if (result.excluded) result.excluded[category] = restoreAtlasLayerRanges(result.excluded[category], state.ranges);
+    }
+    delete result._layerState;
+    return structuredClone(result);
 }
 
 function toAtlasSourceRecord(review) {

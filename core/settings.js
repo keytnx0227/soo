@@ -1259,6 +1259,47 @@ export function createPresetFromActive(type, name) {
     return preset;
 }
 
+export async function addImportedPromptPresets(groups, { activate = false } = {}) {
+    const settings = getSettings();
+    const plan = Object.entries(groups).map(([type, group]) => {
+        if (!Object.values(PROMPT_TYPES).includes(type) || !Array.isArray(group?.presets) || !group.presets.length) {
+            throw new Error('가져올 프롬프트 프리셋 형식이 올바르지 않습니다.');
+        }
+        const editor = settings.summarization.prompts[type];
+        const names = new Set(editor.presets.map(preset => preset.name));
+        let activePresetId;
+        const presets = group.presets.map(source => {
+            let name = source.name;
+            if (names.has(name)) name = `${source.name} (가져옴)`;
+            for (let index = 2; names.has(name); index++) name = `${source.name} (가져옴 ${index})`;
+            names.add(name);
+            // Restore text without replaying historical default-wording migrations.
+            const preset = createPreset({ name, blocks: structuredClone(source.blocks) });
+            if (source.id === group.activePresetId) activePresetId = preset.id;
+            return preset;
+        });
+        return { type, presets, activePresetId: activePresetId || presets[0].id, previousActiveId: editor.activePresetId };
+    });
+    if (!plan.length) throw new Error('가져올 프리셋이 없습니다.');
+    for (const item of plan) {
+        const editor = settings.summarization.prompts[item.type];
+        editor.presets.push(...item.presets);
+        if (activate) editor.activePresetId = item.activePresetId;
+    }
+    try {
+        await saveSettingsNow();
+    } catch (error) {
+        for (const item of plan) {
+            const editor = settings.summarization.prompts[item.type];
+            const addedIds = new Set(item.presets.map(preset => preset.id));
+            editor.presets = editor.presets.filter(preset => !addedIds.has(preset.id));
+            if (addedIds.has(editor.activePresetId)) editor.activePresetId = item.previousActiveId;
+        }
+        throw error;
+    }
+    return structuredClone(plan.map(({ type, presets }) => ({ type, presets })));
+}
+
 export function deleteActivePreset(type) {
     const settings = getSettings();
     const editor = settings.summarization.prompts[type];

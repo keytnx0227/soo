@@ -24,6 +24,7 @@ import {
     updatePromptBlock,
 } from '../core/settings.js';
 import { escapeHtml } from '../core/utils.js';
+import { importPromptPresetFile, openPromptPresetExport } from './prompt-preset-transfer-view.js';
 import { getCompressionMode } from '../summary/summary-store.js';
 import {
     buildSummaryJsonContract,
@@ -49,7 +50,16 @@ export function bindPromptSettings(root) {
     for (const type of Object.values(PROMPT_TYPES)) {
         const container = root.querySelector(`[data-prompt-editor="${type}"]`);
         container.addEventListener('click', event => handleEditorClick(root, type, event));
-        container.addEventListener('change', event => handleEditorChange(root, type, event));
+        container.addEventListener('change', event => {
+            if (event.target.matches('.stsm-preset-file')) {
+                void importPromptPresetFile(event.target, () => {
+                    for (const key of Object.values(PROMPT_TYPES)) renderPromptEditor(root, key);
+                    root.dispatchEvent(new CustomEvent('stsm:prompt-settings-changed'));
+                });
+                return;
+            }
+            handleEditorChange(root, type, event);
+        });
         container.addEventListener('dragstart', event => handleDragStart(event));
         container.addEventListener('dragover', event => handleDragOver(event));
         container.addEventListener('drop', event => handleDrop(root, type, event));
@@ -73,11 +83,16 @@ export function renderPromptEditor(root, type) {
             <select class="stsm-preset-select text_pole" aria-label="${TYPE_LABELS[type]} 프롬프트 프리셋">
                 ${editor.presets.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === preset.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
             </select>
+            <div class="stsm-preset-actions">
             ${renderToolbarButton('save', 'fa-floppy-disk', '현재 프리셋 저장')}
             ${renderToolbarButton('add-preset', 'fa-plus', '새 프리셋 추가')}
             ${renderToolbarButton('delete-preset', 'fa-trash', '프리셋 삭제', preset.id === defaultPresetId || editor.presets.length <= 1)}
             ${renderToolbarButton('reset', 'fa-rotate-left', '현재 프리셋 초기화')}
-            <button class="stsm-add-prompt menu_button interactable" data-action="add-block" type="button">프롬프트 추가</button>
+            ${renderToolbarButton('export-presets', 'fa-download', '프롬프트 프리셋 내보내기')}
+            ${renderToolbarButton('import-presets', 'fa-upload', '프롬프트 프리셋 가져오기')}
+            ${renderToolbarButton('add-block', 'fa-square-plus', '프롬프트 블록 추가')}
+            </div>
+            <input class="stsm-preset-file" type="file" accept=".json,application/json" hidden />
             <div class="stsm-separator-visibility">
                 <span>구분선 숨기기</span>
                 <label class="stsm-switch" title="구분선 블록 숨기기">
@@ -185,7 +200,15 @@ async function handleEditorClick(root, type, event) {
     const action = button.dataset.action;
     const blockId = button.closest('.stsm-block')?.dataset.blockId;
 
-    if (action === 'save') {
+    if (action === 'export-presets') {
+        await openPromptPresetExport(type);
+        return;
+    } else if (action === 'import-presets') {
+        const input = root.querySelector(`[data-prompt-editor="${type}"] .stsm-preset-file`);
+        input.value = '';
+        input.click();
+        return;
+    } else if (action === 'save') {
         await saveSettingsNow();
         toastr.success('프리셋을 저장했습니다.');
         return;

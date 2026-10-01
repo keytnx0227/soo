@@ -1,8 +1,14 @@
 import { createId } from '../core/utils.js';
 import { normalizeFeelings } from './people-feelings.js';
+import { getSummaryRecords, filterLlmVisibleSummaryRecords } from '../summary/summary-store.js';
+import { captureAtlasAnchors } from './atlas-anchor-transaction.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 const CATEGORIES = Object.freeze(['people', 'items', 'commitments', 'events', 'world', 'perceptions']);
+
+export function getAtlasLayerOrders() {
+    return structuredClone(getAtlasStore().layerOrders || {});
+}
 
 export function getAtlasCorrections() {
     return structuredClone(getAtlasStore().corrections);
@@ -17,6 +23,7 @@ export function getAtlasEntityCorrection(category, entityId) {
 export async function saveAtlasEntityCorrection(category, entityId, fields) {
     assertCategory(category);
     const store = getAtlasStore();
+    const anchors = captureCurrentAnchors();
     const previous = structuredClone(store.corrections[category]);
     const normalizedFields = normalizeCorrectionFields(fields, category);
     const current = store.corrections[category][String(entityId)];
@@ -26,9 +33,11 @@ export async function saveAtlasEntityCorrection(category, entityId, fields) {
         llmHidden: Boolean(current?.llmHidden),
     });
     try {
+        anchors.apply();
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.corrections[category] = previous;
+        anchors.rollback();
         throw error;
     }
     notifyAtlasChanged();
@@ -191,12 +200,15 @@ export async function deleteAtlasReviewRecord(recordId) {
     const store = getAtlasStore();
     const id = String(recordId);
     if (!store.reviews.some(record => record.id === id)) return false;
+    const anchors = captureCurrentAnchors();
     const previous = structuredClone(store.reviews);
     store.reviews = store.reviews.filter(record => record.id !== id);
     try {
+        anchors.apply();
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.reviews = previous;
+        anchors.rollback();
         throw error;
     }
     notifyAtlasChanged();
@@ -236,6 +248,21 @@ export async function addManualAtlasEntry(category, value) {
 export async function updateManualWorldEntry(entityId, { keys, content }) {
     const current = getManualAtlasEntries('world').find(entry => entry.id === String(entityId));
     return await updateManualAtlasEntry('world', entityId, { ...current, keys, content });
+}
+
+export async function setPerceptionPinned(entityId, pinned) {
+    const store = getAtlasStore();
+    const slot = store.manual.perceptions.find(entry => entry.id === String(entityId));
+    if (!slot) throw new Error('고정할 인식 칸을 찾지 못했습니다.');
+    const previous = slot.pinned;
+    slot.pinned = Boolean(pinned);
+    try { await SillyTavern.getContext().saveMetadata(); }
+    catch (error) {
+        const current = store.manual.perceptions.find(entry => entry.id === String(entityId));
+        if (current) current.pinned = previous;
+        throw error;
+    }
+    notifyAtlasChanged();
 }
 
 export async function updateManualAtlasEntry(category, entityId, value) {
@@ -285,6 +312,7 @@ export async function deleteManualAtlasEntry(category, entityId) {
     const store = getAtlasStore();
     const id = String(entityId);
     if (!store.manual[category].some(entry => entry.id === id)) return false;
+    const anchors = captureCurrentAnchors();
     const previousEntries = structuredClone(store.manual[category]);
     const previousTranslations = structuredClone(store.translations[category]);
     const previousCorrections = structuredClone(store.corrections[category]);
@@ -294,12 +322,14 @@ export async function deleteManualAtlasEntry(category, entityId) {
     delete store.corrections[category][id];
     if (category === 'people') delete store.retrieval.people[id];
     try {
+        anchors.apply();
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.manual[category] = previousEntries;
         store.translations[category] = previousTranslations;
         store.corrections[category] = previousCorrections;
         if (category === 'people') store.retrieval.people = previousRetrieval;
+        anchors.rollback();
         throw error;
     }
     notifyAtlasChanged();
@@ -330,6 +360,10 @@ function getAtlasStore() {
         root.atlas.translations[category] = normalizeEntityMap(root.atlas.translations[category], normalizeTranslation);
     }
     return root.atlas;
+}
+
+function captureCurrentAnchors() {
+    return captureAtlasAnchors(SillyTavern.getContext().chatMetadata[METADATA_KEY], () => filterLlmVisibleSummaryRecords(getSummaryRecords()));
 }
 
 function normalizeAtlasReviewRecords(value) {
@@ -387,7 +421,7 @@ function normalizeManualAtlasEntry(category, value) {
         const observerId = normalizeNullableString(value.observerId);
         const subjectId = normalizeNullableString(value.subjectId);
         if (!observerId || !subjectId || observerId === subjectId) return null;
-        return { ...common, observerId, subjectId, hasBaseline: Boolean(value.hasBaseline),
+        return { ...common, observerId, subjectId, pinned: Boolean(value.pinned), hasBaseline: Boolean(value.hasBaseline),
             facts: (Array.isArray(value.facts) ? value.facts : []).filter(fact => fact?.id && String(fact.text || '').trim())
                 .map(fact => ({ id: String(fact.id), text: String(fact.text).trim() })),
             impression: normalizeNullableString(value.impression) };

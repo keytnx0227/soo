@@ -7,6 +7,7 @@ import { renderCompressionSummary } from './compression-format.js';
 import { createRecordDeletionPlan } from './range-deletion.js';
 import { compareRecordPosition, hasMessageRange, positionAfter, recordPosition } from './record-placement.js';
 import { getCoveredRanges } from './range-utils.js';
+import { captureAtlasAnchors } from '../memory/atlas-anchor-transaction.js';
 
 const METADATA_KEY = 'sumi_chat_summarizer';
 const COMPRESSION_CONTENT_MIGRATION_VERSION = 1;
@@ -295,6 +296,7 @@ export async function saveAtlasRecordReviewOverrides(entries) {
 
 export async function clearAtlasRecordReviewOverride(recordId, category) {
     const store = getStore();
+    const anchors = captureAtlasAnchors(store, () => filterLlmVisibleSummaryRecords(getSummaryRecords()));
     const previousRecords = store.records;
     let changed = false;
     store.records = store.records.map(record => {
@@ -306,9 +308,11 @@ export async function clearAtlasRecordReviewOverride(recordId, category) {
     });
     if (!changed) return false;
     try {
+        anchors.apply();
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.records = previousRecords;
+        anchors.rollback();
         throw error;
     }
     notifyRecordsChanged();
@@ -482,6 +486,8 @@ export async function deleteSummaryRecords(recordIds) {
     const plan = createRecordDeletionPlan(store.records, recordIds);
     if (!plan.deletedIds.length) return plan;
 
+    const anchors = captureAtlasAnchors(store, () => filterLlmVisibleSummaryRecords(getSummaryRecords()));
+
     const deletedIds = new Set(plan.deletedIds);
     const previousRecords = store.records;
     const previousRecentConversation = store.recentRevisionConversation;
@@ -508,10 +514,12 @@ export async function deleteSummaryRecords(recordIds) {
     }
 
     try {
+        anchors.apply();
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
         store.records = previousRecords;
         store.recentRevisionConversation = previousRecentConversation;
+        anchors.rollback();
         throw error;
     }
     notifyRecordsChanged();

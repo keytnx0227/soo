@@ -18,8 +18,9 @@ for (const name of [
     'memory/people-memory.js', 'memory/item-memory.js', 'memory/commitment-memory.js', 'memory/event-memory.js', 'memory/world-memory.js',
     'records/manual-author-engine.js', 'records/manual-author-view.js',
     'memory/perception-memory.js', 'memory/perception-memory-view.js',
-    'memory/atlas-metadata.js',
+    'memory/atlas-layer-order.js', 'memory/atlas-anchor-transaction.js', 'memory/atlas-metadata.js',
     'memory/atlas-review-service.js', 'memory/atlas-review-view.js',
+    'memory/atlas-fullscreen-view.js', 'translation/atlas-translation-service.js', 'ui/token-usage-view.js',
 ]) sources[name] = await readFile(new URL(name, root), 'utf8');
 const css = await readFile(new URL('style.css', root), 'utf8');
 const output = new URL('personal-notes/manual-record-ui/', root);
@@ -37,8 +38,9 @@ try {
             .text_pole { border:1px solid #ccc; border-radius:5px; background:white; color:inherit; padding:6px; font:inherit; }
             .menu_button { border:1px solid #ccc; border-radius:4px; background:white; padding:5px; color:inherit; cursor:pointer; }
             .menu_button:where([data-atlas-add]) { width: 30px; }
+            .stsm-atlas-review-history-delete { width: 30px; }
             .test-popup { width: min(100%, 780px); margin: 0 auto; padding: 10px; background: #fafafa; border: 1px solid #ccc; }
-            button { font:inherit; } textarea { resize:vertical; } [hidden] { display:none !important; }
+            button { font:inherit; } textarea { resize:vertical; } [hidden] { display:none; }
         ` });
         await page.addStyleTag({ content: css });
         await page.evaluate(({ sources }) => {
@@ -60,6 +62,7 @@ try {
             window.toastr = { error: value => { window.lastError = value; }, info: value => { window.lastInfo = value; }, success() {} };
             window.SillyTavern = { getContext: () => context };
             class Popup {
+                static show = { confirm: async () => !window.cancelConfirm };
                 constructor(form, type, value, options) { this.form = form; this.options = options; }
                 show() {
                     this.parent = document.querySelector('.test-popup:last-child');
@@ -89,7 +92,7 @@ try {
                 getSummaryRecordIndex: () => records,
                 getSummaryRecord: id => records.find(record => record.id === id),
                 getSummaryRecords: () => records, filterLlmVisibleSummaryRecords: records => records,
-                getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}), getAtlasReviewRecords: () => [],
+                getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}), getAtlasReviewRecords: () => [], getAtlasLayerOrders: () => ({}),
                 SUMMARY_CONTEXT_BLOCK_KINDS: { RECORDS: 'records', PEOPLE: 'people', ITEMS: 'items', EVENTS: 'events', COMMITMENTS: 'commitments', WORLD: 'world', PERCEPTIONS: 'perceptions' },
                 addSummaryRecord: async record => { window.savedRecord = record; return record; },
                 updateSummaryRecordContent: async (id, content, options) => { window.editedRecord = { id, ...options }; return window.editedRecord; },
@@ -100,20 +103,38 @@ try {
             });
             Object.assign(scope, load('summary/range-utils.js', ['getCoveredRanges', 'getCoverageSegments', 'formatRanges'], scope));
             Object.assign(scope, load('records/manual-record-settings.js', ['renderManualRecordSettings', 'bindManualRecordSettings', 'renderManualInfo'], scope));
-            Object.assign(scope, load('memory/atlas-source-record.js', ['canApplyAtlasReplacement', 'compareAtlasSourceRecords', 'getAtlasSourceRange'], scope));
+            Object.assign(scope, load('memory/atlas-source-record.js', ['canApplyAtlasReplacement', 'compareAtlasSourceRecords', 'getAtlasSourceRange', 'formatAtlasSourceRange'], scope));
             Object.assign(scope, load('memory/atlas-entity-id.js', ['getCreatedAtlasEntityId', 'createStableAtlasEntityId'], scope));
             for (const [file, name] of [['people', 'People'], ['item', 'Item'], ['commitment', 'Commitment'], ['event', 'Event'], ['world', 'World'], ['perception', 'Perception']]) {
                 Object.assign(scope, load(`memory/${file}-memory.js`, [`derive${name}Atlas`], scope));
             }
             Object.assign(scope, load('memory/atlas-corrections.js', ['applyAtlasCorrections'], scope));
-            Object.assign(scope, load('memory/atlas-metadata.js', ['getManualAtlasEntries', 'getAtlasCorrections', 'getAtlasReviewRecords', 'addManualAtlasEntry', 'updateManualAtlasEntry', 'setAtlasEntityExcluded', 'setAtlasEntityLlmHidden'], scope));
+            Object.assign(scope, load('memory/atlas-layer-order.js', ['ATLAS_LAYER_CATEGORIES', 'buildAtlasLayers', 'resolveAtlasLayerOrder', 'reanchorAtlasLayers'], scope));
+            Object.assign(scope, load('memory/atlas-anchor-transaction.js', ['captureAtlasAnchors'], scope));
+            Object.assign(scope, load('memory/atlas-metadata.js', ['getManualAtlasEntries', 'getAtlasCorrections', 'getAtlasReviewRecords', 'addManualAtlasEntry', 'updateManualAtlasEntry', 'deleteManualAtlasEntry', 'setAtlasEntityExcluded', 'setAtlasEntityLlmHidden', 'setPerceptionPinned', 'getAtlasTranslations', 'getAtlasTranslation', 'saveAtlasTranslation'], scope));
             Object.assign(scope, load('memory/atlas-projection-service.js', ['getAtlasProjection', 'invalidateAtlasProjection'], scope));
             window.addEventListener('stsm:atlas-changed', () => scope.invalidateAtlasProjection());
             Object.assign(scope, load('summary/context-block-composer.js', ['buildRenderedBlocks'], scope));
             Object.assign(scope, load('records/record-memory-updates-view.js', ['renderRecordMemoryUpdateDetails'], scope));
             Object.assign(scope, load('records/manual-atlas-draft.js', ['atlasUpdateEditorInitial', 'createManualAtlasUpdate', 'collectManualAtlasUpdates'], scope));
             Object.assign(scope, load('memory/atlas-manual-editor.js', ['showManualAtlasEntryEditor'], scope));
+            Object.assign(scope, {
+                getTokenCount: text => Math.ceil(text.length / 4),
+                getStringHash: text => text, assertExtensionEnabled() {},
+                translate: async text => `번역 결과: ${text}`,
+                beginOperation: () => Symbol(), endOperation() {},
+                buildSummaryContextDetails: () => ({ enabled: true, blocks: [{ kind: 'perceptions', enabled: true, outputTokenCount: 30, budget: Infinity }] }),
+            });
+            settings.translation = { provider: 'mock', targetLanguage: 'ko' };
+            Object.assign(scope, load('translation/atlas-translation-service.js', ['getValidAtlasTranslation', 'translateAtlasEntity'], scope));
+            Object.assign(scope, load('ui/token-usage-view.js', ['renderTokenUsageBar'], scope));
             Object.assign(scope, load('memory/perception-memory-view.js', ['showPerceptionUpdateEditor', 'renderPerceptionMemory', 'bindPerceptionMemoryView'], scope));
+            Object.assign(scope, load('memory/atlas-fullscreen-view.js', ['bindAtlasFullscreenView'], {
+                ...scope, bindManualAtlasEntryButtons() {},
+                bindPeopleMemoryView() {}, renderPeopleMemory() {}, bindItemMemoryView() {}, renderItemMemory() {},
+                bindCommitmentMemoryView() {}, renderCommitmentMemory() {}, bindEventMemoryView() {}, renderEventMemory() {},
+                bindWorldMemoryView() {}, renderWorldMemory() {},
+            }));
             Object.assign(scope, load('records/manual-atlas-view.js', ['openManualAtlasManager'], scope));
             Object.assign(scope, load('records/structured-summary-editor.js', ['renderEditor', 'bindEditorActions', 'collectEditorData', 'openStructuredSummaryEditor'], scope));
             Object.assign(scope, load('records/manual-author-engine.js', ['composeAuthorPrompt', 'parseAuthorDraft', 'authorEntries'], scope));
@@ -156,12 +177,16 @@ try {
                 const root = document.querySelector('#test-root');
                 root.replaceChildren(popup.querySelector('.stsm-perception-section'));
                 scope.bindPerceptionMemoryView(root);
+                scope.bindAtlasFullscreenView(root);
             };
             window.openPerceptionDraft = () => { void scope.openManualAtlasManager([], memoryUpdates => ({ id: 'perception-draft', startId: 40, endId: 49, structuredSummary: { data: { memoryUpdates } } }))
                 .then(result => { window.perceptionDraft = result; }); };
             Object.assign(scope, load('memory/atlas-review-service.js', ['ATLAS_REVIEW_CATEGORIES', 'ATLAS_REVIEW_MODES', 'getAtlasReviewOverview', 'getAtlasReviewRecordCandidates'], scope));
             const review = load('memory/atlas-review-view.js', ['openAtlasReviewPopup'], scope);
             window.openPerceptionReview = () => { void review.openAtlasReviewPopup(); };
+            window.seedReviewHistory = () => {
+                records[0].atlasReviewOverrides = { perceptions: { reviewBatchId: 'test-batch', reviewMode: 'chronological', reviewedAt: new Date().toISOString(), memoryUpdates: { created: [], updated: [] } } };
+            };
             const compression = load('summary/compression-view.js', ['bindCompressionView'], {
                 ...scope, getCompressionCandidates: () => records,
                 isCompressionIncluded: record => record.manual?.includeInCompression !== false,
@@ -364,16 +389,29 @@ try {
         await page.locator('[data-facts]').fill('수정된 인식 정보');
         await page.locator('.test-popup:not([hidden]) .test-submit').click();
         assert.match(await page.locator('.stsm-perception-entry').innerText(), /수정된 인식 정보/);
+        assert.match(await page.locator('.stsm-atlas-card-meta').innerText(), /tokens/);
+        await page.locator('[data-perception-action="pin"]').click();
+        assert.equal(await page.locator('[data-perception-action="pin"]').getAttribute('aria-pressed'), 'true');
+        await page.locator('[data-perception-action="translate"]').click();
+        assert.match(await page.locator('.stsm-atlas-translation').innerText(), /번역 결과/);
+        await page.locator('[data-perception-action="toggle-translation"]').click();
+        assert.equal(await page.locator('.stsm-atlas-original').isVisible(), true);
+        await page.locator('[data-atlas-fullscreen="perceptions"]').click();
+        assert.equal(await page.locator('.stsm-atlas-fullscreen [data-perception-action="pin"]').getAttribute('aria-pressed'), 'true');
+        await page.screenshot({ path: fileURLToPath(new URL(`perception-fullscreen-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
         await page.locator('[data-perception-action="visibility"]').click();
         assert.match(await page.locator('.stsm-perception-entry').innerText(), /LLM 비공개/);
         await page.locator('[data-perception-action="exclude"]').click();
         assert.equal(await page.locator('[data-perception-count]').innerText(), '0개');
+        assert.equal(await page.locator('.stsm-perception-entry').isVisible(), false);
+        await page.locator('.stsm-atlas-excluded > summary').click();
         await page.locator('[data-perception-action="exclude"]').click();
         assert.equal(await page.locator('[data-perception-count]').innerText(), '1개');
         const perceptionLayout = await page.locator('.stsm-perception-entry').evaluate(element => {
-            const heading = element.querySelector('header > strong').getBoundingClientRect();
-            const actions = element.querySelector('.stsm-perception-actions').getBoundingClientRect();
-            return { right: element.getBoundingClientRect().right, overlaps: heading.right > actions.left, overflow: element.scrollWidth > element.clientWidth + 1 };
+            const heading = element.querySelector('header > div:first-child').getBoundingClientRect();
+            const actions = element.querySelector('.stsm-atlas-card-actions').getBoundingClientRect();
+            return { right: element.getBoundingClientRect().right, overlaps: heading.right > actions.left && heading.bottom > actions.top, overflow: element.scrollWidth > element.clientWidth + 1 };
         });
         assert.ok(perceptionLayout.right <= width && !perceptionLayout.overlaps && !perceptionLayout.overflow);
         await page.screenshot({ path: fileURLToPath(new URL(`perceptions-${width}.png`, output)), fullPage: true });
@@ -392,15 +430,47 @@ try {
         await page.locator('.test-popup:not([hidden]) .test-submit').click();
         assert.equal(await page.evaluate(() => window.perceptionDraft[0].value.factUpdates.length), 1);
         await page.evaluate(() => window.openPerceptionReview());
+        assert.equal(await page.locator('.stsm-atlas-review-perception-field').isVisible(), false);
         await page.locator('.stsm-atlas-review-category').selectOption('perceptions');
         assert.equal(await page.locator('.stsm-atlas-review-perception-field').isVisible(), true);
+        await page.locator('.stsm-atlas-review-category').selectOption('people');
+        assert.equal(await page.locator('.stsm-atlas-review-perception-field').isVisible(), false);
         await page.locator('.test-popup:not([hidden]) .test-cancel').click();
         await page.locator('[data-perception-action="visibility"]').click();
+        await page.evaluate(() => window.seedReviewHistory());
         await page.evaluate(() => window.openPerceptionReview());
         await page.locator('.stsm-atlas-review-category').selectOption('perceptions');
         await page.locator('.stsm-atlas-review-perception').selectOption(perceptionId);
+        await page.locator('.stsm-atlas-review-history > summary').click();
+        await page.locator('.stsm-atlas-review-history-batch > summary').click();
+        await page.locator('.stsm-atlas-review-history-record > summary').click();
+        const resetLayout = await page.locator('.stsm-atlas-review-history-delete').evaluate(button => {
+            const text = button.querySelector('span');
+            return { buttonWidth: button.clientWidth, textWidth: text.scrollWidth, height: text.getBoundingClientRect().height,
+                fontSize: parseFloat(getComputedStyle(text).fontSize), overflow: button.scrollWidth > button.clientWidth + 1 };
+        });
+        assert.ok(resetLayout.buttonWidth >= resetLayout.textWidth && resetLayout.height < resetLayout.fontSize * 2 && !resetLayout.overflow);
         await page.screenshot({ path: fileURLToPath(new URL(`perception-review-${width}.png`, output)), fullPage: true });
         await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        let previousId = perceptionId;
+        for (let cycle = 0; cycle < 2; cycle++) {
+            await page.locator('[data-perception-action="exclude"]').click();
+            await page.locator('.stsm-atlas-excluded > summary').click();
+            await page.evaluate(() => { window.cancelConfirm = true; });
+            await page.locator('[data-perception-action="delete-permanently"]').click();
+            assert.equal(await page.locator('.stsm-perception-entry').count(), 1);
+            await page.evaluate(() => { window.cancelConfirm = false; });
+            await page.locator('[data-perception-action="delete-permanently"]').click();
+            assert.equal(await page.locator('.stsm-perception-entry').count(), 0);
+            assert.equal(await page.locator('.stsm-atlas-excluded').count(), 0);
+            await page.locator('[data-perception-add]').click();
+            await page.locator('[data-facts]').fill(`새 인식 ${cycle}`);
+            await page.locator('.test-popup:not([hidden]) .test-submit').click();
+            const nextId = await page.evaluate(() => window.currentAtlas().perceptions[0].id);
+            assert.notEqual(nextId, previousId);
+            assert.match(await page.locator('.stsm-perception-entry').innerText(), new RegExp(`새 인식 ${cycle}`));
+            previousId = nextId;
+        }
         assert.deepEqual(errors, []);
         await page.close();
         console.log(`UI checks passed: ${width}px`);

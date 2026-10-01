@@ -23,6 +23,7 @@ import { bindAtlasFullscreenView } from './memory/atlas-fullscreen-view.js';
 import { bindManualAtlasEntryButtons } from './memory/atlas-manual-editor.js';
 import { bindWorldMemoryView, renderWorldMemory } from './memory/world-memory-view.js';
 import { bindAtlasReview } from './memory/atlas-review-view.js';
+import { bindAtlasLayerView } from './memory/atlas-layer-view.js';
 import { bindPerceptionMemoryView, renderPerceptionMemory } from './memory/perception-memory-view.js';
 import {
     bindLongTermRetrievalSettings,
@@ -267,6 +268,7 @@ function bindEvents(root) {
     bindAtlasFullscreenView(root);
     bindManualAtlasEntryButtons(root);
     bindAtlasReview(root);
+    bindAtlasLayerView(root);
     bindPerceptionMemoryView(root);
     bindRangeAdjustment(root, {
         onApplied: async updatedRecords => {

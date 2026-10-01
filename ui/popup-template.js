@@ -277,11 +277,13 @@ export function buildPopup() {
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                         <span>도감 재검토</span>
                     </button>
+                    <button id="stsm-open-atlas-layers" class="menu_button menu_button_icon interactable" type="button" title="도감 레이어 관리" aria-label="도감 레이어 관리"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></button>
                 </div>
             </div>
             <div class="stsm-atlas-scroll">
                 <section class="stsm-atlas-section stsm-perception-section"><div class="stsm-atlas-section-heading"><strong>인식</strong>
-                    <span class="stsm-atlas-heading-actions"><span data-perception-count>0개</span><button type="button" class="menu_button menu_button_icon" data-perception-add title="인식 칸 추가" aria-label="인식 칸 추가"><i class="fa-solid fa-plus" aria-hidden="true"></i></button></span></div>
+                    <span class="stsm-atlas-heading-actions"><span data-perception-count>0개</span><button type="button" class="menu_button menu_button_icon" data-perception-add title="인식 칸 추가" aria-label="인식 칸 추가"><i class="fa-solid fa-plus" aria-hidden="true"></i></button><button type="button" class="menu_button menu_button_icon interactable" data-atlas-fullscreen="perceptions" title="인식 크게 보기" aria-label="인식 크게 보기"><i class="fa-solid fa-expand" aria-hidden="true"></i></button></span></div>
+                    <div data-perception-tokens></div>
                     <div class="stsm-atlas-section-scroll"><div data-perception-warning class="stsm-manual-error" hidden></div><div data-perception-list></div></div>
                 </section>
                 <section class="stsm-atlas-section">

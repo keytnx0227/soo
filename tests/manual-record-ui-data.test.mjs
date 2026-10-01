@@ -71,7 +71,7 @@ test('atlas preview applies drafts without writing source records or polluting t
         structuredClone, derivePeopleAtlas, deriveItemAtlas, deriveCommitmentAtlas, deriveEventAtlas, deriveWorldAtlas, derivePerceptionAtlas, applyAtlasCorrections,
         SillyTavern: { getContext: () => ({ chat }) }, getSummaryRecords: () => records,
         filterLlmVisibleSummaryRecords: records => records,
-        getAtlasReviewRecords: () => [], getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}),
+        getAtlasReviewRecords: () => [], getManualAtlasEntries: () => [], getAtlasCorrections: () => ({}), getAtlasLayerOrders: () => ({}),
     });
     assert.equal(scope.getAtlasProjection().people[0].role, 'traveler');
     const preview = scope.getAtlasProjection({ draftRecords: [draft] });

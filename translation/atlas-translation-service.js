@@ -12,6 +12,7 @@ const CATEGORY_COLLECTIONS = Object.freeze({
     commitments: 'commitments',
     events: 'events',
     world: 'world',
+    perceptions: 'perceptions',
 });
 
 export async function translateAtlasEntity(category, entityId) {
@@ -88,6 +89,12 @@ export function createAtlasSourceHash(category, entity) {
 }
 
 export function serializeAtlasEntity(category, entity) {
+    if (category === 'perceptions') {
+        const lines = [`# ${entity.observerName} -> ${entity.subjectName}`];
+        appendList(lines, 'Known information', entity.facts.map(fact => fact.text));
+        appendScalar(lines, 'Overall impression', entity.impression);
+        return lines.join('\n');
+    }
     const lines = [`# ${category === 'world'
         ? 'World Setting'
         : ['commitments', 'events'].includes(category) ? entity.title : entity.name}`];
@@ -153,6 +160,7 @@ export function serializeAtlasEntity(category, entity) {
 
 function getEntity(category, entityId) {
     const atlas = getAtlasProjection();
+    if (category === 'perceptions') return atlas.perceptions.find(entity => entity.id === entityId) || null;
     const collection = category === 'people'
         ? atlas.people
         : category === 'items'

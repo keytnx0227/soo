@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { captureAtlasAnchors } from '../memory/atlas-anchor-transaction.js';
 import * as placement from '../summary/record-placement.js';
 import * as references from '../summary/compression-references.js';
 import * as ranges from '../summary/range-utils.js';
@@ -26,7 +27,7 @@ async function setup(mode = 'segmented') {
     const settings = { summarization: { compressionMode: mode } };
     const scope = {
         ...placement, ...ranges, ...references, ...format, structuredClone, renderStructuredSummary,
-        createRecordDeletionPlan, createId: prefix => `${prefix}-${++sequence}`,
+        captureAtlasAnchors, createRecordDeletionPlan, createId: prefix => `${prefix}-${++sequence}`,
         getSettings: () => settings, saveSettings() {}, getStringHash: value => value,
         normalizeSourceFingerprint: value => value || null,
         window: { addEventListener() {}, dispatchEvent() {} }, CustomEvent: class {},
@@ -45,6 +46,62 @@ function compact(sources) {
         sourceIndex: index + 1, importanceRank: index + 1, plot: [`compact ${source.id}`],
     })) }), { segmented: true, sourceRecords: sources });
 }
+
+for (const mode of ['integrated', 'segmented']) {
+    test(`external record deletion reanchors to the latest predecessor atomically (${mode})`, async () => {
+        const { scope, context, add } = await setup(mode);
+        const a = await add('A', 0, 9);
+        const b = await add('B', 20, 29);
+        const n = await add('Inserted later', 10, 19);
+        const root = context.chatMetadata.sumi_chat_summarizer;
+        for (const record of root.records) record.structuredSummary.data.memoryUpdates = {
+            items: { created: [{ sourceId: record.id, name: record.id }], updated: [] },
+        };
+        root.atlas = { manual: { items: [{ id: 'x', name: 'X', appliedThroughId: 0 }] },
+            layerOrders: { items: [{ id: 'manual:x', afterId: `record:${b.id}`, fallbackIds: [`record:${a.id}`] }],
+                people: [{ id: 'unrelated', afterId: null }] } };
+        const previous = structuredClone(root);
+        context.saveMetadata = async () => { throw new Error('save failed'); };
+        await assert.rejects(scope.deleteSummaryRecord(b.id), /save failed/);
+        assert.deepEqual(structuredClone(root), previous);
+        let saves = 0;
+        context.saveMetadata = async () => {
+            saves++;
+            assert.ok(!root.records.some(record => record.id === b.id));
+            assert.equal(root.atlas.layerOrders.items[0].afterId, `record:${n.id}`);
+        };
+        await scope.deleteSummaryRecord(b.id);
+        assert.equal(saves, 1);
+        assert.deepEqual(root.atlas.layerOrders.people, previous.atlas.layerOrders.people);
+        context.saveMetadata = async () => {};
+        await scope.deleteSummaryRecords([a.id, n.id]);
+        assert.equal(root.atlas.layerOrders.items[0].afterId, null);
+    });
+}
+
+test('external review override reset restores the original and reanchors in the same save', async () => {
+    const { scope, context, add } = await setup();
+    const a = await add('A', 0, 9);
+    const b = await add('B', 20, 29);
+    const root = context.chatMetadata.sumi_chat_summarizer;
+    for (const record of root.records) record.structuredSummary.data.memoryUpdates = {
+        items: { created: [{ sourceId: record.id, name: record.id }], updated: [] },
+    };
+    root.records.find(record => record.id === b.id).atlasReviewOverrides = {
+        items: { reviewBatchId: 'batch', memoryUpdates: { created: [], updated: [] } },
+    };
+    root.atlas = { manual: { items: [{ id: 'x', name: 'X', appliedThroughId: 0 }] },
+        layerOrders: { items: [{ id: 'manual:x', afterId: 'review:batch' }] } };
+    const before = structuredClone(root);
+    context.saveMetadata = async () => { throw new Error('save failed'); };
+    await assert.rejects(scope.clearAtlasRecordReviewOverride(b.id, 'items'), /save failed/);
+    assert.deepEqual(structuredClone(root), before);
+    context.saveMetadata = async () => {
+        assert.equal(root.atlas.layerOrders.items[0].afterId, `record:${a.id}`);
+        assert.ok(!root.records.find(record => record.id === b.id).atlasReviewOverrides.items);
+    };
+    await scope.clearAtlasRecordReviewOverride(b.id, 'items');
+});
 
 test('manual edits change range, coverage and placement atomically without replacing identity', async () => {
     const { scope, context, add } = await setup();

@@ -81,7 +81,7 @@ async function projectionHarness({ slots = [slot], corrections = {}, records = [
         SillyTavern: { getContext: () => ({ chat }) }, getSummaryRecords: () => records,
         filterLlmVisibleSummaryRecords: records => records.filter(record => !record.llmHidden),
         getAtlasReviewRecords: () => reviews, getManualAtlasEntries: category => category === 'perceptions' ? slots : category === 'people' ? people.map(person => ({ ...person, appliedThroughId: 0 })) : [],
-        getAtlasCorrections: () => corrections,
+        getAtlasCorrections: () => corrections, getAtlasLayerOrders: () => ({}),
     });
 }
 
@@ -119,20 +119,90 @@ test('metadata persists slots and facts, rejects duplicates and rolls back a fai
     let fail = false;
     let count = 0;
     const context = { chatMetadata: {}, saveMetadata: async () => { if (fail) throw new Error('save failed'); } };
-    const scope = await load('../memory/atlas-metadata.js', { structuredClone,
+    const scope = await load('../memory/atlas-metadata.js', { structuredClone, captureAtlasAnchors,
         createId: () => `id-${++count}`, SillyTavern: { getContext: () => context },
         window: { dispatchEvent() {} }, CustomEvent: class {},
     });
     const saved = await scope.addManualAtlasEntry('perceptions', { ...slot, hasBaseline: true, facts: [{ id: 'f1', text: 'Known' }] });
     assert.equal(scope.getManualAtlasEntries('perceptions')[0].facts[0].id, 'f1');
     assert.equal(scope.getManualAtlasEntries('perceptions')[0].hasBaseline, true);
+    await scope.saveAtlasTranslation('perceptions', saved.id, { content: 'Translation', sourceHash: 'hash' });
+    await scope.setPerceptionPinned(saved.id, true);
+    assert.equal(scope.getManualAtlasEntries('perceptions')[0].pinned, true);
+    assert.equal(scope.getAtlasTranslation('perceptions', saved.id).content, 'Translation');
     await assert.rejects(scope.addManualAtlasEntry('perceptions', slot), /이미 등록/);
     await scope.addManualAtlasEntry('perceptions', { ...slot, observerId: 'b', subjectId: 'a' });
     await assert.rejects(scope.updateManualAtlasEntry('perceptions', saved.id, { subjectId: 'a' }), /방향/);
     fail = true;
+    await assert.rejects(scope.setPerceptionPinned(saved.id, false), /save failed/);
+    assert.equal(scope.getManualAtlasEntries('perceptions')[0].pinned, true);
     await assert.rejects(scope.updateManualAtlasEntry('perceptions', saved.id, { impression: 'must rollback' }), /save failed/);
     assert.equal(scope.getManualAtlasEntries('perceptions')[0].impression, null);
     assert.equal(scope.getManualAtlasEntries('perceptions').length, 2);
+});
+
+test('permanent slot deletion cleans metadata, rolls back failures and never attaches old updates to recreated directions', async () => {
+    let fail = false;
+    let counter = 0;
+    const context = { chatMetadata: {}, saveMetadata: async () => { if (fail) throw new Error('save failed'); } };
+    const scope = await load('../memory/atlas-metadata.js', { structuredClone, captureAtlasAnchors,
+        createId: () => `fresh-${++counter}`, SillyTavern: { getContext: () => context },
+        window: { dispatchEvent() {} }, CustomEvent: class {},
+    });
+    let current = await scope.addManualAtlasEntry('perceptions', slot);
+    const originalRecords = [record('old', 19, [append('Old knowledge', current.id)])];
+    for (let cycle = 0; cycle < 2; cycle++) {
+        await scope.setAtlasEntityExcluded('perceptions', current.id, true);
+        await scope.saveAtlasTranslation('perceptions', current.id, { content: 'Old translation', sourceHash: 'hash' });
+        fail = true;
+        await assert.rejects(scope.deleteManualAtlasEntry('perceptions', current.id), /save failed/);
+        assert.equal(scope.getManualAtlasEntries('perceptions').length, 1);
+        assert.ok(scope.getAtlasTranslation('perceptions', current.id));
+        assert.ok(scope.getAtlasEntityCorrection('perceptions', current.id).excluded);
+        fail = false;
+        await scope.deleteManualAtlasEntry('perceptions', current.id);
+        assert.equal(scope.getManualAtlasEntries('perceptions').length, 0);
+        assert.equal(scope.getAtlasTranslation('perceptions', current.id), null);
+        assert.equal(scope.getAtlasEntityCorrection('perceptions', current.id), null);
+        const next = await scope.addManualAtlasEntry('perceptions', slot);
+        assert.notEqual(next.id, current.id);
+        assert.equal(derivePerceptionAtlas(originalRecords, [next], people).perceptions[0].facts.length, 0);
+        current = next;
+    }
+});
+
+test('pinned perceptions survive before unpinned entries but still respect the total budget', async () => {
+    const scope = await load('../summary/context-block-composer.js', { compareRecordPosition, SUMMARY_CONTEXT_BLOCK_KINDS: { PERCEPTIONS: 'perceptions' } });
+    const entry = { ...slot, observerName: 'A', subjectName: 'B', facts: [], impression: 'Known' };
+    const blocks = scope.buildRenderedBlocks([{ kind: 'perceptions', enabled: true, entryTemplate: '{{sumiPerceptionImpression}}' }], [],
+        { perceptions: [{ ...entry, id: 'pinned', pinned: true }, { ...entry, id: 'ordinary' }] });
+    const result = composeAtomicContext(blocks, 17, text => text.length);
+    assert.equal(result.omittedUnits.length, 1);
+    assert.equal(result.omittedUnits[0].id, 'ordinary');
+    assert.equal(composeAtomicContext(blocks, 1, text => text.length).content, '');
+});
+
+test('perception translation uses names and fact text, caches correctly and participates in translate all', async () => {
+    const entity = { ...slot, observerName: 'A', subjectName: 'B', facts: [{ id: 'private-id', text: 'Likes flowers' }], impression: 'Kind' };
+    const cache = {};
+    const chat = [];
+    const scope = await load('../translation/atlas-translation-service.js', {
+        assertExtensionEnabled() {}, SillyTavern: { getContext: () => ({ chat }) },
+        getSettings: () => ({ translation: { provider: 'test', targetLanguage: 'ko' } }),
+        getAtlasProjection: () => ({ perceptions: [entity] }), getStringHash: value => value,
+        getAtlasTranslation: (category, id) => cache[id],
+        saveAtlasTranslation: async (category, id, value) => { assert.equal(category, 'perceptions'); cache[id] = value; return value; },
+        translate: async text => `Translated: ${text}`,
+    });
+    const source = scope.serializeAtlasEntity('perceptions', entity);
+    assert.match(source, /A -> B/);
+    assert.match(source, /Likes flowers/);
+    assert.doesNotMatch(source, /private-id|undefined|\[object Object\]/);
+    assert.equal((await scope.translateAllAtlasEntities()).translated, 1);
+    assert.equal((await scope.translateAllAtlasEntities()).skipped, 1);
+    entity.facts[0].text = 'Changed knowledge';
+    assert.equal(scope.getValidAtlasTranslation('perceptions', entity), null);
+    assert.equal((await scope.translateAllAtlasEntities()).translated, 1);
 });
 
 test('schema migration preserves customized prompts, rules, selection and context templates across reloads', async () => {
@@ -287,3 +357,4 @@ test('selected-slot retrospective reviews preserve other directions and reject u
     await assert.rejects(scope.createAtlasReviewDraft({ ...input, perceptionIds: ['nonexistent'] }), /재검토할 인식 칸/);
     assert.equal(calls, beforeCalls);
 });
+import { captureAtlasAnchors } from '../memory/atlas-anchor-transaction.js';

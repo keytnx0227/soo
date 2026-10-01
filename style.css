@@ -901,12 +901,23 @@
 }
 
 .stsm-atlas-review-cancel[hidden],
+.stsm-atlas-review-perception-field[hidden],
 .stsm-atlas-review-quick-fields[hidden],
 .stsm-atlas-review-record-fields[hidden],
 .stsm-atlas-review-record-progress[hidden],
 .stsm-atlas-review-result-list[hidden],
 .stsm-atlas-review-result-translation[hidden] {
     display: none !important;
+}
+
+.stsm-atlas-review-history-delete.menu_button {
+    width: auto;
+    max-width: 100%;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
 }
 
 #stsm-cancel-translation[hidden],
@@ -4112,15 +4123,22 @@
 
 .stsm-preset-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px;
     align-items: center;
 }
 
-.stsm-add-prompt {
-    min-width: 112px;
-    white-space: nowrap;
-}
+.stsm-preset-select { width: 100%; min-width: 0; }
+.stsm-preset-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.stsm-preset-actions .menu_button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; min-width: 30px; height: 30px; padding: 0; margin: 0; }
+.stsm-preset-transfer-form { display: flex; flex-direction: column; gap: 12px; text-align: left; overflow-wrap: anywhere; }
+.stsm-preset-transfer-form h3 { margin: 0; font-size: 1em; }
+.stsm-preset-transfer-form > label { display: flex; align-items: baseline; gap: 6px; }
+.stsm-preset-transfer-form input { flex-shrink: 0; }
+.stsm-preset-transfer-form ul { list-style: none; padding: 0; margin: 0; max-height: 45vh; overflow: auto; }
+.stsm-preset-transfer-form li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+.stsm-preset-transfer-form li > span, .stsm-preset-transfer-form small { font-size: 0.85em; opacity: 0.7; }
+.stsm-preset-transfer-form small { grid-column: 2; }
 
 .stsm-separator-visibility {
     display: flex;
@@ -4747,16 +4765,11 @@
     }
 
     .stsm-preset-toolbar {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .stsm-preset-toolbar select {
         grid-column: 1 / -1;
-    }
-
-    .stsm-add-prompt {
-        grid-column: 1 / -1;
-        width: 100%;
     }
 
     .stsm-block {
@@ -4961,18 +4974,29 @@
 .stsm-author-actions .menu_button, .stsm-author-options > .menu_button { display: inline-flex; width: max-content; min-width: 76px; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; margin: 0; }
 .stsm-author-options > .menu_button { margin-top: 10px; }
 .stsm-author-status { font-size: 0.85em; overflow-wrap: anywhere; }
-.stsm-perception-entry { border-bottom: 1px solid var(--SmartThemeBorderColor); padding: 12px 0; overflow-wrap: anywhere; }
-.stsm-perception-section .stsm-atlas-section-scroll { height: auto; max-height: 380px; min-height: 44px; }
-.stsm-perception-entry.is-excluded { opacity: 0.6; }
-.stsm-perception-entry header { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
-.stsm-perception-entry header > strong { min-width: 0; }
-.stsm-perception-entry h4 { margin: 10px 0 4px; font-size: 0.9em; }
-.stsm-perception-entry ul { margin: 0; padding-left: 20px; }
-.stsm-perception-entry p { margin: 4px 0; white-space: pre-wrap; }
-.stsm-perception-actions { display: flex; flex-shrink: 0; gap: 4px; }
-.stsm-perception-actions .menu_button { width: 28px; height: 28px; min-width: 28px; padding: 0; margin: 0; display: inline-flex; align-items: center; justify-content: center; }
+.stsm-perception-entry { overflow-wrap: anywhere; }
+.stsm-perception-entry [data-perception-action="pin"][aria-pressed="true"] { color: var(--SmartThemeQuoteColor); background: var(--SmartThemeBorderColor); }
 .stsm-perception-editor { display: flex; flex-direction: column; gap: 12px; text-align: left; }
 .stsm-perception-editor .text_pole { width: 100%; min-width: 0; }
+
+.stsm-atlas-layers, .stsm-layer-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; text-align: left; }
+.stsm-atlas-layers [hidden], .stsm-layer-detail [hidden] { display: none !important; }
+.stsm-layer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.stsm-layer-toolbar > strong { flex: 1 1 150px; overflow-wrap: anywhere; }
+.stsm-layer-toolbar .text_pole { width: auto; min-width: 100px; max-width: 100%; margin: 0; }
+[data-layer-list] { display: flex; flex-direction: column; gap: 6px; }
+.stsm-layer-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; min-width: 0; }
+.stsm-layer-label { display: flex; gap: 8px; align-items: center; flex: 1 1 210px; min-width: 0; }
+.stsm-layer-label > i { cursor: grab; opacity: .6; }
+.stsm-layer-label > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.stsm-layer-label small, .stsm-layer-detail > small { opacity: .7; }
+.stsm-layer-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: auto; }
+.stsm-layer-actions .menu_button, .stsm-layer-toolbar > .menu_button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-width: 30px; height: 30px; padding: 0; margin: 0; }
+.stsm-layer-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+.stsm-layer-detail [data-layer-translation], .stsm-layer-fields dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.stsm-layer-fields { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 3fr); gap: 8px; margin: 0; }
+.stsm-layer-fields dt { font-weight: 600; overflow-wrap: anywhere; }
+.stsm-layer-fields dd { margin: 0; }
 .stsm-manual-atlas-entry { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding: 10px 0; }
 .stsm-manual-atlas-entry > summary { display: grid; grid-template-columns: 12px minmax(0, 1fr) 30px 30px; gap: 8px; align-items: center; list-style: none; cursor: pointer; }
 .stsm-manual-atlas-entry > summary > span { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }

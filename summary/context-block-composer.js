@@ -66,6 +66,7 @@ export function buildRenderedBlocks(blockSettings, records, atlas, {
     const sources = {
         [SUMMARY_CONTEXT_BLOCK_KINDS.PERCEPTIONS]: (atlas?.perceptions || []).filter(slot => !slot.unresolved && (slot.facts.length || slot.impression)).map(slot => ({
             id: slot.id, label: `${slot.observerName} → ${slot.subjectName}`,
+            pinned: Boolean(slot.pinned), priority: slot.pinned ? 1000 : 0,
             values: { sumiPerceptionObserver: slot.observerName, sumiPerceptionSubject: slot.subjectName,
                 sumiPerceptionFacts: slot.facts.map(fact => `- ${fact.text}`).join('\n'),
                 sumiPerceptionImpression: slot.impression ? `Impression: ${slot.impression}` : '' },

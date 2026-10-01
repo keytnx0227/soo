@@ -11,6 +11,7 @@ import { hasMessageRange } from '../summary/record-placement.js';
 import { createStableAtlasEntityId } from './atlas-entity-id.js';
 import {
     getAtlasCorrections,
+    getAtlasLayerOrders,
     getAtlasReviewRecords,
     getManualAtlasEntries,
     saveAtlasReviewRecord,
@@ -466,6 +467,7 @@ function createAtlasStateSignature() {
         records,
         reviews: getAtlasReviewRecords(),
         corrections: getAtlasCorrections(),
+        layerOrders: getAtlasLayerOrders(),
         manual: Object.fromEntries(Object.keys(ATLAS_REVIEW_CATEGORIES)
             .map(category => [category, getManualAtlasEntries(category)])),
     });

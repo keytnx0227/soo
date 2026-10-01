@@ -4,15 +4,16 @@ import { addExtensionErrorLog } from '../diagnostics/summary-error-state.js';
 import { escapeHtml } from '../core/utils.js';
 import { formatRanges, getCoveredRanges } from '../summary/range-utils.js';
 import {
-    clearAtlasRecordReviewOverride,
     getSummaryRecordIndex,
 } from '../summary/summary-store.js';
 import {
-    deleteAtlasReviewRecord,
     getAtlasReviewRecords,
 } from './atlas-metadata.js';
 import { getAtlasProjection } from './atlas-projection-service.js';
 import { translateAtlasReviewChanges } from '../translation/atlas-review-translation-service.js';
+import { getAtlasLayerSnapshot, removeAtlasLayer, removeAtlasReviewMember } from './atlas-layer-service.js';
+import { confirmRemoveAtlasLayer, showAtlasLayerDetails } from './atlas-layer-view.js';
+import { renderRecordMemoryUpdateDetails } from '../records/record-memory-updates-view.js';
 import {
     applyAtlasReviewDraft,
     ATLAS_REVIEW_CATEGORIES,
@@ -398,6 +399,26 @@ function renderHistory(content, { onChanged }) {
         })),
         ...reviewBatches.map(batch => recordReviewBatchItem(batch, category)),
     ].join('') || '<div class="stsm-empty">적용된 재검토 기록이 없습니다.</div>';
+    list.querySelectorAll('[data-review-layer]').forEach(button => button.addEventListener('click', async () => {
+        try {
+            if (button.dataset.reviewLayerAction === 'detail') await showAtlasLayerDetails(category, button.dataset.reviewLayer);
+            else {
+                const snapshot = getAtlasLayerSnapshot(category);
+                await confirmRemoveAtlasLayer(snapshot, snapshot.layers.find(layer => layer.id === button.dataset.reviewLayer));
+            }
+            onChanged();
+        } catch (error) { logReviewError(error, '도감 레이어 작업 실패'); }
+    }));
+    for (const record of quick) {
+        const row = [...list.querySelectorAll('[data-review-id]')].find(row => row.dataset.reviewId === record.id && row.dataset.reviewType === 'quick');
+        if (!row) continue;
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'menu_button menu_button_icon';
+        button.title = '내용 보기·번역'; button.setAttribute('aria-label', button.title);
+        button.innerHTML = '<i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>';
+        button.addEventListener('click', () => showAtlasLayerDetails(category, `quick:${record.id}`).catch(error => logReviewError(error, '내용 보기 실패')));
+        row.append(button);
+    }
     list.querySelectorAll('[data-review-id] .stsm-atlas-review-history-delete').forEach(button => {
         button.addEventListener('click', async () => {
             const row = button.closest('[data-review-id]');
@@ -409,12 +430,13 @@ function renderHistory(content, { onChanged }) {
                 toastr.warning('초기화할 재검토 기록을 찾지 못했습니다.');
                 return;
             }
+            const snapshot = getAtlasLayerSnapshot(category);
             const confirmed = await showReviewRemovalConfirmation({ record, category, isQuick });
             if (!confirmed) return;
             button.disabled = true;
             try {
-                if (isQuick) await deleteAtlasReviewRecord(row.dataset.reviewId);
-                else await clearAtlasRecordReviewOverride(row.dataset.reviewId, category);
+                if (isQuick) await removeAtlasLayer(snapshot, `quick:${row.dataset.reviewId}`);
+                else await removeAtlasReviewMember(snapshot, row.dataset.reviewId);
                 onChanged();
             } catch (error) {
                 logReviewError(error, '도감 재검토 기록 초기화 실패');
@@ -461,11 +483,16 @@ function recordReviewBatchItem(batch, category) {
             <span><strong>${modeLabel} · #${first.startId} ~ #${last.endId}</strong><small>${batch.records.length}개 레코드 · ${escapeHtml(reviewedAt)}</small></span>
         </summary>
         <div class="stsm-atlas-review-history-batch-records">
+            <div class="stsm-layer-actions">
+                <button type="button" class="menu_button menu_button_icon" data-review-layer="${escapeHtml(`review:${batch.id.startsWith('legacy:') ? first.id : batch.id}`)}" data-review-layer-action="detail" title="묶음 내용 보기·번역" aria-label="묶음 내용 보기·번역"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></button>
+                <button type="button" class="menu_button menu_button_icon" data-review-layer="${escapeHtml(`review:${batch.id.startsWith('legacy:') ? first.id : batch.id}`)}" data-review-layer-action="remove" title="이 묶음 재검토판 전체 초기화" aria-label="이 묶음 재검토판 전체 초기화"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+            </div>
             ${batch.records.map(record => {
         const override = record.atlasReviewOverrides[category];
         return `<details class="stsm-atlas-review-history-record" data-review-id="${escapeHtml(record.id)}" data-review-type="record">
                     <summary>#${record.startId} ~ #${record.endId}</summary>
-                    <pre>${escapeHtml(JSON.stringify(override.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre>
+                    ${renderRecordMemoryUpdateDetails({ structuredSummary: { data: { memoryUpdates: { [category]: override.memoryUpdates } } } }) || '<p>변경 내용 없음</p>'}
+                    <details><summary>JSON</summary><pre>${escapeHtml(JSON.stringify(override.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre></details>
                     <button class="stsm-atlas-review-history-delete menu_button interactable" type="button"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>이 레코드 재검토판 초기화</span></button>
                 </details>`;
     }).join('')}

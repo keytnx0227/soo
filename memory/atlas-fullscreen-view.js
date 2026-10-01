@@ -5,9 +5,17 @@ import { bindEventMemoryView, renderEventMemory } from './event-memory-view.js';
 import { bindItemMemoryView, renderItemMemory } from './item-memory-view.js';
 import { bindPeopleMemoryView, renderPeopleMemory } from './people-memory-view.js';
 import { bindWorldMemoryView, renderWorldMemory } from './world-memory-view.js';
+import { bindPerceptionMemoryView, renderPerceptionMemory } from './perception-memory-view.js';
 import { bindManualAtlasEntryButtons } from './atlas-manual-editor.js';
 
 const ATLAS_VIEWS = Object.freeze({
+    perceptions: {
+        title: '인식 도감', countId: 'stsm-perception-memory-count', initialCount: '0개',
+        tokenUsageId: 'stsm-perception-token-usage', warningId: 'stsm-perception-memory-warning',
+        warningClass: 'stsm-item-memory-warning', listId: 'stsm-perception-memory-list',
+        listClass: 'stsm-item-memory-list', excludedId: 'stsm-perception-memory-excluded',
+        bind: bindPerceptionMemoryView, render: renderPerceptionMemory,
+    },
     people: {
         title: '인물 도감',
         countId: 'stsm-people-memory-count',
@@ -113,6 +121,16 @@ async function showAtlasFullscreen(category) {
             <div id="${view.excludedId}" class="stsm-atlas-excluded-host"></div>
         </div>
     `;
+
+    if (category === 'perceptions') {
+        content.querySelector(`#${view.countId}`).setAttribute('data-perception-count', '');
+        content.querySelector(`#${view.tokenUsageId}`).setAttribute('data-perception-tokens', '');
+        content.querySelector(`#${view.warningId}`).setAttribute('data-perception-warning', '');
+        content.querySelector(`#${view.listId}`).setAttribute('data-perception-list', '');
+        const add = content.querySelector('[data-atlas-manual-add]');
+        add.removeAttribute('data-atlas-manual-add');
+        add.setAttribute('data-perception-add', '');
+    }
 
     const render = () => view.render(content);
     view.bind(content);
