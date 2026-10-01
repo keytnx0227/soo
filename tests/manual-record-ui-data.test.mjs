@@ -12,6 +12,37 @@ import { deriveWorldAtlas } from '../memory/world-memory.js';
 import { derivePerceptionAtlas } from '../memory/perception-memory.js';
 import { applyAtlasCorrections } from '../memory/atlas-corrections.js';
 
+test('review results render readable atlas fields and comparisons without changing source data', async () => {
+    const scope = await load('../memory/atlas-review-view.js', {
+        escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'),
+    });
+    const values = [
+        { id: 'p', name: 'A', role: '여행자', relationships: [{ targetName: 'B', feelings: ['신뢰'] }] },
+        { id: 'i', name: '열쇠', facts: ['은으로 만들어짐'], functions: ['문 열기'] },
+        { id: 'c', title: '약속', terms: '다시 만나기', conditions: [], status: 'pending' },
+        { id: 'e', title: '재회', summary: '다시 만났다', importance: 'major' },
+        { id: 'w', keys: ['도시'], content: '오래된 도시' },
+        { id: 'ab', observerName: 'A', subjectName: 'B', facts: [{ id: 'f', text: '<script>꽃을 좋아함</script>' }], impression: null },
+    ];
+    for (const value of values) {
+        const original = structuredClone(value);
+        const html = scope.renderReviewChange({ type: 'updated', label: '변경', name: '항목', value: { before: value, after: value } });
+        assert.match(html, /변경 전/);
+        assert.match(html, /변경 후/);
+        assert.match(html, /<details><summary>JSON 원문<\/summary><pre>/);
+        assert.doesNotMatch(html, /<script>/);
+        assert.deepEqual(value, original);
+    }
+    assert.match(scope.renderReviewValue(values[5]), /알고 있는 정보/);
+    assert.match(scope.renderReviewValue(values[5]), /<li>&lt;script&gt;꽃을 좋아함/);
+    assert.doesNotMatch(scope.renderReviewValue(values[5]), /<dt>id<\/dt>/);
+    for (const type of ['created', 'removed']) {
+        const html = scope.renderReviewChange({ type, label: type, name: 'A', value: values[0] });
+        assert.match(html, /여행자/);
+        assert.doesNotMatch(html, /변경 전/);
+    }
+});
+
 async function load(path, scope) {
     const source = (await readFile(new URL(path, import.meta.url), 'utf8'))
         .replace(/^import[\s\S]*?from ['"][^'"]+['"];\s*/gm, '').replaceAll('export ', '');

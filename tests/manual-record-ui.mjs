@@ -182,7 +182,16 @@ try {
             window.openPerceptionDraft = () => { void scope.openManualAtlasManager([], memoryUpdates => ({ id: 'perception-draft', startId: 40, endId: 49, structuredSummary: { data: { memoryUpdates } } }))
                 .then(result => { window.perceptionDraft = result; }); };
             Object.assign(scope, load('memory/atlas-review-service.js', ['ATLAS_REVIEW_CATEGORIES', 'ATLAS_REVIEW_MODES', 'getAtlasReviewOverview', 'getAtlasReviewRecordCandidates'], scope));
-            const review = load('memory/atlas-review-view.js', ['openAtlasReviewPopup'], scope);
+            const review = load('memory/atlas-review-view.js', ['openAtlasReviewPopup', 'renderDraftResult', 'compareAtlas'], scope);
+            window.renderReviewResult = (translated = false) => {
+                const before = [{ id: 'ab', observerName: '관찰자', subjectName: '상대', facts: [{ id: 'fact', text: '꽃을 좋아한다.' }], impression: '조용한 사람' }];
+                const after = [{ ...before[0], facts: [{ id: 'fact', text: '꽃과 음악을 좋아한다. <script>unsafe</script>' }], impression: '다정한 사람' }];
+                const root = document.querySelector('#test-root');
+                root.innerHTML = '<div class="stsm-atlas-review-result"></div>';
+                review.renderDraftResult(root, { category: 'perceptions', before, after, completed: true, entries: [{ startId: 0, endId: 19,
+                    stepChanges: review.compareAtlas(before, after), memoryUpdates: { created: [], updated: [{ targetId: 'ab', append: { facts: ['새로운 정보'] } }] } }] }, '',
+                    translated ? { content: '번역된 결과' } : null, translated);
+            };
             window.openPerceptionReview = () => { void review.openAtlasReviewPopup(); };
             window.seedReviewHistory = () => {
                 records[0].atlasReviewOverrides = { perceptions: { reviewBatchId: 'test-batch', reviewMode: 'chronological', reviewedAt: new Date().toISOString(), memoryUpdates: { created: [], updated: [] } } };
@@ -472,6 +481,19 @@ try {
             previousId = nextId;
         }
         assert.deepEqual(errors, []);
+        await page.evaluate(() => window.renderReviewResult());
+        assert.match(await page.locator('.stsm-atlas-review-result-list').innerText(), /변경 전[\s\S]*꽃을 좋아한다[\s\S]*변경 후[\s\S]*꽃과 음악/);
+        assert.equal(await page.locator('.stsm-atlas-review-result script').count(), 0);
+        assert.equal(await page.locator('.stsm-atlas-review-result-list pre').isVisible(), false);
+        assert.equal(await page.locator('.stsm-atlas-review-step-changes pre').isVisible(), false);
+        await page.locator('.stsm-atlas-review-stored-update > summary').click();
+        assert.match(await page.locator('.stsm-atlas-review-draft-entries').innerText(), /새로운 정보/);
+        assert.equal(await page.locator('.stsm-atlas-review-draft-entries pre').isVisible(), false);
+        assert.equal(await page.locator('.stsm-atlas-review-result').evaluate(element => element.scrollWidth <= element.clientWidth + 1), true);
+        await page.screenshot({ path: fileURLToPath(new URL(`review-result-${width}.png`, output)), fullPage: true });
+        await page.evaluate(() => window.renderReviewResult(true));
+        assert.equal(await page.locator('.stsm-atlas-review-result-list').isVisible(), false);
+        assert.equal(await page.locator('.stsm-atlas-review-result-translation').innerText(), '번역된 결과');
         await page.close();
         console.log(`UI checks passed: ${width}px`);
     }

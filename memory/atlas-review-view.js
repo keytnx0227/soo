@@ -578,20 +578,19 @@ function renderDraftResult(content, draft, interruptionMessage = '', translation
         </div>
         ${interruptionMessage ? `<p class="stsm-atlas-review-interruption">${escapeHtml(interruptionMessage)}</p>` : ''}
         <div class="stsm-atlas-review-result-list"${showingTranslation && translation ? ' hidden' : ''}>
-            ${[...changes.created, ...changes.updated, ...changes.removed].map(change => `
-                <details><summary><span class="stsm-atlas-review-change-${change.type}">${escapeHtml(change.label)}</span> ${escapeHtml(change.name)}</summary><pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre></details>
-            `).join('') || '<div class="stsm-empty">도감 계산 결과에 달라지는 항목이 없습니다.</div>'}
+            ${[...changes.created, ...changes.updated, ...changes.removed].map(renderReviewChange).join('') || '<div class="stsm-empty">도감 계산 결과에 달라지는 항목이 없습니다.</div>'}
         </div>
         ${renderDraftStepHistory(draft)}
         ${translation ? `<pre class="stsm-atlas-review-result-translation"${showingTranslation ? '' : ' hidden'}>${escapeHtml(translation.content)}</pre>` : ''}
         ${changeCount === 0 && draft.entries.length ? '<p class="stsm-atlas-review-no-effect">재검토 변경안은 생성됐지만 현재 최종 도감에는 영향을 주지 않습니다. 같은 값이 이미 반영됐거나 이후 레코드·사용자 수정이 해당 값을 덮고 있을 수 있습니다.</p>' : ''}
         <details class="stsm-atlas-review-stored-update">
-            <summary>생성된 재검토 변경안 원문</summary>
+            <summary>생성된 재검토 변경안</summary>
             <div class="stsm-atlas-review-draft-entries">
                 ${draft.entries.map(entry => `
                     <section>
                         <strong>#${entry.startId} ~ #${entry.endId}</strong>
-                        <pre>${escapeHtml(JSON.stringify(entry.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre>
+                        ${renderRecordMemoryUpdateDetails({ structuredSummary: { data: { memoryUpdates: { [draft.category]: entry.memoryUpdates } } } }) || '<p>변경 내용 없음</p>'}
+                        <details><summary>JSON 원문</summary><pre>${escapeHtml(JSON.stringify(entry.memoryUpdates || { created: [], updated: [] }, null, 2))}</pre></details>
                     </section>
                 `).join('')}
             </div>
@@ -615,14 +614,43 @@ function renderDraftStepHistory(draft) {
         return `<details${index === 0 ? ' open' : ''}>
                     <summary>#${entry.startId} ~ #${entry.endId} · 신규 ${changes.created.length} · 변경 ${changes.updated.length} · 제외 ${changes.removed.length}</summary>
                     <div class="stsm-atlas-review-step-changes">
-                        ${[...changes.created, ...changes.updated, ...changes.removed].map(change => `
-                            <details><summary><span class="stsm-atlas-review-change-${change.type}">${escapeHtml(change.label)}</span> ${escapeHtml(change.name)}</summary><pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre></details>
-                        `).join('') || '<div class="stsm-empty">이 레코드를 거치며 달라진 도감 항목이 없습니다.</div>'}
+                        ${[...changes.created, ...changes.updated, ...changes.removed].map(renderReviewChange).join('') || '<div class="stsm-empty">이 레코드를 거치며 달라진 도감 항목이 없습니다.</div>'}
                     </div>
                 </details>`;
     }).join('')}
         </div>
     </section>`;
+}
+
+const REVIEW_FIELD_LABELS = {
+    name: '이름', title: '제목', aliases: '별칭', provisional: '임시 이름', role: '역할', age: '나이', occupation: '직업·직위',
+    appearance: '외형', affiliations: '소속', traits: '성격', voice: '말투', relationships: '관계', relationship: '관계',
+    feelings: '감정', targetName: '상대', personName: '인물', participants: '참여 인물', lastKnownState: '마지막 확인 상태',
+    location: '장소', physicalCondition: '몸 상태', owner: '소유자', holder: '소지자', condition: '상태', status: '상태',
+    facts: '알고 있는 정보', functions: '기능', terms: '서약 내용', conditions: '조건', deadline: '기한', statusReason: '상태 근거',
+    date: '시점', summary: '요약', importance: '중요도', shift: '변화', keys: '키워드', content: '내용',
+    observerName: '관찰자', subjectName: '대상 인물', impression: '종합 인식', text: '내용',
+};
+
+function renderReviewChange(change) {
+    const body = change.type === 'updated'
+        ? `<div class="stsm-review-comparison"><section><h5>변경 전</h5>${renderReviewValue(change.value.before)}</section><section><h5>변경 후</h5>${renderReviewValue(change.value.after)}</section></div>`
+        : renderReviewValue(change.value);
+    return `<details class="stsm-review-readable-change" open><summary><span class="stsm-atlas-review-change-${escapeHtml(change.type)}">${escapeHtml(change.label)}</span> ${escapeHtml(change.name)}</summary>
+        ${body}<details><summary>JSON 원문</summary><pre>${escapeHtml(JSON.stringify(change.value, null, 2))}</pre></details></details>`;
+}
+
+function renderReviewValue(value) {
+    if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '<span class="stsm-review-empty-value">없음</span>';
+    if (Array.isArray(value)) return `<ul>${value.map(item => `<li>${renderReviewValue(item)}</li>`).join('')}</ul>`;
+    if (typeof value === 'object') {
+        const fields = Object.entries(value).filter(([key]) => !ATLAS_COMPARISON_METADATA_FIELDS.has(key)
+            && !['id', 'sourceId', 'targetId', 'observerId', 'subjectId', 'personId'].includes(key));
+        if (!fields.length) return '<span class="stsm-review-empty-value">없음</span>';
+        if (fields.length === 1 && fields[0][0] === 'text') return renderReviewValue(fields[0][1]);
+        return `<dl>${fields.map(([key, item]) => `<dt>${escapeHtml(REVIEW_FIELD_LABELS[key] || key)}</dt><dd>${renderReviewValue(item)}</dd>`).join('')}</dl>`;
+    }
+    return escapeHtml(typeof value === 'boolean' ? (value ? '예' : '아니오') : String(value));
 }
 
 function compareAtlas(before, after) {
