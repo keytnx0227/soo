@@ -67,6 +67,7 @@ export async function openStructuredSummaryEditor(recordId) {
                         includeInCompression: form.querySelector(canMove ? '[data-manual-compression]' : '[data-summary-compression]').checked,
                     } } : {}),
                     contentEdited: false,
+                    userEdit: true,
                     structuredSummary: {
                         ...record.structuredSummary,
                         data,

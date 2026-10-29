@@ -148,7 +148,7 @@ async function editDetailText(record, owner) {
             if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
             try {
                 if (SillyTavern.getContext().chatMetadata !== owner) throw new Error('채팅이 바뀌어 저장할 수 없습니다.');
-                updated = await updateSummaryRecordContent(record.id, editor.value, { contentEdited: true });
+                updated = await updateSummaryRecordContent(record.id, editor.value, { contentEdited: true, userEdit: true });
                 if (!updated) throw new Error('수정할 레코드를 찾지 못했습니다.');
                 return true;
             } catch (error) { toastr.error(error.message || '저장에 실패했습니다.'); return false; }

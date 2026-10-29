@@ -62,6 +62,19 @@ async function load(path, scope) {
     return scope;
 }
 
+test('edited-only filter combines with number and text search without inferring historical edits', async () => {
+    const scope = await load('../records/records-view.js', { ...placement, getRecordTags: () => [] });
+    const records = [
+        { id: 'a', startId: 0, endId: 9, content: 'apple', userEditedAt: '2026-10-05T00:00:00Z' },
+        { id: 'b', startId: 10, endId: 19, content: 'pear', userEditedAt: '2026-10-05T00:00:00Z', compressedBy: 'parent' },
+        { id: 'old', startId: 20, endId: 29, content: 'apple', contentEdited: true, updatedAt: '2026-10-05T00:00:00Z' },
+    ];
+    assert.equal(scope.filterRecords(records, { mode: 'all', query: '', editedOnly: true }).length, 2);
+    assert.equal(scope.filterRecords(records, { mode: 'all', query: 'apple', editedOnly: true })[0].id, 'a');
+    assert.equal(scope.filterRecords(records, { mode: 'number', query: '15', editedOnly: true })[0].id, 'b');
+    assert.equal(scope.filterRecords(records, { mode: 'all', query: '', editedOnly: false }).length, 3);
+});
+
 test('review translation includes generated proposals even when final atlas is unchanged', async () => {
     const calls = [];
     const scope = await load('../memory/atlas-review-view.js', { translateAtlasReviewChanges: async changes => {

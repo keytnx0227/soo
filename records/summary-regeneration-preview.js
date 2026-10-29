@@ -9,6 +9,7 @@ const MEMORY_CATEGORIES = Object.freeze([
     ['commitments', '서약 장부'],
     ['events', '주요 사건'],
     ['world', '세계 설정'],
+    ['perceptions', '인식'],
 ]);
 
 export async function showSummaryRegenerationPreview(draft, onApply) {

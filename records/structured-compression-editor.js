@@ -50,6 +50,7 @@ export async function openStructuredCompressionEditor(recordId) {
                 });
                 updatedRecord = await updateSummaryRecordContent(record.id, content, {
                     contentEdited: false,
+                    userEdit: true,
                     compressionData: data,
                 });
                 if (!updatedRecord) throw new Error('수정할 압축 요약 레코드를 찾지 못했습니다.');

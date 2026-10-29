@@ -46,7 +46,7 @@ export function validateSummaryRange(startId, endId) {
     return { start, end, chat };
 }
 
-export async function summarizeRange({ startId, endId, onProgress, onRecord, signal }) {
+export async function summarizeRange({ startId, endId, onProgress, onRecord, onGenerated, signal }) {
     assertExtensionEnabled();
     const { start, end, chat } = validateSummaryRange(startId, endId);
     validateUncoveredRange(start, end);
@@ -63,6 +63,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord, sig
         throwIfSummaryCancelled(signal, records);
         const chunk = chunks[index];
         let record;
+        let generation;
         try {
             ensureChatUnchanged(chat);
             onProgress?.({ current: index + 1, total: chunks.length, chunk });
@@ -106,6 +107,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord, sig
                     data: structuredData,
                 },
             });
+            if (onGenerated) generation = { prompt, response, outputConfiguration };
         } catch (error) {
             if (error?.code === 'STSM_SUMMARY_CANCELLED') throw error;
             throw createBatchInterruptionError({
@@ -120,6 +122,7 @@ export async function summarizeRange({ startId, endId, onProgress, onRecord, sig
 
         records.push(record);
         await onRecord?.(record);
+        if (onGenerated) await onGenerated({ ...generation, record: getSummaryRecord(record.id) });
         throwIfSummaryCancelled(signal, records);
     }
 
@@ -269,7 +272,7 @@ export async function applySummaryRegenerationDraft(draft) {
     return updatedRecord;
 }
 
-function createRegenerationRecordSignature(record) {
+export function createRegenerationRecordSignature(record) {
     return JSON.stringify({
         id: record.id,
         startId: record.startId,

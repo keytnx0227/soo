@@ -47,6 +47,86 @@ function compact(sources) {
     })) }), { segmented: true, sourceRecords: sources });
 }
 
+test('translation save failure preserves a concurrently added summary', async () => {
+    const { scope, context, add } = await setup();
+    const first = await add('first', 0, 9);
+    let rejectSave;
+    context.saveMetadata = () => new Promise((resolve, reject) => { rejectSave = reject; });
+    const pending = scope.setSummaryRecordTranslation(first.id, { content: 'translation', provider: 'mock', targetLanguage: 'ko' });
+    context.saveMetadata = async () => {};
+    const second = await add('second', 10, 19);
+    rejectSave(new Error('save failed'));
+    await assert.rejects(pending, /save failed/);
+    assert.ok(scope.getSummaryRecord(second.id));
+    assert.ok(!scope.getSummaryRecord(first.id).translation);
+});
+
+test('summary save failure preserves a concurrent translation', async () => {
+    const { scope, context, add } = await setup();
+    const first = await add('first', 0, 9);
+    let rejectSave;
+    context.saveMetadata = () => new Promise((resolve, reject) => { rejectSave = reject; });
+    const pending = add('second', 10, 19);
+    context.saveMetadata = async () => {};
+    await scope.setSummaryRecordTranslation(first.id, { content: 'translation', provider: 'mock', targetLanguage: 'ko' });
+    rejectSave(new Error('save failed'));
+    await assert.rejects(pending, /save failed/);
+    assert.equal(scope.getSummaryRecords().length, 1);
+    assert.equal(scope.getSummaryRecord(first.id).translation.content, 'translation');
+});
+
+test('direct edit marker records real user content edits only and survives reload and failure', async () => {
+    const { scope, context, add } = await setup();
+    const record = await add('original', 0, 9);
+    assert.ok(!record.userEditedAt);
+    await scope.updateSummaryRecordContent(record.id, record.content, { userEdit: true, structuredSummary: record.structuredSummary, contentEdited: false });
+    assert.ok(!scope.getSummaryRecord(record.id).userEditedAt);
+    await scope.updateSummaryRecordLlmHidden(record.id, true);
+    assert.ok(!scope.getSummaryRecord(record.id).userEditedAt);
+    const structuredSummary = structuredClone(record.structuredSummary);
+    structuredSummary.data.plot = ['AI changed'];
+    await scope.updateSummaryRecordContent(record.id, 'AI changed', { structuredSummary, contentEdited: false });
+    assert.ok(!scope.getSummaryRecord(record.id).userEditedAt);
+    structuredSummary.data.plot = ['User changed'];
+    context.saveMetadata = async () => { throw new Error('save failed'); };
+    await assert.rejects(scope.updateSummaryRecordContent(record.id, 'User changed', { structuredSummary, userEdit: true, contentEdited: false }), /save failed/);
+    assert.ok(!scope.getSummaryRecord(record.id).userEditedAt);
+    context.saveMetadata = async () => {};
+    await scope.updateSummaryRecordContent(record.id, 'User changed', { structuredSummary, userEdit: true, contentEdited: false });
+    const stamp = scope.getSummaryRecord(record.id).userEditedAt;
+    assert.ok(stamp);
+    context.chatMetadata = JSON.parse(JSON.stringify(context.chatMetadata));
+    assert.equal(scope.getSummaryRecord(record.id).userEditedAt, stamp);
+    await scope.updateSummaryRecordContent(record.id, 'later AI text', { contentEdited: true });
+    assert.equal(scope.getSummaryRecord(record.id).userEditedAt, stamp);
+    const text = await add('text original', 10, 19);
+    await scope.updateSummaryRecordContent(text.id, text.content, { contentEdited: true, userEdit: true });
+    assert.ok(!scope.getSummaryRecord(text.id).userEditedAt);
+    await scope.updateSummaryRecordContent(text.id, 'User text', { contentEdited: true, userEdit: true });
+    assert.ok(scope.getSummaryRecord(text.id).userEditedAt);
+});
+
+test('compression preserves edited history on long-term originals without marking the new parent', async () => {
+    const { scope, context, add } = await setup();
+    const a = await add('A', 0, 9);
+    const b = await add('B', 10, 19);
+    const data = structuredClone(a.structuredSummary);
+    data.data.plot = ['A edited'];
+    await scope.updateSummaryRecordContent(a.id, 'A edited', { structuredSummary: data, contentEdited: false, userEdit: true });
+    const parent = await scope.addCompressedSummaryRecord({ sourceRecordIds: [a.id, b.id], compressionData: compact([a, b]) });
+    assert.ok(scope.getSummaryRecord(a.id).compressedBy);
+    assert.ok(scope.getSummaryRecord(a.id).userEditedAt);
+    assert.ok(!parent.userEditedAt);
+    await scope.updateSummaryRecordPinned(b.id, true);
+    assert.ok(!scope.getSummaryRecord(b.id).userEditedAt);
+    const changed = structuredClone(parent.compression.data);
+    changed.segments[0].plot = ['Edited compression'];
+    await scope.updateSummaryRecordContent(parent.id, 'Edited compression', { compressionData: changed, contentEdited: false, userEdit: true });
+    context.chatMetadata = JSON.parse(JSON.stringify(context.chatMetadata));
+    assert.ok(scope.getSummaryRecord(parent.id).userEditedAt);
+    assert.ok(scope.getSummaryRecord(a.id).userEditedAt);
+});
+
 for (const mode of ['integrated', 'segmented']) {
     test(`external record deletion reanchors to the latest predecessor atomically (${mode})`, async () => {
         const { scope, context, add } = await setup(mode);

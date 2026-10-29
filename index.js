@@ -45,6 +45,9 @@ import { bindManualRecordView } from './records/manual-record-view.js';
 import { getCoveredRanges } from './summary/range-utils.js';
 import { openStructuredCompressionEditor } from './records/structured-compression-editor.js';
 import { showSummaryRegenerationPreview } from './records/summary-regeneration-preview.js';
+import { captureGenerationConversation, getGenerationOwner, getRecordGenerationConversation, hasRecordGenerationConversation, saveRecentGenerationConversation } from './records/generation-conversation.js';
+import { createAutoTranslationQueue } from './translation/auto-translation-queue.js';
+import { openGeneratedConversations, openSavedGenerationConversation, openGenerationConversation } from './records/generation-conversation-view.js';
 import {
     bindRecordsView,
     refreshSummaryRecordSourceStates,
@@ -223,6 +226,10 @@ function bindEvents(root) {
     bindCoverageMap(root);
 
     root.querySelector('#stsm-summarize').addEventListener('click', () => runSummarization(root));
+    root.querySelector('#stsm-generation-resume')?.addEventListener('click', () => {
+        openSavedGenerationConversation(() => renderSummaryRecords(root, bindRecordEvents))
+            .catch(error => toastr.error(error.message));
+    });
     root.querySelector('#stsm-cancel-summary').addEventListener('click', cancelSummarization);
     bindTranslationSettings(root);
     root.querySelector('#stsm-translate-all').addEventListener('click', () => translateAllRecords(root));
@@ -763,11 +770,24 @@ function renderWorldOutputFields(root) {
 async function runSummarization(root) {
     if (isSummarizing) return;
 
+    const conversationEnabled = root.querySelector('#stsm-generation-chat')?.checked;
+    const conversations = [];
+    const sourceChat = SillyTavern.getContext().chat;
+
     const startId = root.querySelector('#stsm-range-start').value;
     const endId = root.querySelector('#stsm-range-end').value;
 
     let operationToken = null;
     const abortController = new AbortController();
+    let translationQueue;
+    let summaryLabel = '요약 준비 중';
+    let translationState;
+    const renderProgress = () => {
+        const translationLabel = translationState
+            ? ` · 번역 ${translationState.completed}/${translationState.total}${translationState.failed ? ` (실패 ${translationState.failed})` : ''}`
+            : '';
+        updateOperation(operationToken, summaryLabel + translationLabel);
+    };
     try {
         const initialLabel = startId.trim() && endId.trim()
             ? `#${startId.trim()} ~ #${endId.trim()} 요약 중`
@@ -780,19 +800,51 @@ async function runSummarization(root) {
             startId,
             endId,
             signal: abortController.signal,
+            onGenerated: async generation => {
+                const session = captureGenerationConversation(generation);
+                if (conversationEnabled) conversations.push(session);
+                try { await saveRecentGenerationConversation(getGenerationOwner(), session); }
+                catch (error) {
+                    console.error('[Chat Summarizer] Conversation snapshot save failed:', error);
+                    toastr.warning('요약은 생성됐지만 상담용 원본 자동 보관에 실패했습니다.');
+                }
+                if (SillyTavern.getContext().chat === sourceChat) renderSummaryRecords(root, bindRecordEvents);
+            },
             onProgress: ({ current, total, chunk }) => {
-                updateOperation(operationToken, `#${chunk.startId} ~ #${chunk.endId} 요약 중`);
+                summaryLabel = `#${chunk.startId} ~ #${chunk.endId} 요약 중`;
+                renderProgress();
                 root.querySelector('#stsm-summarize').textContent = `요약 중 ${current}/${total}`;
             },
-            onRecord: async record => {
-                if (!abortController.signal.aborted) {
-                    await autoTranslateRecord(record, operationToken);
+            onRecord: record => {
+                if (!abortController.signal.aborted && isExtensionEnabled() && getSettings().translation.autoTranslate) {
+                    if (!translationQueue) {
+                        const context = SillyTavern.getContext();
+                        const owner = { chat: context.chat, metadata: context.chatMetadata, store: context.chatMetadata.sumi_chat_summarizer };
+                        const shouldContinue = () => {
+                            const current = SillyTavern.getContext();
+                            return !abortController.signal.aborted && isExtensionEnabled()
+                                && current.chat === owner.chat && current.chatMetadata === owner.metadata
+                                && current.chatMetadata.sumi_chat_summarizer === owner.store;
+                        };
+                        translationQueue = createAutoTranslationQueue({
+                            shouldContinue,
+                            translate: async item => {
+                                await translateSummaryRecord(item.id, { signal: abortController.signal, expectedContent: item.content, expectedOwner: owner });
+                                if (shouldContinue()) renderSummaryRecords(root, bindRecordEvents);
+                            },
+                            onChange: state => { translationState = state; renderProgress(); },
+                            onError: (error, item) => reportAutoTranslationError(error, item),
+                        });
+                    }
+                    translationQueue.enqueue(record);
                 }
                 renderSummaryRecords(root, bindRecordEvents);
             },
         });
         setActiveTab(root, 'records');
-        toastr.success(`${records.length}개의 요약 블록을 생성했습니다.`);
+        summaryLabel = '요약 완료';
+        renderProgress();
+        toastr.success(`${records.length}개의 요약 블록을 생성했습니다.${translationQueue ? ' 남은 자동 번역을 마무리합니다.' : ''}`);
     } catch (error) {
         if (error?.code === 'STSM_SUMMARY_CANCELLED') {
             const completedCount = error.summaryCancellation?.completedChunks?.length || 0;
@@ -815,6 +867,16 @@ async function runSummarization(root) {
             toastr.error(error.message || '요약 생성에 실패했습니다.');
         }
     } finally {
+        if (translationQueue) {
+            summaryLabel = abortController.signal.aborted ? '중단 처리 중' : '요약 종료 · 번역 마무리 중';
+            renderProgress();
+            try {
+                const result = await translationQueue.drain();
+                if (!abortController.signal.aborted && SillyTavern.getContext().chat === sourceChat) {
+                    toastr.info(`자동 번역 완료: ${result.completed}개${result.failed ? ` · 실패 ${result.failed}개` : ''}${result.skipped ? ` · 제외 ${result.skipped}개` : ''}`);
+                }
+            } catch (error) { console.error('[Chat Summarizer] Translation queue failed:', error); }
+        }
         if (summaryAbortController === abortController) summaryAbortController = null;
         if (summaryOperationToken === operationToken) summaryOperationToken = null;
         if (operationToken) {
@@ -822,6 +884,11 @@ async function runSummarization(root) {
             endOperation(operationToken);
         }
         renderRangeActions(root);
+        if (conversations.length && SillyTavern.getContext().chat === sourceChat) {
+            try {
+                await openGeneratedConversations(conversations, () => renderSummaryRecords(root, bindRecordEvents));
+            } catch (error) { toastr.error(error.message || '요약 대화창을 열지 못했습니다.'); }
+        }
     }
 }
 
@@ -865,6 +932,20 @@ function setActiveTab(root, tabName) {
 }
 
 function bindRecordEvents(record) {
+    if (hasRecordGenerationConversation(record.dataset.recordId) && !record.querySelector('.stsm-record-generation-chat')) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'menu_button stsm-record-generation-chat';
+        button.title = '생성 당시 맥락으로 상담'; button.setAttribute('aria-label', button.title);
+        button.innerHTML = '<i class="fa-solid fa-comments" aria-hidden="true"></i>';
+        button.addEventListener('click', () => {
+            const session = getRecordGenerationConversation(record.dataset.recordId);
+            if (!session) { toastr.info('자동 보관 기간이 지나 이 대화의 원본이 없습니다.'); return; }
+            openGenerationConversation(session, () => {
+                if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
+            }).catch(error => toastr.error(error.message));
+        });
+        record.querySelector('.stsm-record-actions')?.append(button);
+    }
     record.querySelector('.stsm-record-copy').addEventListener('click', () => copyRecordContent(record));
     record.querySelector('.stsm-record-edit').addEventListener('click', () => editRecord(record));
     record.querySelector('.stsm-record-translate').addEventListener('click', () => translateRecord(record));
@@ -1067,6 +1148,7 @@ async function saveRecordEdit(record) {
         setRecordBusy(record, true);
         const updatedRecord = await updateSummaryRecordContent(record.dataset.recordId, editor.value, {
             contentEdited: true,
+            userEdit: true,
         });
         if (!updatedRecord) throw new Error('수정할 요약 기록을 찾지 못했습니다.');
         if (currentRoot) renderSummaryRecords(currentRoot, bindRecordEvents);
@@ -1168,16 +1250,19 @@ async function autoTranslateRecord(record, operationToken) {
         updateOperation(operationToken, `#${record.startId} ~ #${record.endId} 번역 중`);
         await translateSummaryRecord(record.id);
     } catch (error) {
-        console.error('[Chat Summarizer] Automatic translation failed:', error);
-        addExtensionErrorLog(error, {
-            operation: 'translation',
-            title: '자동 번역 실패',
-            message: '요약 생성은 완료됐지만 자동 번역에 실패했습니다.',
-            context: { range: getRecordRange(record) },
-        });
-        toastr.warning(`#${record.startId} ~ #${record.endId} 요약의 자동 번역에 실패했습니다.`);
+        reportAutoTranslationError(error, record);
     }
+}
 
+function reportAutoTranslationError(error, record) {
+    console.error('[Chat Summarizer] Automatic translation failed:', error);
+    addExtensionErrorLog(error, {
+        operation: 'translation',
+        title: '자동 번역 실패',
+        message: '요약 생성은 완료됐지만 자동 번역에 실패했습니다.',
+        context: { range: getRecordRange(record) },
+    });
+    toastr.warning(`#${record.startId} ~ #${record.endId} 요약의 자동 번역에 실패했습니다.`);
 }
 
 function setRecordBusy(record, value) {

@@ -28,6 +28,7 @@ const IDLE_CONTROL_SELECTOR = [
     '.stsm-record-edit',
     '.stsm-record-save',
     '.stsm-record-chat',
+    '.stsm-record-generation-chat',
     '.stsm-record-delete',
     '#stsm-adjust-record-ranges',
     '#stsm-export-chat-data',

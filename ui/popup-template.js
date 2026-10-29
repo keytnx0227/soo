@@ -92,6 +92,10 @@ export function buildPopup() {
                     </div>
                 </div>
             </div>
+            <div class="stsm-generation-options">
+                <label title="최근 요약 5개는 체크 여부와 관계없이 채팅별로 자동 보관됩니다. 체크하면 생성 후 대화창을 바로 엽니다. 상담 내역은 나중에 이어가기로 별도 저장해주세요."><input id="stsm-generation-chat" type="checkbox" /> 생성 후 바로 대화 열기</label>
+                <button id="stsm-generation-resume" class="menu_button" type="button" title="자동 보관된 최근 5개 요약과 직접 저장한 대화"><i class="fa-solid fa-comments" aria-hidden="true"></i> 이어가기</button>
+            </div>
             <div class="stsm-settings-section">
                 <div class="stsm-section-title">요약 사용 설정</div>
                 <div class="stsm-injection-grid">
@@ -638,6 +642,7 @@ export function buildPopup() {
 
 export function renderRecordSearchControls() {
     return `
+        <label class="stsm-record-user-edit-filter"><input type="checkbox" data-user-edited-only /> 직접 수정한 기억만</label>
         <div class="stsm-record-pin-filter" role="group" aria-label="장기기억 고정 필터" hidden>
             <button class="stsm-record-pin-filter-button stsm-record-pin-filter-active menu_button interactable" type="button" data-pin-filter="all" aria-pressed="true">전체</button>
             <button class="stsm-record-pin-filter-button menu_button interactable" type="button" data-pin-filter="pinned" aria-pressed="false"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> 고정</button>

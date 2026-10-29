@@ -9,7 +9,7 @@ const sources = {};
 for (const name of [
     'core/utils.js', 'summary/record-placement.js', 'summary/summary-record-template.js',
     'summary/summary-format.js', 'memory/people-feelings.js', 'memory/people-feelings-view.js',
-    'records/structured-editor-order.js', 'records/structured-summary-editor.js',
+    'records/structured-editor-order.js', 'records/structured-summary-editor.js', 'records/records-view.js',
     'records/manual-record-view.js', 'memory/atlas-manual-editor.js', 'ui/popup-template.js',
     'summary/compression-view.js',
     'summary/range-utils.js', 'records/manual-record-settings.js', 'records/manual-atlas-draft.js', 'records/manual-atlas-view.js',
@@ -17,6 +17,7 @@ for (const name of [
     'memory/atlas-source-record.js', 'memory/atlas-entity-id.js', 'memory/atlas-projection-service.js', 'memory/atlas-corrections.js',
     'memory/people-memory.js', 'memory/item-memory.js', 'memory/commitment-memory.js', 'memory/event-memory.js', 'memory/world-memory.js',
     'records/manual-author-engine.js', 'records/manual-author-view.js',
+    'records/generation-conversation.js', 'records/generation-conversation-view.js',
     'memory/perception-memory.js', 'memory/perception-memory-view.js',
     'memory/atlas-layer-order.js', 'memory/atlas-anchor-transaction.js', 'memory/atlas-metadata.js',
     'memory/atlas-review-service.js', 'memory/atlas-review-view.js', 'memory/atlas-review-draft-editor.js',
@@ -162,7 +163,22 @@ try {
             window.currentAtlas = () => scope.getAtlasProjection();
             const manual = load('records/manual-record-view.js', ['openManualRecordEditor', 'bindManualRecordView'], scope);
             window.openManual = () => { void manual.openManualRecordEditor(); };
-            const popupTemplate = load('ui/popup-template.js', ['buildPopup'], scope);
+            const popupTemplate = load('ui/popup-template.js', ['buildPopup', 'renderRecordSearchControls'], scope);
+            const filters = load('records/records-view.js', ['bindRecordSearch', 'getRecordSearchState', 'setRecordSearchState', 'filterRecords'], scope);
+            window.openEditFilterTest = () => {
+                const root = document.querySelector('#test-root');
+                root.innerHTML = popupTemplate.renderRecordSearchControls() + '<output data-filter-results></output>';
+                const values = [{ id: 'edited', startId: 0, endId: 9, userEditedAt: '2026-10-05T00:00:00Z' }, { id: 'old', startId: 10, endId: 19 }];
+                const render = () => { root.querySelector('[data-filter-results]').textContent = filters.filterRecords(values, filters.getRecordSearchState(root)).map(record => record.id).join(','); };
+                filters.bindRecordSearch(root, render);
+                window.restoreEditFilter = () => {
+                    const state = filters.getRecordSearchState(root);
+                    filters.setRecordSearchState(root, {});
+                    filters.setRecordSearchState(root, state);
+                    render();
+                };
+                render();
+            };
             window.renderToolbar = () => {
                 const popup = popupTemplate.buildPopup();
                 document.querySelector('#test-root').replaceChildren(popup.querySelector('.stsm-records-toolbar'), popup.querySelector('.stsm-record-memory-browser'));
@@ -213,6 +229,39 @@ try {
                 root.innerHTML = '<button id="stsm-open-compression">압축</button>';
                 compression.bindCompressionView(root);
                 root.querySelector('button').click();
+            };
+            const generationScope = { ...scope,
+                createRegenerationRecordSignature: record => JSON.stringify(record),
+                isolateCreatedIds: updates => updates,
+                getTokenCountAsync: async () => { window.generationCounts = (window.generationCounts || 0) + 1; return 500; },
+                generateSummary: async (prompt, options) => {
+                    window.generationPrompt = prompt; window.generationOutput = options.maxTokens;
+                    return window.generationResponse || '이 장면에서 두 사람의 약속을 강조했어요.';
+                },
+                showSummaryRegenerationPreview: async (draft, apply) => { window.generationDraft = draft; await apply(draft); },
+                applySummaryRegenerationDraft: async draft => {
+                    records[0].structuredSummary = draft.structuredSummary;
+                    window.generationApplied = true;
+                    return records[0];
+                },
+            };
+            Object.assign(generationScope, load('records/generation-conversation.js', ['captureGenerationConversation', 'composeGenerationConversation', 'getGenerationOwner', 'checkGenerationOwner', 'checkGenerationRecord', 'readGenerationConversation', 'saveGenerationConversation', 'createConversationDraft', 'changeGenerationTurn', 'getRecentGenerationConversations', 'deleteRecentGenerationConversation', 'saveRecentGenerationConversation'], generationScope));
+            Object.assign(generationScope, load('records/generation-conversation-view.js', ['openGenerationConversation', 'openSavedGenerationConversation', 'openGeneratedConversations'], generationScope));
+            window.openGeneration = () => {
+                context.chatMetadata.sumi_chat_summarizer ||= { records };
+                window.generationSession = generationScope.captureGenerationConversation({ record: records[0], prompt: 'ORIGINAL CUSTOM PROMPT',
+                    response: JSON.stringify({ plot: ['두 사람이 정원에서 약속을 나누었다.'], memoryUpdates: {} }),
+                    outputConfiguration: { sections: scope.DEFAULT_SUMMARY_SECTIONS, memorySections: scope.DEFAULT_MEMORY_SECTIONS } });
+                void generationScope.openGenerationConversation(window.generationSession);
+            };
+            window.readGeneration = () => generationScope.readGenerationConversation();
+            window.resumeGeneration = () => { void generationScope.openSavedGenerationConversation(); };
+            window.seedRecentGeneration = async () => {
+                const owner = generationScope.getGenerationOwner();
+                for (let index = 0; index < 6; index++) {
+                    await generationScope.saveRecentGenerationConversation(owner, { ...window.generationSession,
+                        id: `recent-${index}`, recordId: `test-record-${index}`, startId: index * 10, endId: index * 10 + 9 });
+                }
             };
             window.openManual();
             load('ui/section-tooltip.js', ['bindSectionTooltips']).bindSectionTooltips();
@@ -521,6 +570,91 @@ try {
         await page.locator('[data-review-remove]').click();
         await page.locator('.test-popup:not([hidden]) .test-cancel').click();
         assert.equal(await page.evaluate(() => window.reviewEdited), null);
+        await page.evaluate(() => window.openEditFilterTest());
+        await page.locator('[data-user-edited-only]').check();
+        assert.equal(await page.locator('[data-filter-results]').innerText(), 'edited');
+        await page.evaluate(() => window.restoreEditFilter());
+        assert.equal(await page.locator('[data-user-edited-only]').isChecked(), true);
+        await page.locator('.stsm-record-search-input').fill('15');
+        assert.equal(await page.locator('[data-filter-results]').innerText(), '');
+        await page.locator('[data-user-edited-only]').uncheck();
+        assert.equal(await page.locator('[data-filter-results]').innerText(), 'old');
+        assert.equal(await page.locator('.stsm-record-user-edit-filter').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+        await page.screenshot({ path: fileURLToPath(new URL(`edited-filter-${width}.png`, output)), fullPage: true });
+        await page.evaluate(() => window.openGeneration());
+        assert.match(await page.locator('[data-history]').innerText(), /정원에서 약속/);
+        await page.locator('[data-input]').fill('어떤 약속을 말하는 거야?');
+        assert.equal(await page.evaluate(() => window.generationCounts || 0), 0);
+        await page.locator('[data-send]').click();
+        await page.waitForFunction(() => window.generationSession.history.length === 3);
+        assert.equal(await page.evaluate(() => window.generationPrompt.startsWith('ORIGINAL CUSTOM PROMPT')), true);
+        assert.match(await page.locator('[data-history]').innerText(), /강조했어요/);
+        await page.locator('input[name="generation-mode"][value="write"]').check();
+        await page.evaluate(() => { window.generationResponse = 'not JSON'; });
+        await page.locator('[data-input]').fill('고쳐줘');
+        await page.locator('[data-send]').click();
+        await page.waitForFunction(() => window.generationSession.history.length === 5);
+        assert.equal(await page.locator('[data-apply]').isDisabled(), true);
+        assert.match(await page.locator('[data-history]').innerText(), /not JSON/);
+        await page.evaluate(() => { window.generationResponse = JSON.stringify({ plot: ['관계 변화를 강조한 수정 요약입니다.'], memoryUpdates: {} }); });
+        await page.locator('[data-input]').fill('올바른 JSON으로 다시 줘');
+        await page.locator('[data-send]').click();
+        await page.waitForFunction(() => Boolean(window.generationSession.candidate));
+        await page.locator('[data-apply]').click();
+        await page.waitForFunction(() => window.generationApplied === true);
+        assert.equal(await page.locator('[data-apply]').isDisabled(), true);
+        assert.equal(await page.locator('.stsm-generation-dialog').evaluate(el => el.scrollWidth <= el.clientWidth + 1), true);
+        assert.equal(await page.locator('[data-send]').evaluate(el => el.getBoundingClientRect().height < 45), true);
+        await page.screenshot({ path: fileURLToPath(new URL(`generation-chat-${width}.png`, output)), fullPage: true });
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.evaluate(() => window.readGeneration().history.length), 7);
+        await page.evaluate(() => window.resumeGeneration());
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        await page.waitForSelector('[data-history]');
+        assert.match(await page.locator('[data-history]').innerText(), /관계 변화를 강조/);
+        await page.locator('input[name="generation-mode"][value="consult"]').check();
+        await page.locator('[data-input]').fill('상담 중에도 JSON으로 줘');
+        await page.locator('[data-send]').click();
+        await page.waitForFunction(() => Boolean(document.querySelector('[data-apply]') && !document.querySelector('[data-apply]').disabled));
+        assert.equal(await page.locator('.stsm-generation-result').count() >= 3, true);
+        assert.equal(await page.locator('.stsm-generation-json').last().locator('pre').isVisible(), false);
+        await page.locator('[data-turn-edit="1"]').click();
+        await page.locator('textarea[aria-label="메시지 수정"]').fill('수정한 질문입니다');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        await page.waitForFunction(() => document.querySelectorAll('.stsm-generation-turn').length === 3 && !document.querySelector('[data-send]').disabled);
+        assert.match(await page.locator('[data-history]').innerText(), /수정한 질문입니다/);
+        assert.doesNotMatch(await page.locator('[data-history]').innerText(), /not JSON/);
+        await page.locator('[data-turn-edit="2"]').click();
+        await page.locator('textarea[aria-label="메시지 수정"]').fill('응답을 직접 수정했어요.');
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.locator('[data-apply]').isDisabled(), true);
+        assert.match(await page.locator('[data-history]').innerText(), /응답을 직접 수정/);
+        await page.screenshot({ path: fileURLToPath(new URL(`generation-bubbles-${width}.png`, output)), fullPage: true });
+        assert.equal(await page.locator('.stsm-generation-chat').evaluate(el => {
+            const history = el.querySelector('[data-history]').getBoundingClientRect();
+            const composer = el.querySelector('[data-input]').getBoundingClientRect();
+            return history.height / el.getBoundingClientRect().height > 0.65 && history.bottom <= composer.top;
+        }), true, 'conversation takes most of the dialog without covering the composer');
+        await page.locator('[data-turn-delete="1"]').click();
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.locator('.stsm-generation-turn').count(), 1);
+        assert.equal(await page.locator('[data-apply]').isDisabled(), true);
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        assert.deepEqual(errors, []);
+        await page.evaluate(() => window.seedRecentGeneration());
+        await page.evaluate(() => window.resumeGeneration());
+        assert.equal(await page.locator('[data-generation-recent]').count(), 5);
+        assert.equal(await page.locator('[data-generation-saved]').count(), 1);
+        assert.equal(await page.locator('[data-generation-recent]').first().innerText(), '#50 ~ #59');
+        await page.screenshot({ path: fileURLToPath(new URL(`generation-archive-${width}.png`, output)), fullPage: true });
+        await page.locator('[data-generation-recent]').first().click();
+        await page.waitForSelector('[data-history]');
+        await page.locator('.test-popup:not([hidden]) .test-cancel').click();
+        await page.locator('.stsm-generation-archive-row').first().getByLabel('자동 보관 원본 삭제').click();
+        await page.locator('.test-popup:not([hidden]) .test-submit').click();
+        assert.equal(await page.locator('[data-generation-recent]').count(), 4);
+        assert.equal(await page.locator('[data-generation-saved]').count(), 1);
+        assert.deepEqual(errors, []);
         await page.close();
         console.log(`UI checks passed: ${width}px`);
     }

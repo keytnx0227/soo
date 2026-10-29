@@ -140,7 +140,7 @@ function renderRecordList(list, direction, memoryView, searchState, pinnedFilter
             sourceStatuses.get(record.id),
             llmVisibleIds.has(String(record.id)),
         )).join('')
-        : `<div class="stsm-empty">${searchState.query
+        : `<div class="stsm-empty">${searchState.query || searchState.editedOnly
             ? '검색 결과가 없습니다.'
             : memoryView === 'long-term' ? '저장된 장기기억이 없습니다.' : '저장된 상시기억이 없습니다.'}</div>`;
     list.querySelectorAll('.stsm-record').forEach(recordElement => {
@@ -283,6 +283,7 @@ function bindRecordSearch(root, onChange) {
     const clear = root.querySelector('.stsm-record-search-clear');
     if (!mode || !input || !clear || mode.dataset.bound) return;
     mode.dataset.bound = 'true';
+    root.querySelector('[data-user-edited-only]')?.addEventListener('change', onChange);
     mode.addEventListener('change', () => {
         updateRecordSearchControls(root);
         onChange();
@@ -306,6 +307,7 @@ function getRecordSearchState(root) {
             ? root.querySelector('.stsm-record-search-mode').value
             : 'number',
         query: String(root.querySelector('.stsm-record-search-input')?.value || '').trim(),
+        editedOnly: Boolean(root.querySelector('[data-user-edited-only]')?.checked),
     };
 }
 
@@ -315,6 +317,8 @@ function setRecordSearchState(root, state = {}) {
     if (!mode || !input) return;
     mode.value = ['number', 'all', 'tags'].includes(state.mode) ? state.mode : 'number';
     input.value = String(state.query || '');
+    const edited = root.querySelector('[data-user-edited-only]');
+    if (edited) edited.checked = Boolean(state.editedOnly);
     updateRecordSearchControls(root);
 }
 
@@ -330,7 +334,8 @@ function updateRecordSearchControls(root) {
     clear.setAttribute('aria-hidden', String(!query));
 }
 
-function filterRecords(records, { mode, query }) {
+function filterRecords(records, { mode, query, editedOnly = false }) {
+    if (editedOnly) records = records.filter(record => Boolean(record.userEditedAt));
     const normalizedQuery = normalizeSearchText(query);
     if (!normalizedQuery) return [...records];
 
@@ -539,6 +544,7 @@ function renderSummaryRecord(summary, sourceStatus, llmVisible) {
                 <div class="stsm-record-range">
                     <strong>${recordRangeLabel(summary)}</strong>
                     ${summary.manual ? '<span class="stsm-record-manual-badge" data-manual-marker><i class="fa-solid fa-user-pen" aria-hidden="true"></i> 직접 추가</span>' : ''}
+                    ${summary.userEditedAt ? '<span class="stsm-record-manual-badge" data-user-edit-marker title="사용자가 직접 내용을 수정한 이력이 있습니다."><i class="fa-solid fa-pen" aria-hidden="true"></i> 직접 수정</span>' : ''}
                     <span>${tokenCount.toLocaleString()} tokens</span>
                     ${compressionLevel ? `<span class="stsm-record-compression-badge">압축 Lv.${compressionLevel} · ${compressionModeLabel}</span>` : ''}
                     ${compressedChild ? '<span class="stsm-record-compressed-child-badge">장기기억</span>' : ''}

@@ -366,12 +366,12 @@ export async function addSummaryRecord({ batchId, startId, endId, content, sourc
         record.manual.countsAsSummary = false;
         record.position = positionAfter(getSummaryRecordIndex().filter(item => !item.compressedBy), afterRecordId);
     }
-    const previousRecords = store.records;
     store.records = [...store.records, record];
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
-        store.records = previousRecords;
+        // A concurrent translation may already have updated an earlier record.
+        store.records = store.records.filter(item => item.id !== record.id);
         throw error;
     }
     notifyRecordsChanged();
@@ -531,6 +531,7 @@ export async function updateSummaryRecordContent(recordId, content, {
     structuredSummary,
     compressionData,
     contentEdited,
+    userEdit = false,
     manual,
     placement,
 } = {}) {
@@ -571,6 +572,12 @@ export async function updateSummaryRecordContent(recordId, content, {
             : Boolean(contentEdited);
         if (keepLegacyContent) nextRecord.legacyContent = normalizedContent;
         else delete nextRecord.legacyContent;
+
+        if (userEdit && (JSON.stringify(record.structuredSummary?.data) !== JSON.stringify(nextRecord.structuredSummary?.data)
+            || JSON.stringify(record.compression?.data) !== JSON.stringify(nextRecord.compression?.data)
+            || ((record.legacyContent || '') !== (nextRecord.legacyContent || '') && previousRuntimeRecord.content !== normalizedContent))) {
+            nextRecord.userEditedAt = nextRecord.updatedAt;
+        }
 
         recordRenderCache.delete(normalizedId);
         const nextRuntimeRecord = hydrateRecord(nextRecord);
@@ -837,7 +844,9 @@ export async function setSummaryRecordTranslation(recordId, translation) {
     try {
         await SillyTavern.getContext().saveMetadata();
     } catch (error) {
-        store.records = previousRecords;
+        // Roll back only this translation, preserving concurrent summary additions.
+        const previous = previousRecords.find(record => record.id === normalizedId);
+        store.records = store.records.map(record => record === updatedRecord ? previous : record);
         throw error;
     }
     return hydrateRecord(updatedRecord);
@@ -916,6 +925,7 @@ function normalizeRecords(records) {
                 compression,
                 createdAt: String(record.createdAt || new Date().toISOString()),
                 updatedAt: record.updatedAt ? String(record.updatedAt) : null,
+                userEditedAt: typeof record.userEditedAt === 'string' && Number.isFinite(Date.parse(record.userEditedAt)) ? record.userEditedAt : null,
                 translation: normalizeStoredTranslation(record.translation, record.contentHash),
             };
         })
