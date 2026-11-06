@@ -44,6 +44,11 @@ export function isolateCreatedIds(memoryUpdates = {}) {
     return next;
 }
 
+function relationshipEntries(value) {
+    // Manual field corrections wrap the relationship list with edit metadata.
+    return Array.isArray(value) ? value : Array.isArray(value?.value) ? value.value : [];
+}
+
 function rewriteReferences(updates, maps) {
     for (const category of REVIEW_CATEGORIES) {
         for (const entry of updates[category]?.updated || []) {
@@ -55,7 +60,8 @@ function rewriteReferences(updates, maps) {
         if (Array.isArray(value)) { value.forEach(visit); return; }
         if (value.personId) value.personId = maps.people?.get(value.personId) || value.personId;
         for (const key of ['relationships', 'relationshipUpdates']) {
-            for (const relationship of value[key] || []) {
+            for (const relationship of relationshipEntries(value[key])) {
+                if (!relationship || typeof relationship !== 'object') continue;
                 relationship.targetId = maps.people?.get(relationship.targetId) || relationship.targetId;
             }
         }
@@ -122,7 +128,7 @@ function referencesEntity(updates, category, id) {
         if (!value || typeof value !== 'object') return false;
         if (Array.isArray(value)) return value.some(visit);
         if (value.personId === id || value.observerId === id || value.subjectId === id) return true;
-        if (['relationships', 'relationshipUpdates'].some(key => (value[key] || []).some(item => item.targetId === id))) return true;
+        if (['relationships', 'relationshipUpdates'].some(key => relationshipEntries(value[key]).some(item => item?.targetId === id))) return true;
         return Object.values(value).some(visit);
     };
     return visit(updates);

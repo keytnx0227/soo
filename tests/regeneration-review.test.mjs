@@ -75,6 +75,44 @@ test('manual choices preserve old IDs, rewrite internal references and reject mi
     assert.equal(disconnected.structuredSummary.data.memoryUpdates.people.created[0].sourceId, nextId);
 });
 
+test('manual relationship field corrections retain reference detection through their value wrapper', async () => {
+    const { scope, draft, corrections } = await setup();
+    corrections.people.other = { fields: { relationships: {
+        value: [{ targetId: 'old', relationship: ['friend'] }], locked: true, appliedThroughId: 19,
+    } } };
+    const before = JSON.stringify(corrections);
+    const requirements = scope.getRegenerationReferences(draft);
+    assert.equal(requirements.length, 1);
+    assert.ok(requirements[0].references.includes('관계 수동 보정'));
+    assert.equal(JSON.stringify(corrections), before);
+    corrections.people.other.fields.relationships.value = [{ targetId: 'unrelated' }];
+    assert.equal(scope.getRegenerationReferences(draft).length, 0);
+});
+
+test('non-array relationship metadata does not crash scanning or ID isolation', async () => {
+    const { scope, draft, records } = await setup();
+    for (const relationships of [true, 'description', {}, { value: null }, { value: [] }, [null]]) {
+        records.splice(0, records.length, { id: 'r2', structuredSummary: { data: { memoryUpdates: {
+            people: { created: [{ relationships }] },
+        } } } });
+        assert.equal(scope.getRegenerationReferences(draft).length, 0);
+        assert.doesNotThrow(() => scope.isolateCreatedIds(records[0].structuredSummary.data.memoryUpdates));
+    }
+});
+
+test('wrapped relationship references are rewritten without losing correction metadata', async () => {
+    const { scope } = await setup();
+    const input = { people: { created: [{ sourceId: 'a', relationships: {
+        value: [{ targetId: 'a' }], locked: true,
+    } }] } };
+    const result = scope.isolateCreatedIds(input);
+    const person = result.people.created[0];
+    assert.notEqual(person.sourceId, 'a');
+    assert.equal(person.relationships.value[0].targetId, person.sourceId);
+    assert.equal(person.relationships.locked, true);
+    assert.equal(input.people.created[0].relationships.value[0].targetId, 'a');
+});
+
 test('failed saves restore pending drafts and chat switches reject enqueue', async () => {
     const { scope, draft, context } = await setup();
     const previous = [{ id: 'existing' }];
